@@ -174,6 +174,8 @@ namespace LeMuReViewer.UI
             { "ChartImageFilter", "PNG (*.png)|*.png|JPEG (*.jpg)|*.jpg|BMP (*.bmp)|*.bmp" },
             { "ChartImageSaved", "Изображение сохранено." },
             { "ChartImageCopied", "Изображение скопировано в буфер." },
+            { "ChartDetach", "Открыть в отдельном окне" },
+            { "ChartWindowTitle", "График — {0}" },
         };
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -317,6 +319,8 @@ namespace LeMuReViewer.UI
             { "ChartImageFilter", "PNG (*.png)|*.png|JPEG (*.jpg)|*.jpg|BMP (*.bmp)|*.bmp" },
             { "ChartImageSaved", "Image saved." },
             { "ChartImageCopied", "Image copied to clipboard." },
+            { "ChartDetach", "Open in separate window" },
+            { "ChartWindowTitle", "Chart — {0}" },
         };
     }
 }

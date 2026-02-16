@@ -195,6 +195,10 @@ namespace LeMuReViewer.UI
             showAllItem.Click += ShowAllMenuItemOnClick;
             _chartContextMenu.Items.Add(showAllItem);
             _chartContextMenu.Items.Add(new ToolStripSeparator());
+            var detachItem = new ToolStripMenuItem(Loc.Get("ChartDetach"));
+            detachItem.Click += DetachChartMenuItemOnClick;
+            _chartContextMenu.Items.Add(detachItem);
+            _chartContextMenu.Items.Add(new ToolStripSeparator());
             var saveImageItem = new ToolStripMenuItem(Loc.Get("ChartSaveImage")) { ShortcutKeys = Keys.Control | Keys.S };
             saveImageItem.Click += SaveImageMenuItemOnClick;
             _chartContextMenu.Items.Add(saveImageItem);
@@ -288,13 +292,13 @@ namespace LeMuReViewer.UI
             _saveOrderButton.Text = Loc.Get("SaveOrder");
             _loadOrderButton.Text = Loc.Get("Load");
             _deleteOrderButton.Text = Loc.Get("Delete");
-            // Context menu
+            // Context menu: [0]=crosshair [1]=sep [2]=resetZoom [3]=showAll [4]=sep [5]=detach [6]=sep [7]=saveImage [8]=copyImage
             _crosshairMenuItem.Text = Loc.Get("ChartCrosshair");
-            // Items: [0]=crosshair, [1]=sep, [2]=resetZoom, [3]=showAll, [4]=sep, [5]=saveImage, [6]=copyImage
             ((ToolStripMenuItem)_chartContextMenu.Items[2]).Text = Loc.Get("ChartResetZoom");
             ((ToolStripMenuItem)_chartContextMenu.Items[3]).Text = Loc.Get("ChartShowAll");
-            ((ToolStripMenuItem)_chartContextMenu.Items[5]).Text = Loc.Get("ChartSaveImage");
-            ((ToolStripMenuItem)_chartContextMenu.Items[6]).Text = Loc.Get("ChartCopyImage");
+            ((ToolStripMenuItem)_chartContextMenu.Items[5]).Text = Loc.Get("ChartDetach");
+            ((ToolStripMenuItem)_chartContextMenu.Items[7]).Text = Loc.Get("ChartSaveImage");
+            ((ToolStripMenuItem)_chartContextMenu.Items[8]).Text = Loc.Get("ChartCopyImage");
 
             // Force sort combo to re-read ToString() of items
             int selIdx = _sortModeBox.SelectedIndex;
@@ -534,6 +538,218 @@ namespace LeMuReViewer.UI
                 NotifySuccess(Loc.Get("ChartImageCopied"));
             }
             catch (Exception ex) { AppLogger.LogError(_projectRoot, "Copy chart image failed.", ex); NotifyError(ex.Message); }
+        }
+
+        private void DetachChartMenuItemOnClick(object sender, EventArgs e)
+        {
+            if (_chart.Series.Count == 0) return;
+
+            var form = new Form();
+            form.Text = string.Format(Loc.Get("ChartWindowTitle"), AppState.Folder ?? Loc.Get("AppTitle"));
+            form.Width = 1200;
+            form.Height = 700;
+            form.StartPosition = FormStartPosition.CenterScreen;
+            form.KeyPreview = true;
+            try { form.Icon = Icon; } catch { }
+
+            var detachedChart = BuildChart();
+            detachedChart.SuspendLayout();
+            try
+            {
+                foreach (Series src in _chart.Series)
+                {
+                    var s = new Series(src.Name);
+                    s.ChartType = src.ChartType;
+                    s.XValueType = src.XValueType;
+                    s.BorderWidth = src.BorderWidth;
+                    s.Color = src.Color;
+                    foreach (DataPoint dp in src.Points)
+                    {
+                        s.Points.AddXY(dp.XValue, dp.YValues[0]);
+                    }
+                    detachedChart.Series.Add(s);
+                }
+            }
+            finally
+            {
+                detachedChart.ResumeLayout();
+            }
+
+            AttachChartInteractivity(detachedChart, form);
+            form.Controls.Add(detachedChart);
+            form.Show(this);
+        }
+
+        private void AttachChartInteractivity(Chart chart, Form ownerForm)
+        {
+            var tip = new ToolTip { AutoPopDelay = 10000, InitialDelay = 400, ReshowDelay = 200 };
+            bool crosshair = true;
+
+            chart.MouseMove += delegate(object s, MouseEventArgs ev)
+            {
+                if (chart.ChartAreas.Count == 0 || chart.Series.Count == 0) return;
+                var area = chart.ChartAreas[0];
+                try
+                {
+                    double xVal = area.AxisX.PixelPositionToValue(ev.X);
+                    double yVal = area.AxisY.PixelPositionToValue(ev.Y);
+                    if (crosshair)
+                    {
+                        area.CursorX.SetCursorPosition(xVal);
+                        area.CursorY.SetCursorPosition(yVal);
+                    }
+                    HitTestResult hit = chart.HitTest(ev.X, ev.Y);
+                    if (hit.ChartElementType == ChartElementType.DataPoint && hit.PointIndex >= 0 && hit.Series != null)
+                    {
+                        DataPoint dp = hit.Series.Points[hit.PointIndex];
+                        DateTime dt = DateTime.FromOADate(dp.XValue);
+                        tip.SetToolTip(chart, string.Format("{0}\n{1:yyyy-MM-dd HH:mm:ss}\n{2:F2}", hit.Series.Name, dt, dp.YValues[0]));
+                        foreach (Series sr in chart.Series) sr.BorderWidth = sr == hit.Series ? 3 : 1;
+                    }
+                    else
+                    {
+                        tip.SetToolTip(chart, string.Empty);
+                        foreach (Series sr in chart.Series) sr.BorderWidth = 2;
+                    }
+                }
+                catch { }
+            };
+
+            chart.MouseWheel += delegate(object s, MouseEventArgs ev)
+            {
+                if (chart.ChartAreas.Count == 0) return;
+                var area = chart.ChartAreas[0];
+                try
+                {
+                    bool zoomY = Control.ModifierKeys.HasFlag(Keys.Control);
+                    Axis axis = zoomY ? area.AxisY : area.AxisX;
+                    double viewMin = axis.ScaleView.ViewMinimum;
+                    double viewMax = axis.ScaleView.ViewMaximum;
+                    double range = viewMax - viewMin;
+                    if (range <= 0) return;
+                    double mousePos;
+                    try { mousePos = zoomY ? area.AxisY.PixelPositionToValue(ev.Y) : area.AxisX.PixelPositionToValue(ev.X); }
+                    catch { return; }
+                    double ratio = (mousePos - viewMin) / range;
+                    double factor = ev.Delta > 0 ? 0.8 : 1.25;
+                    double newRange = range * factor;
+                    double fullMin = axis.Minimum;
+                    double fullMax = axis.Maximum;
+                    double fullRange = fullMax - fullMin;
+                    if (double.IsNaN(fullRange) || fullRange <= 0) return;
+                    if (newRange > fullRange) { axis.ScaleView.ZoomReset(0); return; }
+                    if (newRange < fullRange * 0.001) return;
+                    double newMin = mousePos - newRange * ratio;
+                    double newMax = newMin + newRange;
+                    if (newMin < fullMin) { newMin = fullMin; newMax = fullMin + newRange; }
+                    if (newMax > fullMax) { newMax = fullMax; newMin = fullMax - newRange; }
+                    axis.ScaleView.Zoom(newMin, newMax);
+                }
+                catch { }
+            };
+
+            chart.MouseDoubleClick += delegate
+            {
+                if (chart.ChartAreas.Count == 0) return;
+                chart.ChartAreas[0].AxisX.ScaleView.ZoomReset(0);
+                chart.ChartAreas[0].AxisY.ScaleView.ZoomReset(0);
+            };
+
+            // Context menu
+            var ctx = new ContextMenuStrip();
+
+            var crosshairItem = new ToolStripMenuItem(Loc.Get("ChartCrosshair")) { Checked = true, CheckOnClick = true };
+            crosshairItem.Click += delegate
+            {
+                crosshair = crosshairItem.Checked;
+                if (!crosshair && chart.ChartAreas.Count > 0)
+                {
+                    chart.ChartAreas[0].CursorX.SetCursorPosition(double.NaN);
+                    chart.ChartAreas[0].CursorY.SetCursorPosition(double.NaN);
+                }
+            };
+            ctx.Items.Add(crosshairItem);
+            ctx.Items.Add(new ToolStripSeparator());
+
+            var resetItem = new ToolStripMenuItem(Loc.Get("ChartResetZoom"));
+            resetItem.Click += delegate
+            {
+                if (chart.ChartAreas.Count == 0) return;
+                chart.ChartAreas[0].AxisX.ScaleView.ZoomReset(0);
+                chart.ChartAreas[0].AxisY.ScaleView.ZoomReset(0);
+            };
+            ctx.Items.Add(resetItem);
+
+            var showAllItem = new ToolStripMenuItem(Loc.Get("ChartShowAll"));
+            showAllItem.Click += delegate
+            {
+                if (chart.ChartAreas.Count == 0) return;
+                var a = chart.ChartAreas[0];
+                a.AxisX.ScaleView.ZoomReset(0); a.AxisY.ScaleView.ZoomReset(0);
+                a.AxisX.Minimum = double.NaN; a.AxisX.Maximum = double.NaN;
+                a.AxisY.Minimum = double.NaN; a.AxisY.Maximum = double.NaN;
+            };
+            ctx.Items.Add(showAllItem);
+            ctx.Items.Add(new ToolStripSeparator());
+
+            var saveItem = new ToolStripMenuItem(Loc.Get("ChartSaveImage")) { ShortcutKeys = Keys.Control | Keys.S };
+            saveItem.Click += delegate
+            {
+                using (var dlg = new SaveFileDialog())
+                {
+                    dlg.Filter = Loc.Get("ChartImageFilter");
+                    dlg.FileName = "chart_" + DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                    if (dlg.ShowDialog(ownerForm) != DialogResult.OK) return;
+                    try
+                    {
+                        ChartImageFormat fmt = ChartImageFormat.Png;
+                        string ext = Path.GetExtension(dlg.FileName).ToLowerInvariant();
+                        if (ext == ".jpg" || ext == ".jpeg") fmt = ChartImageFormat.Jpeg;
+                        else if (ext == ".bmp") fmt = ChartImageFormat.Bmp;
+                        chart.SaveImage(dlg.FileName, fmt);
+                    }
+                    catch { }
+                }
+            };
+            ctx.Items.Add(saveItem);
+
+            var copyItem = new ToolStripMenuItem(Loc.Get("ChartCopyImage")) { ShortcutKeys = Keys.Control | Keys.C };
+            copyItem.Click += delegate
+            {
+                try
+                {
+                    using (var ms = new MemoryStream())
+                    {
+                        chart.SaveImage(ms, ChartImageFormat.Png);
+                        ms.Position = 0;
+                        using (var bmp = new Bitmap(ms)) { Clipboard.SetImage(bmp); }
+                    }
+                }
+                catch { }
+            };
+            ctx.Items.Add(copyItem);
+
+            chart.ContextMenuStrip = ctx;
+
+            // Keyboard shortcuts in the owner form
+            if (ownerForm != null)
+            {
+                ownerForm.KeyDown += delegate(object s, KeyEventArgs ev)
+                {
+                    if (ev.Control && ev.KeyCode == Keys.S)
+                    {
+                        saveItem.PerformClick(); ev.SuppressKeyPress = true;
+                    }
+                    else if (ev.Control && ev.KeyCode == Keys.C)
+                    {
+                        copyItem.PerformClick(); ev.SuppressKeyPress = true;
+                    }
+                    else if (ev.KeyCode == Keys.Home)
+                    {
+                        resetItem.PerformClick(); ev.SuppressKeyPress = true;
+                    }
+                };
+            }
         }
 
         private void BrowseButtonOnClick(object sender, EventArgs e)
