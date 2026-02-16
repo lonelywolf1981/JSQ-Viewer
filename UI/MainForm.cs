@@ -57,6 +57,7 @@ namespace LeMuReViewer.UI
         private readonly Label _busyLabel;
         private readonly ProgressBar _busyProgress;
         private readonly SplitContainer _splitMain;
+        private readonly ToolTip _toolTip;
 
         private int _dragIndex = -1;
         private readonly List<ChannelItem> _allChannels = new List<ChannelItem>();
@@ -79,9 +80,13 @@ namespace LeMuReViewer.UI
             _uiStateFilePath = Path.Combine(_projectRoot, "ui_state.json");
             _viewerSettings = ViewerSettingsStore.Load(_viewerSettingsFilePath);
 
-            Text = "ИЛХО Viewer";
-            string icoPath = Path.Combine(ResolveProjectRoot(), "app.ico");
-            if (File.Exists(icoPath)) Icon = new Icon(icoPath);
+            Text = Loc.Get("AppTitle");
+            try
+            {
+                string exePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                Icon = Icon.ExtractAssociatedIcon(exePath);
+            }
+            catch { }
             Width = 1420;
             Height = 900;
             StartPosition = FormStartPosition.CenterScreen;
@@ -182,9 +187,6 @@ namespace LeMuReViewer.UI
             busyBox.Size = new Size(300, 90);
             busyBox.BackColor = Color.White;
             busyBox.BorderStyle = BorderStyle.FixedSingle;
-            busyBox.Left = (ClientSize.Width - busyBox.Width) / 2;
-            busyBox.Top = (ClientSize.Height - busyBox.Height) / 2;
-            busyBox.Anchor = AnchorStyles.None;
             _busyPanel.Controls.Add(busyBox);
 
             _busyLabel = new Label();
@@ -203,11 +205,19 @@ namespace LeMuReViewer.UI
             _busyProgress.Top = 44;
             busyBox.Controls.Add(_busyProgress);
 
-            Resize += delegate
+            EventHandler centerBusyBox = delegate
             {
-                busyBox.Left = (ClientSize.Width - busyBox.Width) / 2;
-                busyBox.Top = (ClientSize.Height - busyBox.Height) / 2;
+                busyBox.Left = (_busyPanel.ClientSize.Width - busyBox.Width) / 2;
+                busyBox.Top = (_busyPanel.ClientSize.Height - busyBox.Height) / 2;
             };
+            _busyPanel.Resize += centerBusyBox;
+            _busyPanel.VisibleChanged += delegate { if (_busyPanel.Visible) centerBusyBox(null, EventArgs.Empty); };
+
+            _toolTip = new ToolTip();
+            _toolTip.AutoPopDelay = 10000;
+            _toolTip.InitialDelay = 400;
+            _toolTip.ReshowDelay = 200;
+            ApplyTooltips();
 
             LoadRecentFolders();
             ReloadPresets();
@@ -254,7 +264,40 @@ namespace LeMuReViewer.UI
             int selIdx = _sortModeBox.SelectedIndex;
             typeof(ComboBox).GetMethod("RefreshItems", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(_sortModeBox, null);
             if (selIdx >= 0 && selIdx < _sortModeBox.Items.Count) _sortModeBox.SelectedIndex = selIdx;
+            ApplyTooltips();
             UpdateSelectionInfo();
+        }
+
+        private void ApplyTooltips()
+        {
+            _toolTip.SetToolTip(_folderBox, Loc.Get("TipFolder"));
+            _toolTip.SetToolTip(_browseButton, Loc.Get("TipBrowse"));
+            _toolTip.SetToolTip(_loadButton, Loc.Get("TipLoad"));
+            _toolTip.SetToolTip(_copyPathButton, Loc.Get("TipCopyPath"));
+            _toolTip.SetToolTip(_langButton, Loc.Get("TipLang"));
+            _toolTip.SetToolTip(_recentFoldersBox, Loc.Get("TipRecent"));
+            _toolTip.SetToolTip(_autoStepCheck, Loc.Get("TipAutoStep"));
+            _toolTip.SetToolTip(_targetPointsBox, Loc.Get("TipTarget"));
+            _toolTip.SetToolTip(_manualStepUpDown, Loc.Get("TipManualStep"));
+            _toolTip.SetToolTip(_channelFilterBox, Loc.Get("TipFilter"));
+            _toolTip.SetToolTip(_sortModeBox, Loc.Get("TipSort"));
+            _toolTip.SetToolTip(_selectedOnlyCheck, Loc.Get("TipSelectedOnly"));
+            _toolTip.SetToolTip(_selectAllChannelsButton, Loc.Get("TipSelectAll"));
+            _toolTip.SetToolTip(_clearChannelsButton, Loc.Get("TipClear"));
+            _toolTip.SetToolTip(_includeExtraCheck, Loc.Get("TipIncludeExtra"));
+            _toolTip.SetToolTip(_refrigerantBox, Loc.Get("TipRefrigerant"));
+            _toolTip.SetToolTip(_exportTemplateButton, Loc.Get("TipExportTemplate"));
+            _toolTip.SetToolTip(_settingsButton, Loc.Get("TipStyles"));
+            _toolTip.SetToolTip(_presetNameBox, Loc.Get("TipPresetName"));
+            _toolTip.SetToolTip(_savePresetButton, Loc.Get("TipSavePreset"));
+            _toolTip.SetToolTip(_presetsBox, Loc.Get("TipPresets"));
+            _toolTip.SetToolTip(_loadPresetButton, Loc.Get("TipLoadPreset"));
+            _toolTip.SetToolTip(_deletePresetButton, Loc.Get("TipDeletePreset"));
+            _toolTip.SetToolTip(_orderNameBox, Loc.Get("TipOrderName"));
+            _toolTip.SetToolTip(_saveOrderButton, Loc.Get("TipSaveOrder"));
+            _toolTip.SetToolTip(_ordersBox, Loc.Get("TipOrders"));
+            _toolTip.SetToolTip(_loadOrderButton, Loc.Get("TipLoadOrder"));
+            _toolTip.SetToolTip(_deleteOrderButton, Loc.Get("TipDeleteOrder"));
         }
 
         private static FlowLayoutPanel NewRow()
