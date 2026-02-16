@@ -18,7 +18,6 @@ namespace LeMuReViewer.UI
     {
         private readonly TextBox _folderBox;
         private readonly Button _browseButton;
-        private readonly Button _loadButton;
         private readonly Button _copyPathButton;
         private readonly ComboBox _recentFoldersBox;
         private readonly Label _summaryLabel;
@@ -84,6 +83,7 @@ namespace LeMuReViewer.UI
             _uiStateFilePath = Path.Combine(_projectRoot, "ui_state.json");
             _viewerSettings = ViewerSettingsStore.Load(_viewerSettingsFilePath);
 
+            Font = new Font("Microsoft Sans Serif", 10f);
             Text = Loc.Get("AppTitle");
             try
             {
@@ -111,19 +111,20 @@ namespace LeMuReViewer.UI
             left.RowStyles[6] = new RowStyle(SizeType.Percent, 100);
             _splitMain.Panel1.Controls.Add(left);
 
+            var smallFont = new Font("Microsoft Sans Serif", 8.25f);
+
             var folderRow = NewRow(); left.Controls.Add(folderRow, 0, 0);
-            _folderBox = new TextBox(); _folderBox.Width = 220; folderRow.Controls.Add(_folderBox);
-            _browseButton = new Button(); _browseButton.Text = Loc.Get("Browse"); _browseButton.Click += BrowseButtonOnClick; folderRow.Controls.Add(_browseButton);
-            _loadButton = new Button(); _loadButton.Text = Loc.Get("Load"); _loadButton.Click += LoadButtonOnClick; folderRow.Controls.Add(_loadButton);
-            _copyPathButton = new Button(); _copyPathButton.Text = Loc.Get("CopyPath"); _copyPathButton.Click += CopyPathButtonOnClick; folderRow.Controls.Add(_copyPathButton);
-            _langButton = new Button(); _langButton.Text = Loc.Get("Language"); _langButton.Width = 36; _langButton.Click += LangButtonOnClick; folderRow.Controls.Add(_langButton);
+            _folderBox = new TextBox(); _folderBox.Width = 260; folderRow.Controls.Add(_folderBox);
+            _browseButton = new Button(); _browseButton.Text = Loc.Get("Browse"); _browseButton.AutoSize = true; _browseButton.Click += BrowseButtonOnClick; folderRow.Controls.Add(_browseButton);
+            _copyPathButton = new Button(); _copyPathButton.Text = Loc.Get("CopyPath"); _copyPathButton.AutoSize = true; _copyPathButton.Click += CopyPathButtonOnClick; folderRow.Controls.Add(_copyPathButton);
+            _langButton = new Button(); _langButton.Text = Loc.Get("Language"); _langButton.Width = 40; _langButton.Click += LangButtonOnClick; folderRow.Controls.Add(_langButton);
 
             var recentRow = NewRow(); left.Controls.Add(recentRow, 0, 1);
             _recentLabel = new Label(); _recentLabel.Text = Loc.Get("Recent"); _recentLabel.AutoSize = true; _recentLabel.Padding = new Padding(0, 6, 4, 0); recentRow.Controls.Add(_recentLabel);
-            _recentFoldersBox = new ComboBox(); _recentFoldersBox.Width = 360; _recentFoldersBox.DropDownStyle = ComboBoxStyle.DropDownList; _recentFoldersBox.SelectedIndexChanged += RecentFoldersBoxOnSelectedIndexChanged; recentRow.Controls.Add(_recentFoldersBox);
+            _recentFoldersBox = new ComboBox(); _recentFoldersBox.Width = 400; _recentFoldersBox.DropDownStyle = ComboBoxStyle.DropDownList; _recentFoldersBox.SelectedIndexChanged += RecentFoldersBoxOnSelectedIndexChanged; recentRow.Controls.Add(_recentFoldersBox);
 
-            _summaryLabel = new Label(); _summaryLabel.AutoSize = true; _summaryLabel.Padding = new Padding(4, 6, 4, 4); _summaryLabel.Text = Loc.Get("NoTestLoaded"); left.Controls.Add(_summaryLabel, 0, 2);
-            _selectionInfoLabel = new Label(); _selectionInfoLabel.AutoSize = true; _selectionInfoLabel.Padding = new Padding(4, 2, 4, 6); _selectionInfoLabel.Text = Loc.Get("Selected"); left.Controls.Add(_selectionInfoLabel, 0, 3);
+            _summaryLabel = new Label(); _summaryLabel.Font = smallFont; _summaryLabel.AutoSize = true; _summaryLabel.Padding = new Padding(4, 6, 4, 4); _summaryLabel.Text = Loc.Get("NoTestLoaded"); left.Controls.Add(_summaryLabel, 0, 2);
+            _selectionInfoLabel = new Label(); _selectionInfoLabel.Font = smallFont; _selectionInfoLabel.AutoSize = true; _selectionInfoLabel.Padding = new Padding(4, 2, 4, 6); _selectionInfoLabel.Text = Loc.Get("Selected"); left.Controls.Add(_selectionInfoLabel, 0, 3);
 
             var stepRow = NewRow(); left.Controls.Add(stepRow, 0, 4);
             _autoStepCheck = new CheckBox(); _autoStepCheck.Text = Loc.Get("AutoStep"); _autoStepCheck.Checked = true; _autoStepCheck.AutoSize = true; _autoStepCheck.CheckedChanged += StepControlsOnChanged; stepRow.Controls.Add(_autoStepCheck);
@@ -134,8 +135,8 @@ namespace LeMuReViewer.UI
 
             var channelsHeaderRow = NewRow(); left.Controls.Add(channelsHeaderRow, 0, 5);
             _channelsHeader = new Label(); _channelsHeader.Text = Loc.Get("Channels"); _channelsHeader.AutoSize = true; _channelsHeader.Padding = new Padding(4, 6, 2, 0); channelsHeaderRow.Controls.Add(_channelsHeader);
-            _channelFilterBox = new TextBox(); _channelFilterBox.Width = 120; _channelFilterBox.TextChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_channelFilterBox);
-            _sortModeBox = new ComboBox(); _sortModeBox.Width = 140; _sortModeBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            _channelFilterBox = new TextBox(); _channelFilterBox.Width = 130; _channelFilterBox.TextChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_channelFilterBox);
+            _sortModeBox = new ComboBox(); _sortModeBox.Width = 160; _sortModeBox.DropDownStyle = ComboBoxStyle.DropDownList;
             _sortModeBox.Items.Add(new SortModeItem("User", "SortUser"));
             _sortModeBox.Items.Add(new SortModeItem("Code", "SortCode"));
             _sortModeBox.Items.Add(new SortModeItem("Natural code", "SortNaturalCode"));
@@ -145,8 +146,8 @@ namespace LeMuReViewer.UI
             _sortModeBox.Items.Add(new SortModeItem("Selected first", "SortSelectedFirst"));
             _sortModeBox.SelectedIndex = 5; _sortModeBox.SelectedIndexChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_sortModeBox);
             _selectedOnlyCheck = new CheckBox(); _selectedOnlyCheck.Text = Loc.Get("SelectedOnly"); _selectedOnlyCheck.AutoSize = true; _selectedOnlyCheck.CheckedChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_selectedOnlyCheck);
-            _selectAllChannelsButton = new Button(); _selectAllChannelsButton.Text = Loc.Get("SelectAll"); _selectAllChannelsButton.Width = 90; _selectAllChannelsButton.Click += SelectAllChannelsButtonOnClick; channelsHeaderRow.Controls.Add(_selectAllChannelsButton);
-            _clearChannelsButton = new Button(); _clearChannelsButton.Text = Loc.Get("Clear"); _clearChannelsButton.Width = 72; _clearChannelsButton.Click += ClearChannelsButtonOnClick; channelsHeaderRow.Controls.Add(_clearChannelsButton);
+            _selectAllChannelsButton = new Button(); _selectAllChannelsButton.Text = Loc.Get("SelectAll"); _selectAllChannelsButton.AutoSize = true; _selectAllChannelsButton.Click += SelectAllChannelsButtonOnClick; channelsHeaderRow.Controls.Add(_selectAllChannelsButton);
+            _clearChannelsButton = new Button(); _clearChannelsButton.Text = Loc.Get("Clear"); _clearChannelsButton.AutoSize = true; _clearChannelsButton.Click += ClearChannelsButtonOnClick; channelsHeaderRow.Controls.Add(_clearChannelsButton);
             _channelsList = new CheckedListBox(); _channelsList.Dock = DockStyle.Fill; _channelsList.CheckOnClick = true; _channelsList.AllowDrop = true; _channelsList.ItemCheck += ChannelsListOnItemCheck; _channelsList.MouseDown += ChannelsListOnMouseDown; _channelsList.DragOver += ChannelsListOnDragOver; _channelsList.DragDrop += ChannelsListOnDragDrop; left.Controls.Add(_channelsList, 0, 6);
             _channelsList.IntegralHeight = false;
 
@@ -156,26 +157,26 @@ namespace LeMuReViewer.UI
             _refrigerantBox = new ComboBox(); _refrigerantBox.DropDownStyle = ComboBoxStyle.DropDownList; _refrigerantBox.Width = 90; _refrigerantBox.Items.Add("R290"); _refrigerantBox.Items.Add("R600a"); _refrigerantBox.SelectedIndex = 0; templateOptionsRow.Controls.Add(_refrigerantBox);
 
             var exportButtonsRow = NewRow(); left.Controls.Add(exportButtonsRow, 0, 8);
-            _exportTemplateButton = new Button(); _exportTemplateButton.Text = Loc.Get("ExportTemplate"); _exportTemplateButton.Enabled = false; _exportTemplateButton.Click += ExportTemplateButtonOnClick; exportButtonsRow.Controls.Add(_exportTemplateButton);
-            _settingsButton = new Button(); _settingsButton.Text = Loc.Get("Styles"); _settingsButton.Click += SettingsButtonOnClick; exportButtonsRow.Controls.Add(_settingsButton);
+            _exportTemplateButton = new Button(); _exportTemplateButton.Text = Loc.Get("ExportTemplate"); _exportTemplateButton.AutoSize = true; _exportTemplateButton.Enabled = false; _exportTemplateButton.Click += ExportTemplateButtonOnClick; exportButtonsRow.Controls.Add(_exportTemplateButton);
+            _settingsButton = new Button(); _settingsButton.Text = Loc.Get("Styles"); _settingsButton.AutoSize = true; _settingsButton.Click += SettingsButtonOnClick; exportButtonsRow.Controls.Add(_settingsButton);
 
             var presetSaveRow = NewRow(); left.Controls.Add(presetSaveRow, 0, 9);
-            _presetNameBox = new TextBox(); _presetNameBox.Width = 180; _presetNameBox.Text = Loc.Get("PresetName"); presetSaveRow.Controls.Add(_presetNameBox);
-            _savePresetButton = new Button(); _savePresetButton.Text = Loc.Get("SavePreset"); _savePresetButton.Enabled = false; _savePresetButton.Click += SavePresetButtonOnClick; presetSaveRow.Controls.Add(_savePresetButton);
+            _presetNameBox = new TextBox(); _presetNameBox.Width = 200; _presetNameBox.Text = Loc.Get("PresetName"); presetSaveRow.Controls.Add(_presetNameBox);
+            _savePresetButton = new Button(); _savePresetButton.Text = Loc.Get("SavePreset"); _savePresetButton.AutoSize = true; _savePresetButton.Enabled = false; _savePresetButton.Click += SavePresetButtonOnClick; presetSaveRow.Controls.Add(_savePresetButton);
 
             var presetLoadRow = NewRow(); left.Controls.Add(presetLoadRow, 0, 10);
-            _presetsBox = new ComboBox(); _presetsBox.Width = 220; _presetsBox.DropDownStyle = ComboBoxStyle.DropDownList; presetLoadRow.Controls.Add(_presetsBox);
-            _loadPresetButton = new Button(); _loadPresetButton.Text = Loc.Get("Load"); _loadPresetButton.Enabled = false; _loadPresetButton.Click += LoadPresetButtonOnClick; presetLoadRow.Controls.Add(_loadPresetButton);
-            _deletePresetButton = new Button(); _deletePresetButton.Text = Loc.Get("Delete"); _deletePresetButton.Enabled = false; _deletePresetButton.Click += DeletePresetButtonOnClick; presetLoadRow.Controls.Add(_deletePresetButton);
+            _presetsBox = new ComboBox(); _presetsBox.Width = 240; _presetsBox.DropDownStyle = ComboBoxStyle.DropDownList; presetLoadRow.Controls.Add(_presetsBox);
+            _loadPresetButton = new Button(); _loadPresetButton.Text = Loc.Get("Load"); _loadPresetButton.AutoSize = true; _loadPresetButton.Enabled = false; _loadPresetButton.Click += LoadPresetButtonOnClick; presetLoadRow.Controls.Add(_loadPresetButton);
+            _deletePresetButton = new Button(); _deletePresetButton.Text = Loc.Get("Delete"); _deletePresetButton.AutoSize = true; _deletePresetButton.Enabled = false; _deletePresetButton.Click += DeletePresetButtonOnClick; presetLoadRow.Controls.Add(_deletePresetButton);
 
             var orderRow = NewRow(); left.Controls.Add(orderRow, 0, 11);
-            _orderNameBox = new TextBox(); _orderNameBox.Width = 130; _orderNameBox.Text = Loc.Get("OrderName"); orderRow.Controls.Add(_orderNameBox);
-            _saveOrderButton = new Button(); _saveOrderButton.Text = Loc.Get("SaveOrder"); _saveOrderButton.Enabled = false; _saveOrderButton.Click += SaveOrderButtonOnClick; orderRow.Controls.Add(_saveOrderButton);
-            _ordersBox = new ComboBox(); _ordersBox.Width = 180; _ordersBox.DropDownStyle = ComboBoxStyle.DropDownList; orderRow.Controls.Add(_ordersBox);
-            _loadOrderButton = new Button(); _loadOrderButton.Text = Loc.Get("Load"); _loadOrderButton.Enabled = false; _loadOrderButton.Click += LoadOrderButtonOnClick; orderRow.Controls.Add(_loadOrderButton);
-            _deleteOrderButton = new Button(); _deleteOrderButton.Text = Loc.Get("Delete"); _deleteOrderButton.Enabled = false; _deleteOrderButton.Click += DeleteOrderButtonOnClick; orderRow.Controls.Add(_deleteOrderButton);
+            _orderNameBox = new TextBox(); _orderNameBox.Width = 150; _orderNameBox.Text = Loc.Get("OrderName"); orderRow.Controls.Add(_orderNameBox);
+            _saveOrderButton = new Button(); _saveOrderButton.Text = Loc.Get("SaveOrder"); _saveOrderButton.AutoSize = true; _saveOrderButton.Enabled = false; _saveOrderButton.Click += SaveOrderButtonOnClick; orderRow.Controls.Add(_saveOrderButton);
+            _ordersBox = new ComboBox(); _ordersBox.Width = 200; _ordersBox.DropDownStyle = ComboBoxStyle.DropDownList; orderRow.Controls.Add(_ordersBox);
+            _loadOrderButton = new Button(); _loadOrderButton.Text = Loc.Get("Load"); _loadOrderButton.AutoSize = true; _loadOrderButton.Enabled = false; _loadOrderButton.Click += LoadOrderButtonOnClick; orderRow.Controls.Add(_loadOrderButton);
+            _deleteOrderButton = new Button(); _deleteOrderButton.Text = Loc.Get("Delete"); _deleteOrderButton.AutoSize = true; _deleteOrderButton.Enabled = false; _deleteOrderButton.Click += DeleteOrderButtonOnClick; orderRow.Controls.Add(_deleteOrderButton);
 
-            _statusLabel = new Label(); _statusLabel.AutoSize = true; _statusLabel.Padding = new Padding(4, 6, 4, 8); _statusLabel.Text = Loc.Get("Ready"); left.Controls.Add(_statusLabel, 0, 12);
+            _statusLabel = new Label(); _statusLabel.Font = smallFont; _statusLabel.AutoSize = true; _statusLabel.Padding = new Padding(4, 6, 4, 8); _statusLabel.Text = Loc.Get("Ready"); left.Controls.Add(_statusLabel, 0, 12);
 
             _chart = BuildChart();
             _chart.MouseMove += ChartOnMouseMove;
@@ -267,7 +268,6 @@ namespace LeMuReViewer.UI
         {
             Text = Loc.Get("AppTitle");
             _browseButton.Text = Loc.Get("Browse");
-            _loadButton.Text = Loc.Get("Load");
             _copyPathButton.Text = Loc.Get("CopyPath");
             _langButton.Text = Loc.Get("Language");
             _recentLabel.Text = Loc.Get("Recent");
@@ -308,7 +308,6 @@ namespace LeMuReViewer.UI
         {
             _toolTip.SetToolTip(_folderBox, Loc.Get("TipFolder"));
             _toolTip.SetToolTip(_browseButton, Loc.Get("TipBrowse"));
-            _toolTip.SetToolTip(_loadButton, Loc.Get("TipLoad"));
             _toolTip.SetToolTip(_copyPathButton, Loc.Get("TipCopyPath"));
             _toolTip.SetToolTip(_langButton, Loc.Get("TipLang"));
             _toolTip.SetToolTip(_recentFoldersBox, Loc.Get("TipRecent"));
@@ -542,7 +541,11 @@ namespace LeMuReViewer.UI
             using (var dialog = new FolderBrowserDialog())
             {
                 dialog.SelectedPath = Directory.Exists(_folderBox.Text) ? _folderBox.Text : string.Empty;
-                if (dialog.ShowDialog(this) == DialogResult.OK) _folderBox.Text = dialog.SelectedPath;
+                if (dialog.ShowDialog(this) == DialogResult.OK)
+                {
+                    _folderBox.Text = dialog.SelectedPath;
+                    LoadFolder(dialog.SelectedPath, true);
+                }
             }
         }
 
@@ -554,7 +557,13 @@ namespace LeMuReViewer.UI
 
         private void RecentFoldersBoxOnSelectedIndexChanged(object sender, EventArgs e)
         {
-            if (_recentFoldersBox.SelectedItem != null) _folderBox.Text = _recentFoldersBox.SelectedItem.ToString();
+            if (_recentFoldersBox.SelectedItem == null) return;
+            string folder = _recentFoldersBox.SelectedItem.ToString();
+            _folderBox.Text = folder;
+            if (!string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder))
+            {
+                LoadFolder(folder, false);
+            }
         }
 
         private void TryAutoLoadLastFolder()
@@ -615,13 +624,6 @@ namespace LeMuReViewer.UI
                 ResetChartZoom();
                 e.SuppressKeyPress = true;
             }
-        }
-
-        private void LoadButtonOnClick(object sender, EventArgs e)
-        {
-            string folder = (_folderBox.Text ?? string.Empty).Trim();
-            if (folder.Length == 0) { NotifyError(Loc.Get("SelectFolder")); return; }
-            LoadFolder(folder, true);
         }
 
         private void LoadFolder(string folder, bool addToRecent)
@@ -1211,7 +1213,7 @@ namespace LeMuReViewer.UI
             _busyPanel.Visible = busy;
             _busyPanel.BringToFront();
 
-            _loadButton.Enabled = !busy;
+            _browseButton.Enabled = !busy;
             _exportTemplateButton.Enabled = !busy && AppState.IsLoaded;
             _savePresetButton.Enabled = !busy && AppState.IsLoaded;
             _saveOrderButton.Enabled = !busy && AppState.IsLoaded;
