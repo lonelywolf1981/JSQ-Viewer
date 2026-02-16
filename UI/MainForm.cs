@@ -73,7 +73,9 @@ namespace LeMuReViewer.UI
             _uiStateFilePath = Path.Combine(_projectRoot, "ui_state.json");
             _viewerSettings = ViewerSettingsStore.Load(_viewerSettingsFilePath);
 
-            Text = "LeMuRe Viewer (migration build)";
+            Text = "ИЛХО Viewer";
+            string icoPath = Path.Combine(ResolveProjectRoot(), "app.ico");
+            if (File.Exists(icoPath)) Icon = new Icon(icoPath);
             Width = 1420;
             Height = 900;
             StartPosition = FormStartPosition.CenterScreen;
