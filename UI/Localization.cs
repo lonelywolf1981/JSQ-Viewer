@@ -1,0 +1,240 @@
+using System;
+using System.Collections.Generic;
+
+namespace LeMuReViewer.UI
+{
+    public enum Lang { Ru, En }
+
+    public static class Loc
+    {
+        private static Lang _current = Lang.Ru;
+        public static event Action LanguageChanged;
+
+        public static Lang Current
+        {
+            get { return _current; }
+            set
+            {
+                if (_current == value) return;
+                _current = value;
+                var h = LanguageChanged;
+                if (h != null) h();
+            }
+        }
+
+        public static string Get(string key)
+        {
+            string v;
+            if (_current == Lang.Ru)
+            {
+                if (Ru.TryGetValue(key, out v)) return v;
+            }
+            if (En.TryGetValue(key, out v)) return v;
+            return key;
+        }
+
+        private static readonly Dictionary<string, string> Ru = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            // MainForm
+            { "AppTitle", "ИЛХО Viewer" },
+            { "Browse", "Обзор" },
+            { "Load", "Загрузить" },
+            { "CopyPath", "Копировать путь" },
+            { "Recent", "Недавние:" },
+            { "NoTestLoaded", "Тест не загружен." },
+            { "Selected", "Выбрано: 0" },
+            { "AutoStep", "Авто шаг" },
+            { "Target", "Цель:" },
+            { "Manual", "Ручной:" },
+            { "Channels", "Каналы" },
+            { "SelectedOnly", "Выбранные" },
+            { "SelectAll", "Выбрать все" },
+            { "Clear", "Очистить" },
+            { "IncludeExtra", "Включить доп. каналы" },
+            { "Refrigerant", "Хладагент:" },
+            { "ExportTemplate", "Экспорт по шаблону" },
+            { "Styles", "Стили..." },
+            { "PresetName", "Имя пресета" },
+            { "SavePreset", "Сохранить пресет" },
+            { "Delete", "Удалить" },
+            { "OrderName", "Имя порядка" },
+            { "SaveOrder", "Сохранить порядок" },
+            { "Ready", "Готово." },
+            { "Working", "Работа..." },
+            { "LoadingData", "Загрузка данных..." },
+            { "PathCopied", "Путь скопирован." },
+            { "CopyPathFailed", "Ошибка копирования пути." },
+            { "SelectFolder", "Сначала выберите папку." },
+            { "LoadedTest", "Загружен тест: {0} строк." },
+            { "LoadFailed", "Ошибка загрузки." },
+            { "SelectChannel", "Выберите хотя бы один канал." },
+            { "TemplateNotFound", "template.xlsx не найден рядом с проектом." },
+            { "ExportingTemplate", "Экспорт шаблона..." },
+            { "TemplateExported", "Шаблон экспортирован." },
+            { "TemplateExportedWarning", "Шаблон экспортирован с предупреждением." },
+            { "TemplateExportFailed", "Ошибка экспорта шаблона." },
+            { "SavingStyles", "Сохранение настроек стилей..." },
+            { "StylesSaved", "Настройки стилей сохранены." },
+            { "StylesSaveFailed", "Ошибка сохранения стилей." },
+            { "EnterPresetName", "Введите имя пресета." },
+            { "PresetSaved", "Пресет сохранён: {0}" },
+            { "PresetUpdated", "Пресет обновлён: {0}" },
+            { "PresetLoaded", "Пресет загружен: {0}" },
+            { "PresetInvalid", "Файл пресета повреждён." },
+            { "DeletePresetQ", "Удалить пресет \"{0}\"?" },
+            { "DeletePresetTitle", "Удаление пресета" },
+            { "PresetDeleted", "Пресет удалён: {0}" },
+            { "PresetDeleteFailed", "Ошибка удаления пресета." },
+            { "EnterOrderName", "Введите имя порядка." },
+            { "NoChannelsToSave", "Нет каналов для сохранения." },
+            { "OrderSaved", "Порядок сохранён: {0}" },
+            { "OrderUpdated", "Порядок обновлён: {0}" },
+            { "OrderLoaded", "Порядок загружен: {0}" },
+            { "OrderInvalid", "Файл порядка повреждён." },
+            { "DeleteOrderQ", "Удалить порядок \"{0}\"?" },
+            { "DeleteOrderTitle", "Удаление порядка" },
+            { "OrderDeleted", "Порядок удалён: {0}" },
+            { "OrderDeleteFailed", "Ошибка удаления порядка." },
+            { "Points", "Точки: {0} | Начало: {1:yyyy-MM-dd HH:mm:ss} | Конец: {2:yyyy-MM-dd HH:mm:ss}" },
+            { "SelectedInfo", "Выбрано: {0} / {1}{2}" },
+            { "StepInfo", " | шаг: {0} | ~{1} точек" },
+            { "Language", "EN" },
+
+            // Sort modes
+            { "SortUser", "Пользоват." },
+            { "SortCode", "Код" },
+            { "SortNaturalCode", "Натуральный код" },
+            { "SortLabel", "Метка" },
+            { "SortUnit", "Ед. изм." },
+            { "SortPriorityAC", "Приоритет A/C" },
+            { "SortSelectedFirst", "Выбранные первые" },
+
+            // SettingsDialog
+            { "StylesTitle", "Настройки стилей экспорта" },
+            { "RowMark", "Выделение строк" },
+            { "TThreshold", "Порог T:" },
+            { "Color", "Цвет:" },
+            { "Intensity", "Интенсивность:" },
+            { "DischargeSuction", "Нагнетание / Всасывание" },
+            { "DischargeThreshold", "Порог нагнетания:" },
+            { "SuctionThreshold", "Порог всасывания:" },
+            { "ScalesWXY", "Шкалы W / X / Y" },
+            { "Scale", "Шкала" },
+            { "Min", "Мин" },
+            { "Opt", "Опт" },
+            { "Max", "Макс" },
+            { "ColorMin", "Цвет мин" },
+            { "ColorOpt", "Цвет опт" },
+            { "ColorMax", "Цвет макс" },
+            { "Save", "Сохранить" },
+            { "Cancel", "Отмена" },
+            { "InvalidDischargeThreshold", "Неверный порог нагнетания." },
+            { "InvalidSuctionThreshold", "Неверный порог всасывания." },
+            { "InvalidScaleValues", "Неверные числовые значения в шкалах." },
+            { "Settings", "Настройки" },
+            { "PickColor", "..." },
+        };
+
+        private static readonly Dictionary<string, string> En = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            // MainForm
+            { "AppTitle", "ILHO Viewer" },
+            { "Browse", "Browse" },
+            { "Load", "Load" },
+            { "CopyPath", "Copy Path" },
+            { "Recent", "Recent:" },
+            { "NoTestLoaded", "No test loaded." },
+            { "Selected", "Selected: 0" },
+            { "AutoStep", "Auto step" },
+            { "Target", "Target:" },
+            { "Manual", "Manual:" },
+            { "Channels", "Channels" },
+            { "SelectedOnly", "Selected" },
+            { "SelectAll", "Select all" },
+            { "Clear", "Clear" },
+            { "IncludeExtra", "Include extra channels" },
+            { "Refrigerant", "Refrigerant:" },
+            { "ExportTemplate", "Export Template" },
+            { "Styles", "Styles..." },
+            { "PresetName", "Preset name" },
+            { "SavePreset", "Save Preset" },
+            { "Delete", "Delete" },
+            { "OrderName", "Order name" },
+            { "SaveOrder", "Save Order" },
+            { "Ready", "Ready." },
+            { "Working", "Working..." },
+            { "LoadingData", "Loading data..." },
+            { "PathCopied", "Path copied to clipboard." },
+            { "CopyPathFailed", "Copy path failed." },
+            { "SelectFolder", "Select a folder first." },
+            { "LoadedTest", "Loaded test: {0} rows." },
+            { "LoadFailed", "Load failed." },
+            { "SelectChannel", "Select at least one channel." },
+            { "TemplateNotFound", "template.xlsx not found next to project root." },
+            { "ExportingTemplate", "Exporting template..." },
+            { "TemplateExported", "Template exported." },
+            { "TemplateExportedWarning", "Template exported with warning." },
+            { "TemplateExportFailed", "Template export failed." },
+            { "SavingStyles", "Saving style settings..." },
+            { "StylesSaved", "Style settings saved." },
+            { "StylesSaveFailed", "Style settings save failed." },
+            { "EnterPresetName", "Enter preset name." },
+            { "PresetSaved", "Preset saved: {0}" },
+            { "PresetUpdated", "Preset updated: {0}" },
+            { "PresetLoaded", "Preset loaded: {0}" },
+            { "PresetInvalid", "Preset file is invalid." },
+            { "DeletePresetQ", "Delete preset \"{0}\"?" },
+            { "DeletePresetTitle", "Delete preset" },
+            { "PresetDeleted", "Preset deleted: {0}" },
+            { "PresetDeleteFailed", "Preset delete failed." },
+            { "EnterOrderName", "Enter order name." },
+            { "NoChannelsToSave", "No channels to save." },
+            { "OrderSaved", "Order saved: {0}" },
+            { "OrderUpdated", "Order updated: {0}" },
+            { "OrderLoaded", "Order loaded: {0}" },
+            { "OrderInvalid", "Order file is invalid." },
+            { "DeleteOrderQ", "Delete order \"{0}\"?" },
+            { "DeleteOrderTitle", "Delete order" },
+            { "OrderDeleted", "Order deleted: {0}" },
+            { "OrderDeleteFailed", "Order delete failed." },
+            { "Points", "Points: {0} | Start: {1:yyyy-MM-dd HH:mm:ss} | End: {2:yyyy-MM-dd HH:mm:ss}" },
+            { "SelectedInfo", "Selected: {0} / {1}{2}" },
+            { "StepInfo", " | step: {0} | ~{1} points" },
+            { "Language", "RU" },
+
+            // Sort modes
+            { "SortUser", "User" },
+            { "SortCode", "Code" },
+            { "SortNaturalCode", "Natural code" },
+            { "SortLabel", "Label" },
+            { "SortUnit", "Unit" },
+            { "SortPriorityAC", "Priority A/C" },
+            { "SortSelectedFirst", "Selected first" },
+
+            // SettingsDialog
+            { "StylesTitle", "Export Style Settings" },
+            { "RowMark", "Row Mark" },
+            { "TThreshold", "T threshold:" },
+            { "Color", "Color:" },
+            { "Intensity", "Intensity:" },
+            { "DischargeSuction", "Discharge / Suction" },
+            { "DischargeThreshold", "Discharge threshold:" },
+            { "SuctionThreshold", "Suction threshold:" },
+            { "ScalesWXY", "Scales W / X / Y" },
+            { "Scale", "Scale" },
+            { "Min", "Min" },
+            { "Opt", "Opt" },
+            { "Max", "Max" },
+            { "ColorMin", "Color Min" },
+            { "ColorOpt", "Color Opt" },
+            { "ColorMax", "Color Max" },
+            { "Save", "Save" },
+            { "Cancel", "Cancel" },
+            { "InvalidDischargeThreshold", "Invalid discharge threshold." },
+            { "InvalidSuctionThreshold", "Invalid suction threshold." },
+            { "InvalidScaleValues", "Invalid numeric value in scales." },
+            { "Settings", "Settings" },
+            { "PickColor", "..." },
+        };
+    }
+}

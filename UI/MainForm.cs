@@ -35,6 +35,12 @@ namespace LeMuReViewer.UI
         private readonly ComboBox _refrigerantBox;
         private readonly Button _exportTemplateButton;
         private readonly Button _settingsButton;
+        private readonly Button _langButton;
+        private readonly Label _recentLabel;
+        private readonly Label _targetLabel;
+        private readonly Label _manualLabel;
+        private readonly Label _channelsHeader;
+        private readonly Label _refrigLabel;
         private readonly TextBox _presetNameBox;
         private readonly Button _savePresetButton;
         private readonly ComboBox _presetsBox;
@@ -98,60 +104,69 @@ namespace LeMuReViewer.UI
 
             var folderRow = NewRow(); left.Controls.Add(folderRow, 0, 0);
             _folderBox = new TextBox(); _folderBox.Width = 220; folderRow.Controls.Add(_folderBox);
-            _browseButton = new Button(); _browseButton.Text = "Browse"; _browseButton.Click += BrowseButtonOnClick; folderRow.Controls.Add(_browseButton);
-            _loadButton = new Button(); _loadButton.Text = "Load"; _loadButton.Click += LoadButtonOnClick; folderRow.Controls.Add(_loadButton);
-            _copyPathButton = new Button(); _copyPathButton.Text = "Copy Path"; _copyPathButton.Click += CopyPathButtonOnClick; folderRow.Controls.Add(_copyPathButton);
+            _browseButton = new Button(); _browseButton.Text = Loc.Get("Browse"); _browseButton.Click += BrowseButtonOnClick; folderRow.Controls.Add(_browseButton);
+            _loadButton = new Button(); _loadButton.Text = Loc.Get("Load"); _loadButton.Click += LoadButtonOnClick; folderRow.Controls.Add(_loadButton);
+            _copyPathButton = new Button(); _copyPathButton.Text = Loc.Get("CopyPath"); _copyPathButton.Click += CopyPathButtonOnClick; folderRow.Controls.Add(_copyPathButton);
+            _langButton = new Button(); _langButton.Text = Loc.Get("Language"); _langButton.Width = 36; _langButton.Click += LangButtonOnClick; folderRow.Controls.Add(_langButton);
 
             var recentRow = NewRow(); left.Controls.Add(recentRow, 0, 1);
-            var recentLabel = new Label(); recentLabel.Text = "Recent:"; recentLabel.AutoSize = true; recentLabel.Padding = new Padding(0, 6, 4, 0); recentRow.Controls.Add(recentLabel);
+            _recentLabel = new Label(); _recentLabel.Text = Loc.Get("Recent"); _recentLabel.AutoSize = true; _recentLabel.Padding = new Padding(0, 6, 4, 0); recentRow.Controls.Add(_recentLabel);
             _recentFoldersBox = new ComboBox(); _recentFoldersBox.Width = 360; _recentFoldersBox.DropDownStyle = ComboBoxStyle.DropDownList; _recentFoldersBox.SelectedIndexChanged += RecentFoldersBoxOnSelectedIndexChanged; recentRow.Controls.Add(_recentFoldersBox);
 
-            _summaryLabel = new Label(); _summaryLabel.AutoSize = true; _summaryLabel.Padding = new Padding(4, 6, 4, 4); _summaryLabel.Text = "No test loaded."; left.Controls.Add(_summaryLabel, 0, 2);
-            _selectionInfoLabel = new Label(); _selectionInfoLabel.AutoSize = true; _selectionInfoLabel.Padding = new Padding(4, 2, 4, 6); _selectionInfoLabel.Text = "Selected: 0"; left.Controls.Add(_selectionInfoLabel, 0, 3);
+            _summaryLabel = new Label(); _summaryLabel.AutoSize = true; _summaryLabel.Padding = new Padding(4, 6, 4, 4); _summaryLabel.Text = Loc.Get("NoTestLoaded"); left.Controls.Add(_summaryLabel, 0, 2);
+            _selectionInfoLabel = new Label(); _selectionInfoLabel.AutoSize = true; _selectionInfoLabel.Padding = new Padding(4, 2, 4, 6); _selectionInfoLabel.Text = Loc.Get("Selected"); left.Controls.Add(_selectionInfoLabel, 0, 3);
 
             var stepRow = NewRow(); left.Controls.Add(stepRow, 0, 4);
-            _autoStepCheck = new CheckBox(); _autoStepCheck.Text = "Auto step"; _autoStepCheck.Checked = true; _autoStepCheck.AutoSize = true; _autoStepCheck.CheckedChanged += StepControlsOnChanged; stepRow.Controls.Add(_autoStepCheck);
-            var targetLabel = new Label(); targetLabel.Text = "Target:"; targetLabel.AutoSize = true; targetLabel.Padding = new Padding(8, 5, 2, 0); stepRow.Controls.Add(targetLabel);
+            _autoStepCheck = new CheckBox(); _autoStepCheck.Text = Loc.Get("AutoStep"); _autoStepCheck.Checked = true; _autoStepCheck.AutoSize = true; _autoStepCheck.CheckedChanged += StepControlsOnChanged; stepRow.Controls.Add(_autoStepCheck);
+            _targetLabel = new Label(); _targetLabel.Text = Loc.Get("Target"); _targetLabel.AutoSize = true; _targetLabel.Padding = new Padding(8, 5, 2, 0); stepRow.Controls.Add(_targetLabel);
             _targetPointsBox = new ComboBox(); _targetPointsBox.DropDownStyle = ComboBoxStyle.DropDownList; _targetPointsBox.Width = 90; _targetPointsBox.Items.Add("1000"); _targetPointsBox.Items.Add("2000"); _targetPointsBox.Items.Add("5000"); _targetPointsBox.Items.Add("10000"); _targetPointsBox.Items.Add("20000"); _targetPointsBox.SelectedIndex = 2; _targetPointsBox.SelectedIndexChanged += StepControlsOnChanged; stepRow.Controls.Add(_targetPointsBox);
-            var manualLabel = new Label(); manualLabel.Text = "Manual:"; manualLabel.AutoSize = true; manualLabel.Padding = new Padding(8, 5, 2, 0); stepRow.Controls.Add(manualLabel);
+            _manualLabel = new Label(); _manualLabel.Text = Loc.Get("Manual"); _manualLabel.AutoSize = true; _manualLabel.Padding = new Padding(8, 5, 2, 0); stepRow.Controls.Add(_manualLabel);
             _manualStepUpDown = new NumericUpDown(); _manualStepUpDown.Width = 70; _manualStepUpDown.Minimum = 1; _manualStepUpDown.Maximum = 100000; _manualStepUpDown.Value = 1; _manualStepUpDown.Enabled = false; _manualStepUpDown.ValueChanged += StepControlsOnChanged; stepRow.Controls.Add(_manualStepUpDown);
 
             var channelsHeaderRow = NewRow(); left.Controls.Add(channelsHeaderRow, 0, 5);
-            var channelsHeader = new Label(); channelsHeader.Text = "Channels"; channelsHeader.AutoSize = true; channelsHeader.Padding = new Padding(4, 6, 2, 0); channelsHeaderRow.Controls.Add(channelsHeader);
+            _channelsHeader = new Label(); _channelsHeader.Text = Loc.Get("Channels"); _channelsHeader.AutoSize = true; _channelsHeader.Padding = new Padding(4, 6, 2, 0); channelsHeaderRow.Controls.Add(_channelsHeader);
             _channelFilterBox = new TextBox(); _channelFilterBox.Width = 120; _channelFilterBox.TextChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_channelFilterBox);
-            _sortModeBox = new ComboBox(); _sortModeBox.Width = 120; _sortModeBox.DropDownStyle = ComboBoxStyle.DropDownList; _sortModeBox.Items.Add("User"); _sortModeBox.Items.Add("Code"); _sortModeBox.Items.Add("Natural code"); _sortModeBox.Items.Add("Label"); _sortModeBox.Items.Add("Unit"); _sortModeBox.Items.Add("Priority A/C"); _sortModeBox.Items.Add("Selected first"); _sortModeBox.SelectedIndex = 5; _sortModeBox.SelectedIndexChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_sortModeBox);
-            _selectedOnlyCheck = new CheckBox(); _selectedOnlyCheck.Text = "Selected"; _selectedOnlyCheck.AutoSize = true; _selectedOnlyCheck.CheckedChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_selectedOnlyCheck);
-            _selectAllChannelsButton = new Button(); _selectAllChannelsButton.Text = "Select all"; _selectAllChannelsButton.Width = 72; _selectAllChannelsButton.Click += SelectAllChannelsButtonOnClick; channelsHeaderRow.Controls.Add(_selectAllChannelsButton);
-            _clearChannelsButton = new Button(); _clearChannelsButton.Text = "Clear"; _clearChannelsButton.Width = 56; _clearChannelsButton.Click += ClearChannelsButtonOnClick; channelsHeaderRow.Controls.Add(_clearChannelsButton);
+            _sortModeBox = new ComboBox(); _sortModeBox.Width = 140; _sortModeBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            _sortModeBox.Items.Add(new SortModeItem("User", "SortUser"));
+            _sortModeBox.Items.Add(new SortModeItem("Code", "SortCode"));
+            _sortModeBox.Items.Add(new SortModeItem("Natural code", "SortNaturalCode"));
+            _sortModeBox.Items.Add(new SortModeItem("Label", "SortLabel"));
+            _sortModeBox.Items.Add(new SortModeItem("Unit", "SortUnit"));
+            _sortModeBox.Items.Add(new SortModeItem("Priority A/C", "SortPriorityAC"));
+            _sortModeBox.Items.Add(new SortModeItem("Selected first", "SortSelectedFirst"));
+            _sortModeBox.SelectedIndex = 5; _sortModeBox.SelectedIndexChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_sortModeBox);
+            _selectedOnlyCheck = new CheckBox(); _selectedOnlyCheck.Text = Loc.Get("SelectedOnly"); _selectedOnlyCheck.AutoSize = true; _selectedOnlyCheck.CheckedChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_selectedOnlyCheck);
+            _selectAllChannelsButton = new Button(); _selectAllChannelsButton.Text = Loc.Get("SelectAll"); _selectAllChannelsButton.Width = 90; _selectAllChannelsButton.Click += SelectAllChannelsButtonOnClick; channelsHeaderRow.Controls.Add(_selectAllChannelsButton);
+            _clearChannelsButton = new Button(); _clearChannelsButton.Text = Loc.Get("Clear"); _clearChannelsButton.Width = 72; _clearChannelsButton.Click += ClearChannelsButtonOnClick; channelsHeaderRow.Controls.Add(_clearChannelsButton);
             _channelsList = new CheckedListBox(); _channelsList.Dock = DockStyle.Fill; _channelsList.CheckOnClick = true; _channelsList.AllowDrop = true; _channelsList.ItemCheck += ChannelsListOnItemCheck; _channelsList.MouseDown += ChannelsListOnMouseDown; _channelsList.DragOver += ChannelsListOnDragOver; _channelsList.DragDrop += ChannelsListOnDragDrop; left.Controls.Add(_channelsList, 0, 6);
             _channelsList.IntegralHeight = false;
 
             var templateOptionsRow = NewRow(); left.Controls.Add(templateOptionsRow, 0, 7);
-            _includeExtraCheck = new CheckBox(); _includeExtraCheck.Text = "Include extra channels"; _includeExtraCheck.Checked = true; _includeExtraCheck.AutoSize = true; templateOptionsRow.Controls.Add(_includeExtraCheck);
-            var refrigLabel = new Label(); refrigLabel.Text = "Refrigerant:"; refrigLabel.AutoSize = true; refrigLabel.Padding = new Padding(8, 5, 2, 0); templateOptionsRow.Controls.Add(refrigLabel);
+            _includeExtraCheck = new CheckBox(); _includeExtraCheck.Text = Loc.Get("IncludeExtra"); _includeExtraCheck.Checked = true; _includeExtraCheck.AutoSize = true; templateOptionsRow.Controls.Add(_includeExtraCheck);
+            _refrigLabel = new Label(); _refrigLabel.Text = Loc.Get("Refrigerant"); _refrigLabel.AutoSize = true; _refrigLabel.Padding = new Padding(8, 5, 2, 0); templateOptionsRow.Controls.Add(_refrigLabel);
             _refrigerantBox = new ComboBox(); _refrigerantBox.DropDownStyle = ComboBoxStyle.DropDownList; _refrigerantBox.Width = 90; _refrigerantBox.Items.Add("R290"); _refrigerantBox.Items.Add("R600a"); _refrigerantBox.SelectedIndex = 0; templateOptionsRow.Controls.Add(_refrigerantBox);
 
             var exportButtonsRow = NewRow(); left.Controls.Add(exportButtonsRow, 0, 8);
-            _exportTemplateButton = new Button(); _exportTemplateButton.Text = "Export Template"; _exportTemplateButton.Enabled = false; _exportTemplateButton.Click += ExportTemplateButtonOnClick; exportButtonsRow.Controls.Add(_exportTemplateButton);
-            _settingsButton = new Button(); _settingsButton.Text = "Styles..."; _settingsButton.Click += SettingsButtonOnClick; exportButtonsRow.Controls.Add(_settingsButton);
+            _exportTemplateButton = new Button(); _exportTemplateButton.Text = Loc.Get("ExportTemplate"); _exportTemplateButton.Enabled = false; _exportTemplateButton.Click += ExportTemplateButtonOnClick; exportButtonsRow.Controls.Add(_exportTemplateButton);
+            _settingsButton = new Button(); _settingsButton.Text = Loc.Get("Styles"); _settingsButton.Click += SettingsButtonOnClick; exportButtonsRow.Controls.Add(_settingsButton);
 
             var presetSaveRow = NewRow(); left.Controls.Add(presetSaveRow, 0, 9);
-            _presetNameBox = new TextBox(); _presetNameBox.Width = 180; _presetNameBox.Text = "Preset name"; presetSaveRow.Controls.Add(_presetNameBox);
-            _savePresetButton = new Button(); _savePresetButton.Text = "Save Preset"; _savePresetButton.Enabled = false; _savePresetButton.Click += SavePresetButtonOnClick; presetSaveRow.Controls.Add(_savePresetButton);
+            _presetNameBox = new TextBox(); _presetNameBox.Width = 180; _presetNameBox.Text = Loc.Get("PresetName"); presetSaveRow.Controls.Add(_presetNameBox);
+            _savePresetButton = new Button(); _savePresetButton.Text = Loc.Get("SavePreset"); _savePresetButton.Enabled = false; _savePresetButton.Click += SavePresetButtonOnClick; presetSaveRow.Controls.Add(_savePresetButton);
 
             var presetLoadRow = NewRow(); left.Controls.Add(presetLoadRow, 0, 10);
             _presetsBox = new ComboBox(); _presetsBox.Width = 220; _presetsBox.DropDownStyle = ComboBoxStyle.DropDownList; presetLoadRow.Controls.Add(_presetsBox);
-            _loadPresetButton = new Button(); _loadPresetButton.Text = "Load"; _loadPresetButton.Enabled = false; _loadPresetButton.Click += LoadPresetButtonOnClick; presetLoadRow.Controls.Add(_loadPresetButton);
-            _deletePresetButton = new Button(); _deletePresetButton.Text = "Delete"; _deletePresetButton.Enabled = false; _deletePresetButton.Click += DeletePresetButtonOnClick; presetLoadRow.Controls.Add(_deletePresetButton);
+            _loadPresetButton = new Button(); _loadPresetButton.Text = Loc.Get("Load"); _loadPresetButton.Enabled = false; _loadPresetButton.Click += LoadPresetButtonOnClick; presetLoadRow.Controls.Add(_loadPresetButton);
+            _deletePresetButton = new Button(); _deletePresetButton.Text = Loc.Get("Delete"); _deletePresetButton.Enabled = false; _deletePresetButton.Click += DeletePresetButtonOnClick; presetLoadRow.Controls.Add(_deletePresetButton);
 
             var orderRow = NewRow(); left.Controls.Add(orderRow, 0, 11);
-            _orderNameBox = new TextBox(); _orderNameBox.Width = 130; _orderNameBox.Text = "Order name"; orderRow.Controls.Add(_orderNameBox);
-            _saveOrderButton = new Button(); _saveOrderButton.Text = "Save Order"; _saveOrderButton.Enabled = false; _saveOrderButton.Click += SaveOrderButtonOnClick; orderRow.Controls.Add(_saveOrderButton);
+            _orderNameBox = new TextBox(); _orderNameBox.Width = 130; _orderNameBox.Text = Loc.Get("OrderName"); orderRow.Controls.Add(_orderNameBox);
+            _saveOrderButton = new Button(); _saveOrderButton.Text = Loc.Get("SaveOrder"); _saveOrderButton.Enabled = false; _saveOrderButton.Click += SaveOrderButtonOnClick; orderRow.Controls.Add(_saveOrderButton);
             _ordersBox = new ComboBox(); _ordersBox.Width = 180; _ordersBox.DropDownStyle = ComboBoxStyle.DropDownList; orderRow.Controls.Add(_ordersBox);
-            _loadOrderButton = new Button(); _loadOrderButton.Text = "Load"; _loadOrderButton.Enabled = false; _loadOrderButton.Click += LoadOrderButtonOnClick; orderRow.Controls.Add(_loadOrderButton);
-            _deleteOrderButton = new Button(); _deleteOrderButton.Text = "Delete"; _deleteOrderButton.Enabled = false; _deleteOrderButton.Click += DeleteOrderButtonOnClick; orderRow.Controls.Add(_deleteOrderButton);
+            _loadOrderButton = new Button(); _loadOrderButton.Text = Loc.Get("Load"); _loadOrderButton.Enabled = false; _loadOrderButton.Click += LoadOrderButtonOnClick; orderRow.Controls.Add(_loadOrderButton);
+            _deleteOrderButton = new Button(); _deleteOrderButton.Text = Loc.Get("Delete"); _deleteOrderButton.Enabled = false; _deleteOrderButton.Click += DeleteOrderButtonOnClick; orderRow.Controls.Add(_deleteOrderButton);
 
-            _statusLabel = new Label(); _statusLabel.AutoSize = true; _statusLabel.Padding = new Padding(4, 6, 4, 8); _statusLabel.Text = "Ready."; left.Controls.Add(_statusLabel, 0, 12);
+            _statusLabel = new Label(); _statusLabel.AutoSize = true; _statusLabel.Padding = new Padding(4, 6, 4, 8); _statusLabel.Text = Loc.Get("Ready"); left.Controls.Add(_statusLabel, 0, 12);
 
             _chart = BuildChart();
             _splitMain.Panel2.Controls.Add(_chart);
@@ -177,7 +192,7 @@ namespace LeMuReViewer.UI
             _busyLabel.TextAlign = ContentAlignment.MiddleCenter;
             _busyLabel.Dock = DockStyle.Top;
             _busyLabel.Height = 38;
-            _busyLabel.Text = "Working...";
+            _busyLabel.Text = Loc.Get("Working");
             busyBox.Controls.Add(_busyLabel);
 
             _busyProgress = new ProgressBar();
@@ -200,8 +215,46 @@ namespace LeMuReViewer.UI
             FormClosing += OnFormClosingSaveOrder;
             FormClosing += OnFormClosingSaveUiState;
             KeyDown += MainFormOnKeyDown;
+            Loc.LanguageChanged += ApplyLocalization;
             LoadUiState();
             StepControlsOnChanged(this, EventArgs.Empty);
+        }
+
+        private void LangButtonOnClick(object sender, EventArgs e)
+        {
+            Loc.Current = Loc.Current == Lang.Ru ? Lang.En : Lang.Ru;
+        }
+
+        private void ApplyLocalization()
+        {
+            Text = Loc.Get("AppTitle");
+            _browseButton.Text = Loc.Get("Browse");
+            _loadButton.Text = Loc.Get("Load");
+            _copyPathButton.Text = Loc.Get("CopyPath");
+            _langButton.Text = Loc.Get("Language");
+            _recentLabel.Text = Loc.Get("Recent");
+            _autoStepCheck.Text = Loc.Get("AutoStep");
+            _targetLabel.Text = Loc.Get("Target");
+            _manualLabel.Text = Loc.Get("Manual");
+            _channelsHeader.Text = Loc.Get("Channels");
+            _selectedOnlyCheck.Text = Loc.Get("SelectedOnly");
+            _selectAllChannelsButton.Text = Loc.Get("SelectAll");
+            _clearChannelsButton.Text = Loc.Get("Clear");
+            _includeExtraCheck.Text = Loc.Get("IncludeExtra");
+            _refrigLabel.Text = Loc.Get("Refrigerant");
+            _exportTemplateButton.Text = Loc.Get("ExportTemplate");
+            _settingsButton.Text = Loc.Get("Styles");
+            _savePresetButton.Text = Loc.Get("SavePreset");
+            _loadPresetButton.Text = Loc.Get("Load");
+            _deletePresetButton.Text = Loc.Get("Delete");
+            _saveOrderButton.Text = Loc.Get("SaveOrder");
+            _loadOrderButton.Text = Loc.Get("Load");
+            _deleteOrderButton.Text = Loc.Get("Delete");
+            // Force sort combo to re-read ToString() of items
+            int selIdx = _sortModeBox.SelectedIndex;
+            typeof(ComboBox).GetMethod("RefreshItems", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(_sortModeBox, null);
+            if (selIdx >= 0 && selIdx < _sortModeBox.Items.Count) _sortModeBox.SelectedIndex = selIdx;
+            UpdateSelectionInfo();
         }
 
         private static FlowLayoutPanel NewRow()
@@ -241,8 +294,8 @@ namespace LeMuReViewer.UI
 
         private void CopyPathButtonOnClick(object sender, EventArgs e)
         {
-            try { if (!string.IsNullOrWhiteSpace(_folderBox.Text)) { Clipboard.SetText(_folderBox.Text); NotifySuccess("Path copied to clipboard."); } }
-            catch (Exception ex) { AppLogger.LogError(_projectRoot, "Copy path failed.", ex); NotifyError("Copy path failed."); }
+            try { if (!string.IsNullOrWhiteSpace(_folderBox.Text)) { Clipboard.SetText(_folderBox.Text); NotifySuccess(Loc.Get("PathCopied")); } }
+            catch (Exception ex) { AppLogger.LogError(_projectRoot, "Copy path failed.", ex); NotifyError(Loc.Get("CopyPathFailed")); }
         }
 
         private void RecentFoldersBoxOnSelectedIndexChanged(object sender, EventArgs e)
@@ -295,7 +348,7 @@ namespace LeMuReViewer.UI
         private void LoadButtonOnClick(object sender, EventArgs e)
         {
             string folder = (_folderBox.Text ?? string.Empty).Trim();
-            if (folder.Length == 0) { NotifyError("Select a folder first."); return; }
+            if (folder.Length == 0) { NotifyError(Loc.Get("SelectFolder")); return; }
             LoadFolder(folder, true);
         }
 
@@ -303,7 +356,7 @@ namespace LeMuReViewer.UI
         {
             try
             {
-                SetBusy(true, "Loading data...");
+                SetBusy(true, Loc.Get("LoadingData"));
                 Cursor = Cursors.WaitCursor;
                 TestData data = TestLoader.LoadTest(folder);
                 AppState.SetData(folder, data);
@@ -312,9 +365,9 @@ namespace LeMuReViewer.UI
                 {
                     AddRecentFolder(folder);
                 }
-                NotifySuccess("Loaded test: " + data.RowCount + " rows.");
+                NotifySuccess(string.Format(Loc.Get("LoadedTest"), data.RowCount));
             }
-            catch (Exception ex) { AppLogger.LogError(_projectRoot, "Load test failed.", ex); MessageBox.Show(this, ex.Message, "Load failed", MessageBoxButtons.OK, MessageBoxIcon.Error); NotifyError("Load failed."); }
+            catch (Exception ex) { AppLogger.LogError(_projectRoot, "Load test failed.", ex); MessageBox.Show(this, ex.Message, Loc.Get("LoadFailed"), MessageBoxButtons.OK, MessageBoxIcon.Error); NotifyError(Loc.Get("LoadFailed")); }
             finally { Cursor = Cursors.Default; SetBusy(false, null); }
         }
 
@@ -341,7 +394,7 @@ namespace LeMuReViewer.UI
             }
             RebuildChannelList();
             DataSummary summary = AppState.BuildSummary(data);
-            _summaryLabel.Text = string.Format("Points: {0} | Start: {1:yyyy-MM-dd HH:mm:ss} | End: {2:yyyy-MM-dd HH:mm:ss}", summary.Points, summary.Start, summary.End);
+            _summaryLabel.Text = string.Format(Loc.Get("Points"), summary.Points, summary.Start, summary.End);
             _exportTemplateButton.Enabled = _savePresetButton.Enabled = true;
             _loadPresetButton.Enabled = _deletePresetButton.Enabled = _presetsBox.Items.Count > 0;
             _saveOrderButton.Enabled = true;
@@ -414,7 +467,7 @@ namespace LeMuReViewer.UI
         private void ChannelsListOnDragDrop(object sender, DragEventArgs e)
         {
             if (_dragIndex < 0 || !e.Data.GetDataPresent(typeof(ChannelItem))) return;
-            if (_selectedOnlyCheck.Checked || !string.IsNullOrWhiteSpace(_channelFilterBox.Text) || (_sortModeBox.SelectedItem != null && _sortModeBox.SelectedItem.ToString() != "User")) return;
+            if (_selectedOnlyCheck.Checked || !string.IsNullOrWhiteSpace(_channelFilterBox.Text) || GetSelectedSortKey() != "User") return;
             Point p = _channelsList.PointToClient(new Point(e.X, e.Y));
             int targetIndex = _channelsList.IndexFromPoint(p);
             if (targetIndex < 0) targetIndex = _channelsList.Items.Count - 1;
@@ -495,7 +548,7 @@ namespace LeMuReViewer.UI
         {
             TestData data = AppState.Data; if (data == null) return;
             string templatePath = Path.Combine(_projectRoot, "template.xlsx");
-            if (!File.Exists(templatePath)) { NotifyError("template.xlsx not found next to project root."); return; }
+            if (!File.Exists(templatePath)) { NotifyError(Loc.Get("TemplateNotFound")); return; }
             List<string> selectedCodes = GetSelectedCodes();
             string refrig = _refrigerantBox.SelectedItem == null ? "R290" : _refrigerantBox.SelectedItem.ToString();
             using (var dialog = new SaveFileDialog())
@@ -504,21 +557,21 @@ namespace LeMuReViewer.UI
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
                 try
                 {
-                    SetBusy(true, "Exporting template...");
+                    SetBusy(true, Loc.Get("ExportingTemplate"));
                     byte[] payload = TemplateExporter.Export(templatePath, AppState.Folder, data, selectedCodes, _includeExtraCheck.Checked, refrig, _viewerSettings);
                     File.WriteAllBytes(dialog.FileName, payload);
                     TemplateValidationResult vr = TemplateExportValidator.Validate(payload);
                     if (vr.Ok)
                     {
-                        NotifySuccess("Template exported.");
+                        NotifySuccess(Loc.Get("TemplateExported"));
                     }
                     else
                     {
                         AppLogger.LogError(_projectRoot, "Template export validation warning: " + vr.Message, null);
-                        NotifyError("Template exported with warning.");
+                        NotifyError(Loc.Get("TemplateExportedWarning"));
                     }
                 }
-                catch (Exception ex) { AppLogger.LogError(_projectRoot, "Template export failed.", ex); MessageBox.Show(this, ex.Message, "Template export failed", MessageBoxButtons.OK, MessageBoxIcon.Error); NotifyError("Template export failed."); }
+                catch (Exception ex) { AppLogger.LogError(_projectRoot, "Template export failed.", ex); MessageBox.Show(this, ex.Message, Loc.Get("TemplateExportFailed"), MessageBoxButtons.OK, MessageBoxIcon.Error); NotifyError(Loc.Get("TemplateExportFailed")); }
                 finally { SetBusy(false, null); }
             }
         }
@@ -533,10 +586,10 @@ namespace LeMuReViewer.UI
                 }
 
                 _viewerSettings = dlg.Result ?? ViewerSettingsModel.CreateDefault();
-                SetBusy(true, "Saving style settings...");
+                SetBusy(true, Loc.Get("SavingStyles"));
                 bool ok = ViewerSettingsStore.Save(_viewerSettingsFilePath, _viewerSettings);
-                if (ok) NotifySuccess("Style settings saved.");
-                else NotifyError("Style settings save failed.");
+                if (ok) NotifySuccess(Loc.Get("StylesSaved"));
+                else NotifyError(Loc.Get("StylesSaveFailed"));
                 if (!ok) AppLogger.LogError(_projectRoot, "Style settings save failed.", null);
                 SetBusy(false, null);
             }
@@ -545,9 +598,9 @@ namespace LeMuReViewer.UI
         private void SavePresetButtonOnClick(object sender, EventArgs e)
         {
             List<string> selected = GetSelectedCodes();
-            if (selected.Count == 0) { NotifyError("Select at least one channel."); return; }
+            if (selected.Count == 0) { NotifyError(Loc.Get("SelectChannel")); return; }
             string name = (_presetNameBox.Text ?? string.Empty).Trim();
-            if (name.Length == 0 || string.Equals(name, "Preset name", StringComparison.OrdinalIgnoreCase)) { NotifyError("Enter preset name."); return; }
+            if (name.Length == 0 || string.Equals(name, Loc.Get("PresetName"), StringComparison.OrdinalIgnoreCase)) { NotifyError(Loc.Get("EnterPresetName")); return; }
             int targetPoints = 5000;
             int parsedTarget;
             if (_targetPointsBox.SelectedItem != null && int.TryParse(_targetPointsBox.SelectedItem.ToString(), out parsedTarget))
@@ -557,7 +610,7 @@ namespace LeMuReViewer.UI
             ViewerPreset payload = new ViewerPreset();
             payload.name = name;
             payload.channels = selected;
-            payload.sort_mode = _sortModeBox.SelectedItem == null ? "User" : _sortModeBox.SelectedItem.ToString();
+            payload.sort_mode = GetSelectedSortKey();
             payload.auto_step = _autoStepCheck.Checked;
             payload.target_points = targetPoints;
             payload.manual_step = (int)_manualStepUpDown.Value;
@@ -566,17 +619,17 @@ namespace LeMuReViewer.UI
 
             bool existed = PresetStore.Exists(_projectRoot, payload.name);
             ViewerPreset preset = PresetStore.Save(_projectRoot, payload);
-            ReloadPresets(); SelectPresetByKey(preset.key); NotifySuccess((existed ? "Preset updated: " : "Preset saved: ") + preset.name);
+            ReloadPresets(); SelectPresetByKey(preset.key); NotifySuccess(string.Format(existed ? Loc.Get("PresetUpdated") : Loc.Get("PresetSaved"), preset.name));
         }
 
         private void LoadPresetButtonOnClick(object sender, EventArgs e)
         {
             var item = _presetsBox.SelectedItem as PresetItem; if (item == null) return;
             ViewerPreset preset = PresetStore.Load(_projectRoot, item.Key);
-            if (preset == null || preset.channels == null) { NotifyError("Preset file is invalid."); return; }
+            if (preset == null || preset.channels == null) { NotifyError(Loc.Get("PresetInvalid")); return; }
             if (!string.IsNullOrWhiteSpace(preset.sort_mode))
             {
-                SelectComboItem(_sortModeBox, preset.sort_mode);
+                SelectSortModeByKey(preset.sort_mode);
             }
             if (preset.auto_step.HasValue)
             {
@@ -599,38 +652,38 @@ namespace LeMuReViewer.UI
             {
                 SelectComboItem(_refrigerantBox, preset.refrigerant);
             }
-            ApplyChannelChecks(preset.channels); NotifySuccess("Preset loaded: " + (preset.name ?? item.Key));
+            ApplyChannelChecks(preset.channels); NotifySuccess(string.Format(Loc.Get("PresetLoaded"), preset.name ?? item.Key));
         }
 
         private void DeletePresetButtonOnClick(object sender, EventArgs e)
         {
             var item = _presetsBox.SelectedItem as PresetItem; if (item == null) return;
-            if (MessageBox.Show(this, "Delete preset \"" + item.Name + "\"?", "Delete preset", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            if (MessageBox.Show(this, string.Format(Loc.Get("DeletePresetQ"), item.Name), Loc.Get("DeletePresetTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             bool ok = PresetStore.Delete(_projectRoot, item.Key);
             ReloadPresets();
-            if (ok) NotifySuccess("Preset deleted: " + item.Name);
-            else NotifyError("Preset delete failed.");
+            if (ok) NotifySuccess(string.Format(Loc.Get("PresetDeleted"), item.Name));
+            else NotifyError(Loc.Get("PresetDeleteFailed"));
         }
 
         private void SaveOrderButtonOnClick(object sender, EventArgs e)
         {
             string name = (_orderNameBox.Text ?? string.Empty).Trim();
-            if (name.Length == 0 || string.Equals(name, "Order name", StringComparison.OrdinalIgnoreCase))
+            if (name.Length == 0 || string.Equals(name, Loc.Get("OrderName"), StringComparison.OrdinalIgnoreCase))
             {
-                NotifyError("Enter order name.");
+                NotifyError(Loc.Get("EnterOrderName"));
                 return;
             }
             List<string> order = BuildCurrentOrder();
             if (order.Count == 0)
             {
-                NotifyError("No channels to save.");
+                NotifyError(Loc.Get("NoChannelsToSave"));
                 return;
             }
             bool existed = OrderStore.Exists(_projectRoot, name);
             ChannelOrderModel saved = OrderStore.Save(_projectRoot, name, order);
             ReloadOrders();
             SelectOrderByKey(saved.key);
-            NotifySuccess((existed ? "Order updated: " : "Order saved: ") + saved.name);
+            NotifySuccess(string.Format(existed ? Loc.Get("OrderUpdated") : Loc.Get("OrderSaved"), saved.name));
         }
 
         private void LoadOrderButtonOnClick(object sender, EventArgs e)
@@ -640,22 +693,22 @@ namespace LeMuReViewer.UI
             ChannelOrderModel order = OrderStore.Load(_projectRoot, item.Key);
             if (order == null || order.order == null)
             {
-                NotifyError("Order file is invalid.");
+                NotifyError(Loc.Get("OrderInvalid"));
                 return;
             }
             ApplyOrder(order.order);
-            NotifySuccess("Order loaded: " + (order.name ?? item.Key));
+            NotifySuccess(string.Format(Loc.Get("OrderLoaded"), order.name ?? item.Key));
         }
 
         private void DeleteOrderButtonOnClick(object sender, EventArgs e)
         {
             var item = _ordersBox.SelectedItem as OrderItem;
             if (item == null) return;
-            if (MessageBox.Show(this, "Delete order \"" + item.Name + "\"?", "Delete order", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            if (MessageBox.Show(this, string.Format(Loc.Get("DeleteOrderQ"), item.Name), Loc.Get("DeleteOrderTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             bool ok = OrderStore.Delete(_projectRoot, item.Key);
             ReloadOrders();
-            if (ok) NotifySuccess("Order deleted: " + item.Name);
-            else NotifyError("Order delete failed.");
+            if (ok) NotifySuccess(string.Format(Loc.Get("OrderDeleted"), item.Name));
+            else NotifyError(Loc.Get("OrderDeleteFailed"));
         }
 
         private void ApplyChannelChecks(IList<string> checkedCodes)
@@ -700,7 +753,7 @@ namespace LeMuReViewer.UI
                 items = items.Where(c => _checkedCodes.Contains(c.Code));
             }
 
-            string mode = _sortModeBox.SelectedItem == null ? "User" : _sortModeBox.SelectedItem.ToString();
+            string mode = GetSelectedSortKey();
             if (mode == "Code")
             {
                 items = items.OrderBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
@@ -748,7 +801,7 @@ namespace LeMuReViewer.UI
 
         private void RebuildAllChannelsFromVisibleList()
         {
-            if (_sortModeBox.SelectedItem == null || _sortModeBox.SelectedItem.ToString() != "User")
+            if (GetSelectedSortKey() != "User")
             {
                 return;
             }
@@ -811,6 +864,20 @@ namespace LeMuReViewer.UI
             }
         }
 
+        private void SelectSortModeByKey(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return;
+            for (int i = 0; i < _sortModeBox.Items.Count; i++)
+            {
+                var item = _sortModeBox.Items[i] as SortModeItem;
+                if (item != null && string.Equals(item.Key, key, StringComparison.OrdinalIgnoreCase))
+                {
+                    _sortModeBox.SelectedIndex = i;
+                    return;
+                }
+            }
+        }
+
         private static void SelectComboItem(ComboBox combo, string value)
         {
             if (combo == null || string.IsNullOrWhiteSpace(value))
@@ -839,9 +906,9 @@ namespace LeMuReViewer.UI
             {
                 int step = ResolveStep(data.TimestampsMs.Length);
                 int approx = Math.Max(1, data.TimestampsMs.Length / step);
-                stepInfo = " | step: " + step + " | ~" + approx + " points";
+                stepInfo = string.Format(Loc.Get("StepInfo"), step, approx);
             }
-            _selectionInfoLabel.Text = "Selected: " + selected + " / " + total + stepInfo;
+            _selectionInfoLabel.Text = string.Format(Loc.Get("SelectedInfo"), selected, total, stepInfo);
         }
 
         private void SetStatus(string text) { _statusLabel.Text = text ?? string.Empty; }
@@ -1002,7 +1069,7 @@ namespace LeMuReViewer.UI
                 state.auto_step = _autoStepCheck.Checked;
                 state.target_points = _targetPointsBox.SelectedItem == null ? "5000" : _targetPointsBox.SelectedItem.ToString();
                 state.manual_step = (int)_manualStepUpDown.Value;
-                state.sort_mode = _sortModeBox.SelectedItem == null ? "Priority A/C" : _sortModeBox.SelectedItem.ToString();
+                state.sort_mode = GetSelectedSortKey();
                 state.selected_only = _selectedOnlyCheck.Checked;
                 state.channel_filter = _channelFilterBox.Text;
                 state.include_extra = _includeExtraCheck.Checked;
@@ -1034,7 +1101,7 @@ namespace LeMuReViewer.UI
                 }
                 if (!string.IsNullOrWhiteSpace(state.sort_mode))
                 {
-                    SelectComboItem(_sortModeBox, state.sort_mode);
+                    SelectSortModeByKey(state.sort_mode);
                 }
                 if (!string.IsNullOrWhiteSpace(state.refrigerant))
                 {
@@ -1132,6 +1199,20 @@ namespace LeMuReViewer.UI
             public string refrigerant { get; set; }
             public int? splitter_distance { get; set; }
             public List<string> checked_channels { get; set; }
+        }
+
+        private sealed class SortModeItem
+        {
+            public string Key { get; private set; }
+            public string LocKey { get; private set; }
+            public SortModeItem(string key, string locKey) { Key = key; LocKey = locKey; }
+            public override string ToString() { return Loc.Get(LocKey); }
+        }
+
+        private string GetSelectedSortKey()
+        {
+            var item = _sortModeBox.SelectedItem as SortModeItem;
+            return item != null ? item.Key : "User";
         }
 
         private sealed class NaturalStringComparer : IComparer<string>
