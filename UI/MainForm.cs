@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using System.Windows.Forms.DataVisualization.Charting;
+using System.Drawing.Imaging;
 using LeMuReViewer.Core;
 using LeMuReViewer.Export;
 using LeMuReViewer.Settings;
@@ -58,6 +59,9 @@ namespace LeMuReViewer.UI
         private readonly ProgressBar _busyProgress;
         private readonly SplitContainer _splitMain;
         private readonly ToolTip _toolTip;
+        private readonly ContextMenuStrip _chartContextMenu;
+        private readonly ToolStripMenuItem _crosshairMenuItem;
+        private bool _crosshairEnabled = true;
 
         private int _dragIndex = -1;
         private readonly List<ChannelItem> _allChannels = new List<ChannelItem>();
@@ -174,6 +178,30 @@ namespace LeMuReViewer.UI
             _statusLabel = new Label(); _statusLabel.AutoSize = true; _statusLabel.Padding = new Padding(4, 6, 4, 8); _statusLabel.Text = Loc.Get("Ready"); left.Controls.Add(_statusLabel, 0, 12);
 
             _chart = BuildChart();
+            _chart.MouseMove += ChartOnMouseMove;
+            _chart.MouseWheel += ChartOnMouseWheel;
+            _chart.MouseDoubleClick += ChartOnMouseDoubleClick;
+
+            _chartContextMenu = new ContextMenuStrip();
+            _crosshairMenuItem = new ToolStripMenuItem(Loc.Get("ChartCrosshair")) { Checked = _crosshairEnabled, CheckOnClick = true };
+            _crosshairMenuItem.Click += CrosshairMenuItemOnClick;
+            _chartContextMenu.Items.Add(_crosshairMenuItem);
+            _chartContextMenu.Items.Add(new ToolStripSeparator());
+            var resetZoomItem = new ToolStripMenuItem(Loc.Get("ChartResetZoom"));
+            resetZoomItem.Click += ResetZoomMenuItemOnClick;
+            _chartContextMenu.Items.Add(resetZoomItem);
+            var showAllItem = new ToolStripMenuItem(Loc.Get("ChartShowAll"));
+            showAllItem.Click += ShowAllMenuItemOnClick;
+            _chartContextMenu.Items.Add(showAllItem);
+            _chartContextMenu.Items.Add(new ToolStripSeparator());
+            var saveImageItem = new ToolStripMenuItem(Loc.Get("ChartSaveImage")) { ShortcutKeys = Keys.Control | Keys.S };
+            saveImageItem.Click += SaveImageMenuItemOnClick;
+            _chartContextMenu.Items.Add(saveImageItem);
+            var copyImageItem = new ToolStripMenuItem(Loc.Get("ChartCopyImage")) { ShortcutKeys = Keys.Control | Keys.C };
+            copyImageItem.Click += CopyImageMenuItemOnClick;
+            _chartContextMenu.Items.Add(copyImageItem);
+            _chart.ContextMenuStrip = _chartContextMenu;
+
             _splitMain.Panel2.Controls.Add(_chart);
 
             _busyPanel = new Panel();
@@ -260,6 +288,14 @@ namespace LeMuReViewer.UI
             _saveOrderButton.Text = Loc.Get("SaveOrder");
             _loadOrderButton.Text = Loc.Get("Load");
             _deleteOrderButton.Text = Loc.Get("Delete");
+            // Context menu
+            _crosshairMenuItem.Text = Loc.Get("ChartCrosshair");
+            // Items: [0]=crosshair, [1]=sep, [2]=resetZoom, [3]=showAll, [4]=sep, [5]=saveImage, [6]=copyImage
+            ((ToolStripMenuItem)_chartContextMenu.Items[2]).Text = Loc.Get("ChartResetZoom");
+            ((ToolStripMenuItem)_chartContextMenu.Items[3]).Text = Loc.Get("ChartShowAll");
+            ((ToolStripMenuItem)_chartContextMenu.Items[5]).Text = Loc.Get("ChartSaveImage");
+            ((ToolStripMenuItem)_chartContextMenu.Items[6]).Text = Loc.Get("ChartCopyImage");
+
             // Force sort combo to re-read ToString() of items
             int selIdx = _sortModeBox.SelectedIndex;
             typeof(ComboBox).GetMethod("RefreshItems", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(_sortModeBox, null);
@@ -319,11 +355,186 @@ namespace LeMuReViewer.UI
             area.AxisY.MajorGrid.LineColor = Color.Gainsboro;
             area.CursorX.IsUserEnabled = true;
             area.CursorX.IsUserSelectionEnabled = true;
+            area.CursorX.LineColor = Color.Gray;
+            area.CursorX.LineDashStyle = ChartDashStyle.Dash;
+            area.CursorX.LineWidth = 1;
+            area.CursorY.IsUserEnabled = true;
+            area.CursorY.LineColor = Color.Gray;
+            area.CursorY.LineDashStyle = ChartDashStyle.Dash;
+            area.CursorY.LineWidth = 1;
             area.AxisX.ScrollBar.Enabled = true;
             area.AxisX.ScaleView.Zoomable = true;
+            area.AxisY.ScaleView.Zoomable = true;
             chart.ChartAreas.Add(area);
             var legend = new Legend("legend"); legend.Docking = Docking.Top; legend.Alignment = StringAlignment.Center; chart.Legends.Add(legend);
             return chart;
+        }
+
+        // ──── Chart interactivity ────
+
+        private void ChartOnMouseMove(object sender, MouseEventArgs e)
+        {
+            if (_chart.ChartAreas.Count == 0 || _chart.Series.Count == 0) return;
+            var area = _chart.ChartAreas[0];
+            try
+            {
+                double xVal = area.AxisX.PixelPositionToValue(e.X);
+                double yVal = area.AxisY.PixelPositionToValue(e.Y);
+
+                if (_crosshairEnabled)
+                {
+                    area.CursorX.SetCursorPosition(xVal);
+                    area.CursorY.SetCursorPosition(yVal);
+                }
+
+                HitTestResult hit = _chart.HitTest(e.X, e.Y);
+                if (hit.ChartElementType == ChartElementType.DataPoint && hit.PointIndex >= 0 && hit.Series != null)
+                {
+                    DataPoint dp = hit.Series.Points[hit.PointIndex];
+                    DateTime dt = DateTime.FromOADate(dp.XValue);
+                    string tip = string.Format("{0}\n{1:yyyy-MM-dd HH:mm:ss}\n{2:F2}", hit.Series.Name, dt, dp.YValues[0]);
+                    _toolTip.SetToolTip(_chart, tip);
+
+                    // Highlight hovered series
+                    foreach (Series s in _chart.Series)
+                    {
+                        s.BorderWidth = s == hit.Series ? 3 : 1;
+                    }
+                }
+                else
+                {
+                    _toolTip.SetToolTip(_chart, string.Empty);
+                    foreach (Series s in _chart.Series)
+                    {
+                        s.BorderWidth = 2;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void ChartOnMouseWheel(object sender, MouseEventArgs e)
+        {
+            if (_chart.ChartAreas.Count == 0) return;
+            var area = _chart.ChartAreas[0];
+            try
+            {
+                bool zoomY = Control.ModifierKeys.HasFlag(Keys.Control);
+                Axis axis = zoomY ? area.AxisY : area.AxisX;
+
+                double viewMin = axis.ScaleView.ViewMinimum;
+                double viewMax = axis.ScaleView.ViewMaximum;
+                double range = viewMax - viewMin;
+                if (range <= 0) return;
+
+                double mousePos;
+                try
+                {
+                    mousePos = zoomY
+                        ? area.AxisY.PixelPositionToValue(e.Y)
+                        : area.AxisX.PixelPositionToValue(e.X);
+                }
+                catch { return; }
+
+                double ratio = (mousePos - viewMin) / range;
+                double factor = e.Delta > 0 ? 0.8 : 1.25;
+                double newRange = range * factor;
+
+                // Limit zoom range
+                double fullMin = axis.Minimum;
+                double fullMax = axis.Maximum;
+                double fullRange = fullMax - fullMin;
+                if (double.IsNaN(fullRange) || fullRange <= 0) return;
+                if (newRange > fullRange) { axis.ScaleView.ZoomReset(0); return; }
+                if (newRange < fullRange * 0.001) return;
+
+                double newMin = mousePos - newRange * ratio;
+                double newMax = newMin + newRange;
+
+                if (newMin < fullMin) { newMin = fullMin; newMax = fullMin + newRange; }
+                if (newMax > fullMax) { newMax = fullMax; newMin = fullMax - newRange; }
+
+                axis.ScaleView.Zoom(newMin, newMax);
+            }
+            catch { }
+        }
+
+        private void ChartOnMouseDoubleClick(object sender, MouseEventArgs e)
+        {
+            ResetChartZoom();
+        }
+
+        private void ResetChartZoom()
+        {
+            if (_chart.ChartAreas.Count == 0) return;
+            var area = _chart.ChartAreas[0];
+            area.AxisX.ScaleView.ZoomReset(0);
+            area.AxisY.ScaleView.ZoomReset(0);
+        }
+
+        private void CrosshairMenuItemOnClick(object sender, EventArgs e)
+        {
+            _crosshairEnabled = _crosshairMenuItem.Checked;
+            if (!_crosshairEnabled && _chart.ChartAreas.Count > 0)
+            {
+                _chart.ChartAreas[0].CursorX.SetCursorPosition(double.NaN);
+                _chart.ChartAreas[0].CursorY.SetCursorPosition(double.NaN);
+            }
+        }
+
+        private void ResetZoomMenuItemOnClick(object sender, EventArgs e)
+        {
+            ResetChartZoom();
+        }
+
+        private void ShowAllMenuItemOnClick(object sender, EventArgs e)
+        {
+            if (_chart.ChartAreas.Count == 0) return;
+            var area = _chart.ChartAreas[0];
+            area.AxisX.ScaleView.ZoomReset(0);
+            area.AxisY.ScaleView.ZoomReset(0);
+            area.AxisX.Minimum = double.NaN;
+            area.AxisX.Maximum = double.NaN;
+            area.AxisY.Minimum = double.NaN;
+            area.AxisY.Maximum = double.NaN;
+        }
+
+        private void SaveImageMenuItemOnClick(object sender, EventArgs e)
+        {
+            using (var dialog = new SaveFileDialog())
+            {
+                dialog.Filter = Loc.Get("ChartImageFilter");
+                dialog.FileName = "chart_" + DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                try
+                {
+                    ChartImageFormat format = ChartImageFormat.Png;
+                    string ext = Path.GetExtension(dialog.FileName).ToLowerInvariant();
+                    if (ext == ".jpg" || ext == ".jpeg") format = ChartImageFormat.Jpeg;
+                    else if (ext == ".bmp") format = ChartImageFormat.Bmp;
+                    _chart.SaveImage(dialog.FileName, format);
+                    NotifySuccess(Loc.Get("ChartImageSaved"));
+                }
+                catch (Exception ex) { AppLogger.LogError(_projectRoot, "Save chart image failed.", ex); NotifyError(ex.Message); }
+            }
+        }
+
+        private void CopyImageMenuItemOnClick(object sender, EventArgs e)
+        {
+            try
+            {
+                using (var ms = new MemoryStream())
+                {
+                    _chart.SaveImage(ms, ChartImageFormat.Png);
+                    ms.Position = 0;
+                    using (var bmp = new Bitmap(ms))
+                    {
+                        Clipboard.SetImage(bmp);
+                    }
+                }
+                NotifySuccess(Loc.Get("ChartImageCopied"));
+            }
+            catch (Exception ex) { AppLogger.LogError(_projectRoot, "Copy chart image failed.", ex); NotifyError(ex.Message); }
         }
 
         private void BrowseButtonOnClick(object sender, EventArgs e)
@@ -384,6 +595,24 @@ namespace LeMuReViewer.UI
             if (e.Control && e.KeyCode == Keys.E)
             {
                 ExportTemplateButtonOnClick(this, EventArgs.Empty);
+                e.SuppressKeyPress = true;
+                return;
+            }
+            if (e.Control && e.KeyCode == Keys.S)
+            {
+                SaveImageMenuItemOnClick(this, EventArgs.Empty);
+                e.SuppressKeyPress = true;
+                return;
+            }
+            if (e.Control && e.KeyCode == Keys.C && _chart.Focused)
+            {
+                CopyImageMenuItemOnClick(this, EventArgs.Empty);
+                e.SuppressKeyPress = true;
+                return;
+            }
+            if (e.KeyCode == Keys.Home)
+            {
+                ResetChartZoom();
                 e.SuppressKeyPress = true;
             }
         }

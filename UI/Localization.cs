@@ -163,6 +163,17 @@ namespace LeMuReViewer.UI
             { "InvalidScaleValues", "Неверные числовые значения в шкалах." },
             { "Settings", "Настройки" },
             { "PickColor", "..." },
+
+            // Chart interactivity
+            { "ChartCrosshair", "Показать crosshair" },
+            { "ChartResetZoom", "Сбросить зум" },
+            { "ChartShowAll", "Показать все данные" },
+            { "ChartSaveImage", "Сохранить как изображение..." },
+            { "ChartCopyImage", "Копировать в буфер обмена" },
+            { "TipCrosshair", "Перекрестие с координатами при наведении" },
+            { "ChartImageFilter", "PNG (*.png)|*.png|JPEG (*.jpg)|*.jpg|BMP (*.bmp)|*.bmp" },
+            { "ChartImageSaved", "Изображение сохранено." },
+            { "ChartImageCopied", "Изображение скопировано в буфер." },
         };
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -295,6 +306,17 @@ namespace LeMuReViewer.UI
             { "InvalidScaleValues", "Invalid numeric value in scales." },
             { "Settings", "Settings" },
             { "PickColor", "..." },
+
+            // Chart interactivity
+            { "ChartCrosshair", "Show crosshair" },
+            { "ChartResetZoom", "Reset zoom" },
+            { "ChartShowAll", "Show all data" },
+            { "ChartSaveImage", "Save as image..." },
+            { "ChartCopyImage", "Copy to clipboard" },
+            { "TipCrosshair", "Crosshair with coordinates on hover" },
+            { "ChartImageFilter", "PNG (*.png)|*.png|JPEG (*.jpg)|*.jpg|BMP (*.bmp)|*.bmp" },
+            { "ChartImageSaved", "Image saved." },
+            { "ChartImageCopied", "Image copied to clipboard." },
         };
     }
 }
