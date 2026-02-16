@@ -8,6 +8,8 @@ using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using System.Windows.Forms.DataVisualization.Charting;
 using System.Drawing.Imaging;
+using System.Diagnostics;
+using System.Threading.Tasks;
 using LeMuReViewer.Core;
 using LeMuReViewer.Export;
 using LeMuReViewer.Settings;
@@ -61,8 +63,17 @@ namespace LeMuReViewer.UI
         private readonly ContextMenuStrip _chartContextMenu;
         private readonly ToolStripMenuItem _crosshairMenuItem;
         private bool _crosshairEnabled = true;
+        private readonly RangeTrackBar _rangeTrackBar;
+        private readonly Label _rangeLabel;
+        private readonly Button _resetRangeButton;
+        private double _rangeStartOa = double.NaN;
+        private double _rangeEndOa = double.NaN;
+        private readonly List<RangeTrackBar> _detachedRangeBars = new List<RangeTrackBar>();
+        private bool _syncingRange;
 
         private int _dragIndex = -1;
+        private Point _dragStartPoint = Point.Empty;
+        private bool _dragInitiated;
         private readonly List<ChannelItem> _allChannels = new List<ChannelItem>();
         private readonly HashSet<string> _checkedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _pendingCheckedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -148,7 +159,7 @@ namespace LeMuReViewer.UI
             _selectedOnlyCheck = new CheckBox(); _selectedOnlyCheck.Text = Loc.Get("SelectedOnly"); _selectedOnlyCheck.AutoSize = true; _selectedOnlyCheck.CheckedChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_selectedOnlyCheck);
             _selectAllChannelsButton = new Button(); _selectAllChannelsButton.Text = Loc.Get("SelectAll"); _selectAllChannelsButton.AutoSize = true; _selectAllChannelsButton.Click += SelectAllChannelsButtonOnClick; channelsHeaderRow.Controls.Add(_selectAllChannelsButton);
             _clearChannelsButton = new Button(); _clearChannelsButton.Text = Loc.Get("Clear"); _clearChannelsButton.AutoSize = true; _clearChannelsButton.Click += ClearChannelsButtonOnClick; channelsHeaderRow.Controls.Add(_clearChannelsButton);
-            _channelsList = new CheckedListBox(); _channelsList.Dock = DockStyle.Fill; _channelsList.CheckOnClick = true; _channelsList.AllowDrop = true; _channelsList.ItemCheck += ChannelsListOnItemCheck; _channelsList.MouseDown += ChannelsListOnMouseDown; _channelsList.DragOver += ChannelsListOnDragOver; _channelsList.DragDrop += ChannelsListOnDragDrop; left.Controls.Add(_channelsList, 0, 6);
+            _channelsList = new CheckedListBox(); _channelsList.Dock = DockStyle.Fill; _channelsList.CheckOnClick = true; _channelsList.AllowDrop = true; _channelsList.ItemCheck += ChannelsListOnItemCheck; _channelsList.MouseDown += ChannelsListOnMouseDown; _channelsList.MouseMove += ChannelsListOnMouseMove; _channelsList.DragOver += ChannelsListOnDragOver; _channelsList.DragDrop += ChannelsListOnDragDrop; left.Controls.Add(_channelsList, 0, 6);
             _channelsList.IntegralHeight = false;
 
             var templateOptionsRow = NewRow(); left.Controls.Add(templateOptionsRow, 0, 7);
@@ -194,6 +205,9 @@ namespace LeMuReViewer.UI
             var showAllItem = new ToolStripMenuItem(Loc.Get("ChartShowAll"));
             showAllItem.Click += ShowAllMenuItemOnClick;
             _chartContextMenu.Items.Add(showAllItem);
+            var resetRangeItem = new ToolStripMenuItem(Loc.Get("ResetRange"));
+            resetRangeItem.Click += delegate { ResetRangeButtonOnClick(null, EventArgs.Empty); };
+            _chartContextMenu.Items.Add(resetRangeItem);
             _chartContextMenu.Items.Add(new ToolStripSeparator());
             var detachItem = new ToolStripMenuItem(Loc.Get("ChartDetach"));
             detachItem.Click += DetachChartMenuItemOnClick;
@@ -206,6 +220,30 @@ namespace LeMuReViewer.UI
             copyImageItem.Click += CopyImageMenuItemOnClick;
             _chartContextMenu.Items.Add(copyImageItem);
             _chart.ContextMenuStrip = _chartContextMenu;
+
+            var rangePanel = new FlowLayoutPanel();
+            rangePanel.Dock = DockStyle.Bottom;
+            rangePanel.AutoSize = true;
+            rangePanel.WrapContents = false;
+            rangePanel.Padding = new Padding(4, 2, 4, 2);
+            _rangeLabel = new Label();
+            _rangeLabel.AutoSize = true;
+            _rangeLabel.Padding = new Padding(0, 4, 4, 0);
+            _rangeLabel.Text = Loc.Get("RangeAll");
+            rangePanel.Controls.Add(_rangeLabel);
+            _resetRangeButton = new Button();
+            _resetRangeButton.Text = Loc.Get("ResetRange");
+            _resetRangeButton.AutoSize = true;
+            _resetRangeButton.Visible = false;
+            _resetRangeButton.Click += ResetRangeButtonOnClick;
+            rangePanel.Controls.Add(_resetRangeButton);
+            _splitMain.Panel2.Controls.Add(rangePanel);
+
+            _rangeTrackBar = new RangeTrackBar();
+            _rangeTrackBar.Dock = DockStyle.Bottom;
+            _rangeTrackBar.Height = 48;
+            _rangeTrackBar.RangeChanged += RangeTrackBarOnRangeChanged;
+            _splitMain.Panel2.Controls.Add(_rangeTrackBar);
 
             _splitMain.Panel2.Controls.Add(_chart);
 
@@ -292,13 +330,16 @@ namespace LeMuReViewer.UI
             _saveOrderButton.Text = Loc.Get("SaveOrder");
             _loadOrderButton.Text = Loc.Get("Load");
             _deleteOrderButton.Text = Loc.Get("Delete");
-            // Context menu: [0]=crosshair [1]=sep [2]=resetZoom [3]=showAll [4]=sep [5]=detach [6]=sep [7]=saveImage [8]=copyImage
+            // Context menu: [0]=crosshair [1]=sep [2]=resetZoom [3]=showAll [4]=resetRange [5]=sep [6]=detach [7]=sep [8]=saveImage [9]=copyImage
             _crosshairMenuItem.Text = Loc.Get("ChartCrosshair");
             ((ToolStripMenuItem)_chartContextMenu.Items[2]).Text = Loc.Get("ChartResetZoom");
             ((ToolStripMenuItem)_chartContextMenu.Items[3]).Text = Loc.Get("ChartShowAll");
-            ((ToolStripMenuItem)_chartContextMenu.Items[5]).Text = Loc.Get("ChartDetach");
-            ((ToolStripMenuItem)_chartContextMenu.Items[7]).Text = Loc.Get("ChartSaveImage");
-            ((ToolStripMenuItem)_chartContextMenu.Items[8]).Text = Loc.Get("ChartCopyImage");
+            ((ToolStripMenuItem)_chartContextMenu.Items[4]).Text = Loc.Get("ResetRange");
+            ((ToolStripMenuItem)_chartContextMenu.Items[6]).Text = Loc.Get("ChartDetach");
+            ((ToolStripMenuItem)_chartContextMenu.Items[8]).Text = Loc.Get("ChartSaveImage");
+            ((ToolStripMenuItem)_chartContextMenu.Items[9]).Text = Loc.Get("ChartCopyImage");
+            _rangeLabel.Text = Loc.Get("RangeAll");
+            _resetRangeButton.Text = Loc.Get("ResetRange");
 
             // Force sort combo to re-read ToString() of items
             int selIdx = _sortModeBox.SelectedIndex;
@@ -357,7 +398,7 @@ namespace LeMuReViewer.UI
             area.AxisX.MajorGrid.LineColor = Color.Gainsboro;
             area.AxisY.MajorGrid.LineColor = Color.Gainsboro;
             area.CursorX.IsUserEnabled = true;
-            area.CursorX.IsUserSelectionEnabled = true;
+            area.CursorX.IsUserSelectionEnabled = false;
             area.CursorX.LineColor = Color.Gray;
             area.CursorX.LineDashStyle = ChartDashStyle.Dash;
             area.CursorX.LineWidth = 1;
@@ -365,15 +406,85 @@ namespace LeMuReViewer.UI
             area.CursorY.LineColor = Color.Gray;
             area.CursorY.LineDashStyle = ChartDashStyle.Dash;
             area.CursorY.LineWidth = 1;
-            area.AxisX.ScrollBar.Enabled = true;
-            area.AxisX.ScaleView.Zoomable = true;
-            area.AxisY.ScaleView.Zoomable = true;
+            area.AxisX.ScrollBar.Enabled = false;
+            area.AxisX.ScaleView.Zoomable = false;
+            area.AxisY.ScaleView.Zoomable = false;
+
             chart.ChartAreas.Add(area);
             var legend = new Legend("legend"); legend.Docking = Docking.Top; legend.Alignment = StringAlignment.Center; chart.Legends.Add(legend);
             return chart;
         }
 
         // ──── Chart interactivity ────
+
+        private void RangeTrackBarOnRangeChanged(object sender, EventArgs e)
+        {
+            if (_syncingRange) return;
+            var trackBar = sender as RangeTrackBar;
+            if (trackBar == null) return;
+
+            double lo = trackBar.LowerValue;
+            double hi = trackBar.UpperValue;
+
+            bool isFullRange = Math.Abs(lo - trackBar.Minimum) < 1e-10 && Math.Abs(hi - trackBar.Maximum) < 1e-10;
+
+            if (isFullRange)
+            {
+                _rangeStartOa = double.NaN;
+                _rangeEndOa = double.NaN;
+                _rangeLabel.Text = Loc.Get("RangeAll");
+                _resetRangeButton.Visible = false;
+                if (_chart.ChartAreas.Count > 0)
+                {
+                    _chart.ChartAreas[0].AxisX.Minimum = double.NaN;
+                    _chart.ChartAreas[0].AxisX.Maximum = double.NaN;
+                }
+            }
+            else
+            {
+                _rangeStartOa = lo;
+                _rangeEndOa = hi;
+                DateTime dtStart = DateTime.FromOADate(lo);
+                DateTime dtEnd = DateTime.FromOADate(hi);
+                _rangeLabel.Text = string.Format(Loc.Get("RangeSelected"), dtStart, dtEnd);
+                _resetRangeButton.Visible = true;
+                if (_chart.ChartAreas.Count > 0)
+                {
+                    _chart.ChartAreas[0].AxisX.Minimum = lo;
+                    _chart.ChartAreas[0].AxisX.Maximum = hi;
+                }
+            }
+
+            // Sync all range bars (main + detached)
+            SyncAllRangeBars(trackBar, lo, hi);
+        }
+
+        private void SyncAllRangeBars(RangeTrackBar source, double lo, double hi)
+        {
+            _syncingRange = true;
+            try
+            {
+                // Sync main trackbar if source is a detached one
+                if (source != _rangeTrackBar)
+                {
+                    _rangeTrackBar.LowerValue = lo;
+                    _rangeTrackBar.UpperValue = hi;
+                }
+                // Sync all detached trackbars
+                for (int i = _detachedRangeBars.Count - 1; i >= 0; i--)
+                {
+                    RangeTrackBar bar = _detachedRangeBars[i];
+                    if (bar.IsDisposed) { _detachedRangeBars.RemoveAt(i); continue; }
+                    if (bar == source) continue;
+                    bar.LowerValue = lo;
+                    bar.UpperValue = hi;
+                }
+            }
+            finally
+            {
+                _syncingRange = false;
+            }
+        }
 
         private void ChartOnMouseMove(object sender, MouseEventArgs e)
         {
@@ -389,31 +500,71 @@ namespace LeMuReViewer.UI
                     area.CursorX.SetCursorPosition(xVal);
                     area.CursorY.SetCursorPosition(yVal);
                 }
-
-                HitTestResult hit = _chart.HitTest(e.X, e.Y);
-                if (hit.ChartElementType == ChartElementType.DataPoint && hit.PointIndex >= 0 && hit.Series != null)
-                {
-                    DataPoint dp = hit.Series.Points[hit.PointIndex];
-                    DateTime dt = DateTime.FromOADate(dp.XValue);
-                    string tip = string.Format("{0}\n{1:yyyy-MM-dd HH:mm:ss}\n{2:F2}", hit.Series.Name, dt, dp.YValues[0]);
-                    _toolTip.SetToolTip(_chart, tip);
-
-                    // Highlight hovered series
-                    foreach (Series s in _chart.Series)
-                    {
-                        s.BorderWidth = s == hit.Series ? 3 : 1;
-                    }
-                }
-                else
-                {
-                    _toolTip.SetToolTip(_chart, string.Empty);
-                    foreach (Series s in _chart.Series)
-                    {
-                        s.BorderWidth = 2;
-                    }
-                }
+                BuildCrosshairTooltip(_chart, _toolTip, xVal);
             }
             catch { }
+        }
+
+        private static void BuildCrosshairTooltip(Chart chart, ToolTip toolTip, double xVal)
+        {
+            if (chart.Series.Count == 0)
+            {
+                if ((chart.Tag as string) != string.Empty)
+                {
+                    chart.Tag = string.Empty;
+                    toolTip.SetToolTip(chart, string.Empty);
+                }
+                return;
+            }
+
+            DateTime cursorTime = DateTime.FromOADate(xVal);
+            var sb = new System.Text.StringBuilder();
+            sb.AppendFormat("{0:yyyy-MM-dd HH:mm:ss}", cursorTime);
+
+            Series closestSeries = null;
+            double closestDist = double.MaxValue;
+
+            foreach (Series s in chart.Series)
+            {
+                if (s.Points.Count == 0) continue;
+                int idx = FindNearestPointIndex(s.Points, xVal);
+                if (idx < 0) continue;
+                DataPoint dp = s.Points[idx];
+                sb.AppendFormat("\n{0}: {1:F2}", s.Name, dp.YValues[0]);
+
+                double dist = Math.Abs(dp.XValue - xVal);
+                if (dist < closestDist) { closestDist = dist; closestSeries = s; }
+            }
+
+            foreach (Series s in chart.Series)
+            {
+                s.BorderWidth = s == closestSeries ? 3 : 2;
+            }
+
+            string text = sb.ToString();
+            string prev = chart.Tag as string;
+            if (!string.Equals(prev, text, StringComparison.Ordinal))
+            {
+                chart.Tag = text;
+                toolTip.SetToolTip(chart, text);
+            }
+        }
+
+        private static int FindNearestPointIndex(DataPointCollection points, double xValue)
+        {
+            int lo = 0;
+            int hi = points.Count - 1;
+            while (lo <= hi)
+            {
+                int mid = lo + (hi - lo) / 2;
+                double midX = points[mid].XValue;
+                if (midX < xValue) lo = mid + 1;
+                else if (midX > xValue) hi = mid - 1;
+                else return mid;
+            }
+            if (lo >= points.Count) return hi;
+            if (hi < 0) return lo;
+            return Math.Abs(points[lo].XValue - xValue) < Math.Abs(points[hi].XValue - xValue) ? lo : hi;
         }
 
         private void ChartOnMouseWheel(object sender, MouseEventArgs e)
@@ -500,6 +651,22 @@ namespace LeMuReViewer.UI
             area.AxisX.Maximum = double.NaN;
             area.AxisY.Minimum = double.NaN;
             area.AxisY.Maximum = double.NaN;
+            ResetRangeButtonOnClick(null, EventArgs.Empty);
+        }
+
+        private void ResetRangeButtonOnClick(object sender, EventArgs e)
+        {
+            _rangeStartOa = double.NaN;
+            _rangeEndOa = double.NaN;
+            _rangeTrackBar.LowerValue = _rangeTrackBar.Minimum;
+            _rangeTrackBar.UpperValue = _rangeTrackBar.Maximum;
+            _rangeLabel.Text = Loc.Get("RangeAll");
+            _resetRangeButton.Visible = false;
+            if (_chart.ChartAreas.Count > 0)
+            {
+                _chart.ChartAreas[0].AxisX.Minimum = double.NaN;
+                _chart.ChartAreas[0].AxisX.Maximum = double.NaN;
+            }
         }
 
         private void SaveImageMenuItemOnClick(object sender, EventArgs e)
@@ -575,7 +742,50 @@ namespace LeMuReViewer.UI
                 detachedChart.ResumeLayout();
             }
 
+            // Add a range track bar to the detached window
+            var detachedRangeBar = new RangeTrackBar();
+            detachedRangeBar.Dock = DockStyle.Bottom;
+            detachedRangeBar.Height = 48;
+            detachedRangeBar.Minimum = _rangeTrackBar.Minimum;
+            detachedRangeBar.Maximum = _rangeTrackBar.Maximum;
+            detachedRangeBar.LowerValue = _rangeTrackBar.LowerValue;
+            detachedRangeBar.UpperValue = _rangeTrackBar.UpperValue;
+
+            // Use shared handler for sync; also update detached chart axis
+            detachedRangeBar.RangeChanged += RangeTrackBarOnRangeChanged;
+            detachedRangeBar.RangeChanged += delegate
+            {
+                if (_syncingRange) return;
+                if (detachedChart.ChartAreas.Count == 0) return;
+                bool full = Math.Abs(detachedRangeBar.LowerValue - detachedRangeBar.Minimum) < 1e-10
+                         && Math.Abs(detachedRangeBar.UpperValue - detachedRangeBar.Maximum) < 1e-10;
+                detachedChart.ChartAreas[0].AxisX.Minimum = full ? double.NaN : detachedRangeBar.LowerValue;
+                detachedChart.ChartAreas[0].AxisX.Maximum = full ? double.NaN : detachedRangeBar.UpperValue;
+            };
+
+            // Also update detached chart when main trackbar changes (via sync)
+            _rangeTrackBar.RangeChanged += delegate
+            {
+                if (detachedRangeBar.IsDisposed || detachedChart.IsDisposed) return;
+                if (detachedChart.ChartAreas.Count == 0) return;
+                bool full = Math.Abs(_rangeTrackBar.LowerValue - _rangeTrackBar.Minimum) < 1e-10
+                         && Math.Abs(_rangeTrackBar.UpperValue - _rangeTrackBar.Maximum) < 1e-10;
+                detachedChart.ChartAreas[0].AxisX.Minimum = full ? double.NaN : _rangeTrackBar.LowerValue;
+                detachedChart.ChartAreas[0].AxisX.Maximum = full ? double.NaN : _rangeTrackBar.UpperValue;
+            };
+
+            _detachedRangeBars.Add(detachedRangeBar);
+            form.FormClosed += delegate { _detachedRangeBars.Remove(detachedRangeBar); };
+
+            // Apply current range to detached chart
+            if (!double.IsNaN(_rangeStartOa) && !double.IsNaN(_rangeEndOa) && detachedChart.ChartAreas.Count > 0)
+            {
+                detachedChart.ChartAreas[0].AxisX.Minimum = _rangeStartOa;
+                detachedChart.ChartAreas[0].AxisX.Maximum = _rangeEndOa;
+            }
+
             AttachChartInteractivity(detachedChart, form);
+            form.Controls.Add(detachedRangeBar);
             form.Controls.Add(detachedChart);
             form.Show(this);
         }
@@ -598,19 +808,7 @@ namespace LeMuReViewer.UI
                         area.CursorX.SetCursorPosition(xVal);
                         area.CursorY.SetCursorPosition(yVal);
                     }
-                    HitTestResult hit = chart.HitTest(ev.X, ev.Y);
-                    if (hit.ChartElementType == ChartElementType.DataPoint && hit.PointIndex >= 0 && hit.Series != null)
-                    {
-                        DataPoint dp = hit.Series.Points[hit.PointIndex];
-                        DateTime dt = DateTime.FromOADate(dp.XValue);
-                        tip.SetToolTip(chart, string.Format("{0}\n{1:yyyy-MM-dd HH:mm:ss}\n{2:F2}", hit.Series.Name, dt, dp.YValues[0]));
-                        foreach (Series sr in chart.Series) sr.BorderWidth = sr == hit.Series ? 3 : 1;
-                    }
-                    else
-                    {
-                        tip.SetToolTip(chart, string.Empty);
-                        foreach (Series sr in chart.Series) sr.BorderWidth = 2;
-                    }
+                    BuildCrosshairTooltip(chart, tip, xVal);
                 }
                 catch { }
             };
@@ -842,13 +1040,13 @@ namespace LeMuReViewer.UI
             }
         }
 
-        private void LoadFolder(string folder, bool addToRecent)
+        private async void LoadFolder(string folder, bool addToRecent)
         {
             try
             {
                 SetBusy(true, Loc.Get("LoadingData"));
                 Cursor = Cursors.WaitCursor;
-                TestData data = TestLoader.LoadTest(folder);
+                TestData data = await Task.Run(() => TestLoader.LoadTest(folder));
                 AppState.SetData(folder, data);
                 BindLoadedData(data);
                 if (addToRecent)
@@ -946,7 +1144,20 @@ namespace LeMuReViewer.UI
         private void ChannelsListOnMouseDown(object sender, MouseEventArgs e)
         {
             _dragIndex = _channelsList.IndexFromPoint(e.Location);
-            if (_dragIndex >= 0 && e.Button == MouseButtons.Left) _channelsList.DoDragDrop(_channelsList.Items[_dragIndex], DragDropEffects.Move);
+            _dragStartPoint = e.Button == MouseButtons.Left && _dragIndex >= 0 ? e.Location : Point.Empty;
+            _dragInitiated = false;
+        }
+
+        private void ChannelsListOnMouseMove(object sender, MouseEventArgs e)
+        {
+            if (_dragInitiated || _dragIndex < 0 || _dragStartPoint == Point.Empty || e.Button != MouseButtons.Left) return;
+            Size threshold = SystemInformation.DragSize;
+            if (Math.Abs(e.X - _dragStartPoint.X) > threshold.Width || Math.Abs(e.Y - _dragStartPoint.Y) > threshold.Height)
+            {
+                _dragInitiated = true;
+                if (_dragIndex < _channelsList.Items.Count)
+                    _channelsList.DoDragDrop(_channelsList.Items[_dragIndex], DragDropEffects.Move);
+            }
         }
 
         private void ChannelsListOnDragOver(object sender, DragEventArgs e)
@@ -990,36 +1201,79 @@ namespace LeMuReViewer.UI
             for (int i = 0; i < ts.Length; i++)
                 oaDates[i] = AppState.UnixMsToLocalDateTime(ts[i]).ToOADate();
 
+            // Hide legend when too many series (major perf killer)
+            bool showLegend = selectedCodes.Count <= 20;
+            if (_chart.Legends.Count > 0)
+                _chart.Legends[0].Enabled = showLegend;
+
+            _chart.BeginInit();
             _chart.SuspendLayout();
+            _chart.AntiAliasing = selectedCodes.Count > 10 ? AntiAliasingStyles.None : AntiAliasingStyles.All;
             try
             {
                 foreach (string code in selectedCodes)
                 {
                     double?[] values;
                     if (!slice.Series.TryGetValue(code, out values)) continue;
-                    var series = new Series(code); series.ChartType = SeriesChartType.FastLine; series.XValueType = ChartValueType.DateTime; series.BorderWidth = 2;
+                    var series = new Series(code);
+                    series.ChartType = SeriesChartType.FastLine;
+                    series.XValueType = ChartValueType.DateTime;
+                    series.BorderWidth = selectedCodes.Count > 20 ? 1 : 2;
+                    series.IsVisibleInLegend = showLegend;
                     int n = Math.Min(oaDates.Length, values.Length);
 
-                    // Collect non-null points into arrays for batch binding
-                    var xList = new List<double>(n);
-                    var yList = new List<double>(n);
-                    for (int i = 0; i < n; i++)
+                    // Count non-null first to allocate exact size
+                    int count = 0;
+                    for (int i = 0; i < n; i++) if (values[i].HasValue) count++;
+                    if (count > 0)
                     {
-                        if (values[i].HasValue)
+                        double[] xArr = new double[count];
+                        double[] yArr = new double[count];
+                        int w = 0;
+                        for (int i = 0; i < n; i++)
                         {
-                            xList.Add(oaDates[i]);
-                            yList.Add(values[i].Value);
+                            if (values[i].HasValue)
+                            {
+                                xArr[w] = oaDates[i];
+                                yArr[w] = values[i].Value;
+                                w++;
+                            }
+                        }
+                        series.Points.DataBindXY(xArr, yArr);
+                    }
+                    _chart.Series.Add(series);
+                }
+
+                // Update range track bar bounds from data
+                if (oaDates.Length > 0)
+                {
+                    double dataMin = oaDates[0];
+                    double dataMax = oaDates[oaDates.Length - 1];
+                    if (dataMin < dataMax)
+                    {
+                        bool wasFullRange = Math.Abs(_rangeTrackBar.LowerValue - _rangeTrackBar.Minimum) < 1e-10
+                                         && Math.Abs(_rangeTrackBar.UpperValue - _rangeTrackBar.Maximum) < 1e-10;
+                        _rangeTrackBar.Minimum = dataMin;
+                        _rangeTrackBar.Maximum = dataMax;
+                        if (wasFullRange || double.IsNaN(_rangeStartOa))
+                        {
+                            _rangeTrackBar.LowerValue = dataMin;
+                            _rangeTrackBar.UpperValue = dataMax;
                         }
                     }
-                    if (xList.Count > 0)
-                        series.Points.DataBindXY(xList, yList);
+                }
 
-                    _chart.Series.Add(series);
+                // Apply range to chart axis if set
+                if (!double.IsNaN(_rangeStartOa) && !double.IsNaN(_rangeEndOa) && _chart.ChartAreas.Count > 0)
+                {
+                    _chart.ChartAreas[0].AxisX.Minimum = _rangeStartOa;
+                    _chart.ChartAreas[0].AxisX.Maximum = _rangeEndOa;
                 }
             }
             finally
             {
                 _chart.ResumeLayout();
+                _chart.EndInit();
             }
         }
 
@@ -1031,25 +1285,51 @@ namespace LeMuReViewer.UI
             {
                 int parsed; if (int.TryParse(_targetPointsBox.SelectedItem.ToString(), out parsed)) target = Math.Max(1, parsed);
             }
+            // Scale down target when many channels are selected to keep total point count reasonable
+            int channelCount = _checkedCodes.Count;
+            if (channelCount > 10)
+            {
+                // Cap total points across all series at ~50k for responsiveness
+                int maxTotalPoints = 50000;
+                int perChannel = Math.Max(200, maxTotalPoints / channelCount);
+                target = Math.Min(target, perChannel);
+            }
             return Math.Max(1, totalPoints / target);
         }
 
-        private void ExportTemplateButtonOnClick(object sender, EventArgs e)
+        private async void ExportTemplateButtonOnClick(object sender, EventArgs e)
         {
             TestData data = AppState.Data; if (data == null) return;
             string templatePath = Path.Combine(_projectRoot, "template.xlsx");
             if (!File.Exists(templatePath)) { NotifyError(Loc.Get("TemplateNotFound")); return; }
             List<string> selectedCodes = GetSelectedCodes();
             string refrig = _refrigerantBox.SelectedItem == null ? "R290" : _refrigerantBox.SelectedItem.ToString();
+            bool includeExtra = _includeExtraCheck.Checked;
+            ViewerSettingsModel settings = _viewerSettings;
+
+            // Read selected range from stored values
+            long? rangeStartMs = null;
+            long? rangeEndMs = null;
+            if (!double.IsNaN(_rangeStartOa) && !double.IsNaN(_rangeEndOa))
+            {
+                DateTime dtStart = DateTime.FromOADate(_rangeStartOa);
+                DateTime dtEnd = DateTime.FromOADate(_rangeEndOa);
+                DateTime epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                rangeStartMs = (long)(dtStart.ToUniversalTime() - epoch).TotalMilliseconds;
+                rangeEndMs = (long)(dtEnd.ToUniversalTime() - epoch).TotalMilliseconds;
+            }
+
             using (var dialog = new SaveFileDialog())
             {
                 dialog.Filter = "Excel files (*.xlsx)|*.xlsx"; dialog.FileName = "template_filled_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".xlsx";
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                string savePath = dialog.FileName;
                 try
                 {
                     SetBusy(true, Loc.Get("ExportingTemplate"));
-                    byte[] payload = TemplateExporter.Export(templatePath, AppState.Folder, data, selectedCodes, _includeExtraCheck.Checked, refrig, _viewerSettings);
-                    File.WriteAllBytes(dialog.FileName, payload);
+                    string loadedFolder = AppState.Folder;
+                    byte[] payload = await Task.Run(() => TemplateExporter.Export(templatePath, loadedFolder, data, selectedCodes, includeExtra, refrig, settings, rangeStartMs, rangeEndMs));
+                    File.WriteAllBytes(savePath, payload);
                     TemplateValidationResult vr = TemplateExportValidator.Validate(payload);
                     if (vr.Ok)
                     {
@@ -1060,6 +1340,8 @@ namespace LeMuReViewer.UI
                         AppLogger.LogError(_projectRoot, "Template export validation warning: " + vr.Message, null);
                         NotifyError(Loc.Get("TemplateExportedWarning"));
                     }
+                    try { Process.Start(new ProcessStartInfo(savePath) { UseShellExecute = true }); }
+                    catch { }
                 }
                 catch (Exception ex) { AppLogger.LogError(_projectRoot, "Template export failed.", ex); MessageBox.Show(this, ex.Message, Loc.Get("TemplateExportFailed"), MessageBoxButtons.OK, MessageBoxIcon.Error); NotifyError(Loc.Get("TemplateExportFailed")); }
                 finally { SetBusy(false, null); }

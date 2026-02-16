@@ -176,6 +176,11 @@ namespace LeMuReViewer.UI
             { "ChartImageCopied", "Изображение скопировано в буфер." },
             { "ChartDetach", "Открыть в отдельном окне" },
             { "ChartWindowTitle", "График — {0}" },
+
+            // Range selection
+            { "RangeAll", "Диапазон: весь" },
+            { "RangeSelected", "Диапазон: {0:yyyy-MM-dd HH:mm:ss} — {1:yyyy-MM-dd HH:mm:ss}" },
+            { "ResetRange", "Сбросить выделение" },
         };
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -321,6 +326,11 @@ namespace LeMuReViewer.UI
             { "ChartImageCopied", "Image copied to clipboard." },
             { "ChartDetach", "Open in separate window" },
             { "ChartWindowTitle", "Chart — {0}" },
+
+            // Range selection
+            { "RangeAll", "Range: all" },
+            { "RangeSelected", "Range: {0:yyyy-MM-dd HH:mm:ss} — {1:yyyy-MM-dd HH:mm:ss}" },
+            { "ResetRange", "Reset selection" },
         };
     }
 }

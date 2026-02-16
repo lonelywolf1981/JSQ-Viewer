@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace LeMuReViewer.Core
 {
@@ -11,6 +12,8 @@ namespace LeMuReViewer.Core
     {
         private static readonly Regex ProvaDbfRegex = new Regex(@"Prova(\d+)\.dbf$", RegexOptions.IgnoreCase);
         private static readonly Regex ProvaDatRegex = new Regex(@"Prova\d+\.dat$", RegexOptions.IgnoreCase);
+
+        private static readonly string[] TimeColumns = { "Data", "Ore", "Minuti", "Secondi", "mSecondi" };
 
         public static TestData LoadTest(string folder)
         {
@@ -39,58 +42,104 @@ namespace LeMuReViewer.Core
                 throw new FileNotFoundException("No Prova*.dbf files found in test folder.");
             }
 
-            var rows = new List<RowData>(8192);
+            // === Pass 1: Read headers, count total records, collect column names ===
+            DbfHeader[] headers = new DbfHeader[dbfFiles.Length];
+            int totalRecords = 0;
             var colSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var timeColumnSet = new HashSet<string>(TimeColumns, StringComparer.OrdinalIgnoreCase);
 
             for (int i = 0; i < dbfFiles.Length; i++)
             {
-                foreach (Dictionary<string, object> dbfRow in DbfReader.IterateRows(dbfFiles[i]))
+                headers[i] = DbfReader.ReadHeaderFromFile(dbfFiles[i]);
+                totalRecords += headers[i].Records;
+                for (int f = 0; f < headers[i].Fields.Count; f++)
                 {
-                    long tsMs;
-                    if (!TryBuildTimestampMs(dbfRow, out tsMs))
+                    string name = headers[i].Fields[f].Name;
+                    if (!timeColumnSet.Contains(name))
                     {
-                        continue;
+                        colSet.Add(name);
                     }
-
-                    var values = new Dictionary<string, double?>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var kv in dbfRow)
-                    {
-                        string col = kv.Key;
-                        if (IsTimeColumn(col))
-                        {
-                            continue;
-                        }
-
-                        double? parsed = ToNullableDouble(kv.Value);
-                        values[col] = parsed;
-                        colSet.Add(col);
-                    }
-
-                    rows.Add(new RowData { TimestampMs = tsMs, Values = values });
                 }
             }
 
-            rows.Sort(delegate(RowData a, RowData b) { return a.TimestampMs.CompareTo(b.TimestampMs); });
-
+            // === Pre-allocate arrays ===
             string[] columnNames = colSet.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToArray();
-            long[] tMs = new long[rows.Count];
+            long[] tMs = new long[totalRecords];
             var columns = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase);
             foreach (string col in columnNames)
             {
-                columns[col] = new double?[rows.Count];
+                columns[col] = new double?[totalRecords];
             }
 
-            for (int i = 0; i < rows.Count; i++)
+            // === Pass 2: Read data directly into pre-allocated arrays ===
+            int[] fileCounts = new int[dbfFiles.Length];
+            int[] fileOffsets = new int[dbfFiles.Length];
+            int offset = 0;
+            for (int i = 0; i < dbfFiles.Length; i++)
             {
-                tMs[i] = rows[i].TimestampMs;
-                var values = rows[i].Values;
+                fileOffsets[i] = offset;
+                offset += headers[i].Records;
+            }
+
+            // Read files in parallel
+            Parallel.For(0, dbfFiles.Length, i =>
+            {
+                int[] timeFieldIndices = BuildTimeFieldIndices(headers[i]);
+                fileCounts[i] = DbfReader.ReadAllRecordsDirect(
+                    dbfFiles[i], headers[i], tMs, columns, columnNames,
+                    fileOffsets[i], timeFieldIndices);
+            });
+
+            // === Compact: remove gaps from deleted/skipped records ===
+            int totalValid = 0;
+            for (int i = 0; i < dbfFiles.Length; i++) totalValid += fileCounts[i];
+
+            long[] compactTs = new long[totalValid];
+            var compactCols = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase);
+            foreach (string col in columnNames)
+            {
+                compactCols[col] = new double?[totalValid];
+            }
+
+            int writePos = 0;
+            for (int i = 0; i < dbfFiles.Length; i++)
+            {
+                int srcStart = fileOffsets[i];
+                int count = fileCounts[i];
+                if (count == 0) continue;
+                Array.Copy(tMs, srcStart, compactTs, writePos, count);
                 foreach (string col in columnNames)
                 {
-                    double? value;
-                    if (values.TryGetValue(col, out value))
-                    {
-                        columns[col][i] = value;
-                    }
+                    Array.Copy(columns[col], srcStart, compactCols[col], writePos, count);
+                }
+                writePos += count;
+            }
+
+            // === Sort by timestamp using index array ===
+            int[] sortIndices = new int[totalValid];
+            for (int i = 0; i < totalValid; i++) sortIndices[i] = i;
+            Array.Sort(sortIndices, delegate(int a, int b) { return compactTs[a].CompareTo(compactTs[b]); });
+
+            long[] sortedTs = new long[totalValid];
+            var sortedCols = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase);
+            foreach (string col in columnNames)
+            {
+                sortedCols[col] = new double?[totalValid];
+            }
+
+            for (int i = 0; i < totalValid; i++)
+            {
+                int src = sortIndices[i];
+                sortedTs[i] = compactTs[src];
+            }
+
+            foreach (string col in columnNames)
+            {
+                double?[] srcArr = compactCols[col];
+                double?[] dstArr = sortedCols[col];
+                for (int i = 0; i < totalValid; i++)
+                {
+                    dstArr[i] = srcArr[sortIndices[i]];
                 }
             }
 
@@ -99,11 +148,26 @@ namespace LeMuReViewer.Core
                 Root = root,
                 Meta = meta,
                 Channels = channels,
-                TimestampsMs = tMs,
-                Columns = columns,
+                TimestampsMs = sortedTs,
+                Columns = sortedCols,
                 ColumnNames = columnNames,
-                RowCount = rows.Count
+                RowCount = totalValid
             };
+        }
+
+        private static int[] BuildTimeFieldIndices(DbfHeader header)
+        {
+            int[] indices = { -1, -1, -1, -1, -1 }; // Data, Ore, Minuti, Secondi, mSecondi
+            for (int f = 0; f < header.Fields.Count; f++)
+            {
+                string name = header.Fields[f].Name;
+                if (string.Equals(name, "Data", StringComparison.OrdinalIgnoreCase)) indices[0] = f;
+                else if (string.Equals(name, "Ore", StringComparison.OrdinalIgnoreCase)) indices[1] = f;
+                else if (string.Equals(name, "Minuti", StringComparison.OrdinalIgnoreCase)) indices[2] = f;
+                else if (string.Equals(name, "Secondi", StringComparison.OrdinalIgnoreCase)) indices[3] = f;
+                else if (string.Equals(name, "mSecondi", StringComparison.OrdinalIgnoreCase)) indices[4] = f;
+            }
+            return indices;
         }
 
         public static string FindTestRoot(string folder)

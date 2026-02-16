@@ -31,7 +31,9 @@ namespace LeMuReViewer.Export
             IList<string> selectedChannels,
             bool includeExtra,
             string refrigerant,
-            ViewerSettingsModel viewerSettings)
+            ViewerSettingsModel viewerSettings,
+            long? rangeStartMs = null,
+            long? rangeEndMs = null)
         {
             if (data == null || data.TimestampsMs == null || data.TimestampsMs.Length == 0)
             {
@@ -48,9 +50,10 @@ namespace LeMuReViewer.Export
             var selectedSet = new HashSet<string>(selectedChannels ?? new string[0], StringComparer.OrdinalIgnoreCase);
             long[] tList = data.TimestampsMs;
 
-            long startMs = tList[0];
-            long endMs = tList[tList.Length - 1];
-            long t0 = tList[0];
+            long startMs = rangeStartMs.HasValue ? rangeStartMs.Value : tList[0];
+            long endMs = rangeEndMs.HasValue ? rangeEndMs.Value : tList[tList.Length - 1];
+            if (startMs > endMs) { long tmp = startMs; startMs = endMs; endMs = tmp; }
+            long t0 = startMs;
 
             var gridMs = new List<long>();
             for (long g = t0; g <= endMs; g += 20000)
@@ -120,6 +123,8 @@ namespace LeMuReViewer.Export
                     {
                         throw new InvalidDataException("sheetData node is missing.");
                     }
+
+                    BuildRowCache(sheetData, ns);
 
                     SetInlineString(sheetData, ns, 1, 2, refrigerantNorm);
                     SetInlineString(sheetData, ns, 1, 4, rootFolder);
@@ -217,6 +222,10 @@ namespace LeMuReViewer.Export
                     RemoveCalcChain(package);
                     ForceFullCalcOnLoad(package);
                     NormalizeSheetData(sheetData, ns);
+
+                    // Clear caches before writing
+                    _rowCache = null;
+                    _cellCache = null;
 
                     using (Stream outStream = sheetPart.GetStream(FileMode.Create, FileAccess.Write))
                     {
@@ -790,10 +799,42 @@ namespace LeMuReViewer.Export
             return code;
         }
 
+        // Cached row/cell lookup for performance — avoids O(n) linear scan per access
+        [ThreadStatic] private static Dictionary<int, XElement> _rowCache;
+        [ThreadStatic] private static Dictionary<long, XElement> _cellCache;
+
+        private static void BuildRowCache(XElement sheetData, XNamespace ns)
+        {
+            _rowCache = new Dictionary<int, XElement>();
+            _cellCache = new Dictionary<long, XElement>();
+            foreach (XElement row in sheetData.Elements(ns + "row"))
+            {
+                XAttribute r = row.Attribute("r");
+                int rowIdx;
+                if (r != null && int.TryParse(r.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out rowIdx))
+                {
+                    _rowCache[rowIdx] = row;
+                    foreach (XElement c in row.Elements(ns + "c"))
+                    {
+                        XAttribute cr = c.Attribute("r");
+                        if (cr != null)
+                        {
+                            int col = ParseColumnIndexFromCellRef(cr.Value);
+                            if (col > 0)
+                            {
+                                long key = ((long)rowIdx << 20) | (uint)col;
+                                _cellCache[key] = c;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         private static XElement GetOrCreateRow(XElement sheetData, XNamespace ns, int rowIndex)
         {
-            XElement found = FindRow(sheetData, ns, rowIndex);
-            if (found != null)
+            XElement found;
+            if (_rowCache != null && _rowCache.TryGetValue(rowIndex, out found))
             {
                 return found;
             }
@@ -801,38 +842,35 @@ namespace LeMuReViewer.Export
             string wanted = rowIndex.ToString(CultureInfo.InvariantCulture);
             var newRow = new XElement(ns + "row", new XAttribute("r", wanted));
             sheetData.Add(newRow);
+            if (_rowCache != null) _rowCache[rowIndex] = newRow;
             return newRow;
         }
 
         private static XElement FindRow(XElement sheetData, XNamespace ns, int rowIndex)
         {
-            string wanted = rowIndex.ToString(CultureInfo.InvariantCulture);
-            foreach (XElement row in sheetData.Elements(ns + "row"))
+            XElement found;
+            if (_rowCache != null && _rowCache.TryGetValue(rowIndex, out found))
             {
-                XAttribute r = row.Attribute("r");
-                if (r != null && r.Value == wanted)
-                {
-                    return row;
-                }
+                return found;
             }
             return null;
         }
 
         private static XElement GetOrCreateCell(XElement sheetData, XNamespace ns, int rowIndex, int colIndex)
         {
+            long cacheKey = ((long)rowIndex << 20) | (uint)colIndex;
+            XElement found;
+            if (_cellCache != null && _cellCache.TryGetValue(cacheKey, out found))
+            {
+                return found;
+            }
+
             XElement row = GetOrCreateRow(sheetData, ns, rowIndex);
             string cellRef = ColumnName(colIndex) + rowIndex.ToString(CultureInfo.InvariantCulture);
-            foreach (XElement c in row.Elements(ns + "c"))
-            {
-                XAttribute r = c.Attribute("r");
-                if (r != null && string.Equals(r.Value, cellRef, StringComparison.OrdinalIgnoreCase))
-                {
-                    return c;
-                }
-            }
 
             var cell = new XElement(ns + "c", new XAttribute("r", cellRef));
             InsertCellInOrder(row, ns, cell, colIndex);
+            if (_cellCache != null) _cellCache[cacheKey] = cell;
             return cell;
         }
 
