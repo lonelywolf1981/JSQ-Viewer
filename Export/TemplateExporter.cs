@@ -215,6 +215,7 @@ namespace LeMuReViewer.Export
                     }
 
                     RemoveCalcChain(package);
+                    ForceFullCalcOnLoad(package);
                     NormalizeSheetData(sheetData, ns);
 
                     using (Stream outStream = sheetPart.GetStream(FileMode.Create, FileAccess.Write))
@@ -419,6 +420,9 @@ namespace LeMuReViewer.Export
                 XElement f = cell.Element(ns + "f");
                 if (f != null && !string.IsNullOrWhiteSpace(f.Value))
                 {
+                    // Formula already present — just clear cached value so Excel recalculates
+                    XElement existingV = cell.Element(ns + "v");
+                    if (existingV != null) existingV.Remove();
                     continue;
                 }
 
@@ -429,6 +433,10 @@ namespace LeMuReViewer.Export
                     cell.AddFirst(f);
                 }
                 f.Value = translated;
+
+                // Remove cached value so Excel recalculates on open
+                XElement cachedV = cell.Element(ns + "v");
+                if (cachedV != null) cachedV.Remove();
             }
         }
 
@@ -676,6 +684,37 @@ namespace LeMuReViewer.Export
             if (package.PartExists(direct))
             {
                 package.DeletePart(direct);
+            }
+        }
+
+        private static void ForceFullCalcOnLoad(Package package)
+        {
+            Uri workbookUri = new Uri("/xl/workbook.xml", UriKind.Relative);
+            if (!package.PartExists(workbookUri)) return;
+
+            PackagePart wbPart = package.GetPart(workbookUri);
+            XDocument wbDoc;
+            using (Stream s = wbPart.GetStream(FileMode.Open, FileAccess.Read))
+            {
+                wbDoc = XDocument.Load(s, LoadOptions.PreserveWhitespace);
+            }
+
+            XNamespace wns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+            XElement root = wbDoc.Root;
+            if (root == null) return;
+
+            XElement calcPr = root.Element(wns + "calcPr");
+            if (calcPr == null)
+            {
+                calcPr = new XElement(wns + "calcPr");
+                root.Add(calcPr);
+            }
+            calcPr.SetAttributeValue("fullCalcOnLoad", "1");
+            calcPr.SetAttributeValue("calcMode", "auto");
+
+            using (Stream outStream = wbPart.GetStream(FileMode.Create, FileAccess.Write))
+            {
+                wbDoc.Save(outStream);
             }
         }
 

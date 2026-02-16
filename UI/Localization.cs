@@ -52,7 +52,7 @@ namespace LeMuReViewer.UI
             { "Clear", "Очистить" },
             { "IncludeExtra", "Включить доп. каналы" },
             { "Refrigerant", "Хладагент:" },
-            { "ExportTemplate", "Экспорт по шаблону" },
+            { "ExportTemplate", "Экспорт" },
             { "Styles", "Стили..." },
             { "PresetName", "Имя пресета" },
             { "SavePreset", "Сохранить пресет" },
