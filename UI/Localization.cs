@@ -47,6 +47,7 @@ namespace LeMuReViewer.UI
             { "AutoStep", "Авто шаг" },
             { "Target", "Цель:" },
             { "Manual", "Ручной:" },
+            { "CompareOverlayMode", "Режим сравнения (наложение)" },
             { "Channels", "Каналы" },
             { "ChannelsForSource", "Каналы: {0}" },
             { "SelectedOnly", "Выбранные" },
@@ -69,6 +70,9 @@ namespace LeMuReViewer.UI
             { "SelectFolder", "Сначала выберите папку." },
             { "TooManyFolders", "Можно загрузить не более 3 папок (разделитель: ;)." },
             { "FolderAlreadyAdded", "Эта папка уже добавлена." },
+            { "OverlappingChannelsTitle", "Пересекающиеся каналы" },
+            { "OverlappingChannelsPrompt", "Найдены пересекающиеся каналы ({0}): {1}\n\nРазделить их по источникам и продолжить загрузку?" },
+            { "LoadCancelled", "Загрузка отменена." },
             { "LoadedTest", "Загружен тест: {0} строк." },
             { "LoadFailed", "Ошибка загрузки." },
             { "SelectChannel", "Выберите хотя бы один канал." },
@@ -115,6 +119,7 @@ namespace LeMuReViewer.UI
             { "TipAutoStep", "Автоматически рассчитывать шаг прореживания" },
             { "TipTarget", "Целевое количество точек на графике" },
             { "TipManualStep", "Шаг прореживания вручную (каждая N-я точка)" },
+            { "TipCompareOverlayMode", "Наложить каналы из разных источников по относительному времени (от старта каждого теста)" },
             { "TipFilter", "Фильтр каналов по имени или коду" },
             { "TipSort", "Порядок сортировки списка каналов" },
             { "TipSelectedOnly", "Показывать только выбранные каналы" },
@@ -201,7 +206,9 @@ namespace LeMuReViewer.UI
             // Range selection
             { "RangeAll", "Диапазон: весь" },
             { "RangeSelected", "Диапазон: {0:yyyy-MM-dd HH:mm:ss} — {1:yyyy-MM-dd HH:mm:ss}" },
+            { "RangeSelectedOverlay", "Диапазон: {0} — {1}" },
             { "ResetRange", "Сбросить выделение" },
+            { "OverlayXAxisTitle", "Время от старта теста" },
         };
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -218,6 +225,7 @@ namespace LeMuReViewer.UI
             { "AutoStep", "Auto step" },
             { "Target", "Target:" },
             { "Manual", "Manual:" },
+            { "CompareOverlayMode", "Compare mode (overlay)" },
             { "Channels", "Channels" },
             { "ChannelsForSource", "Channels: {0}" },
             { "SelectedOnly", "Selected" },
@@ -240,6 +248,9 @@ namespace LeMuReViewer.UI
             { "SelectFolder", "Select a folder first." },
             { "TooManyFolders", "You can load up to 3 folders (separator: ;)." },
             { "FolderAlreadyAdded", "This folder is already added." },
+            { "OverlappingChannelsTitle", "Overlapping channels" },
+            { "OverlappingChannelsPrompt", "Found overlapping channels ({0}): {1}\n\nSplit them by source and continue loading?" },
+            { "LoadCancelled", "Loading cancelled." },
             { "LoadedTest", "Loaded test: {0} rows." },
             { "LoadFailed", "Load failed." },
             { "SelectChannel", "Select at least one channel." },
@@ -286,6 +297,7 @@ namespace LeMuReViewer.UI
             { "TipAutoStep", "Automatically calculate decimation step" },
             { "TipTarget", "Target number of points on the chart" },
             { "TipManualStep", "Manual decimation step (every N-th point)" },
+            { "TipCompareOverlayMode", "Overlay channels from different sources using relative time from each source start" },
             { "TipFilter", "Filter channels by name or code" },
             { "TipSort", "Channel list sort order" },
             { "TipSelectedOnly", "Show only selected channels" },
@@ -372,7 +384,9 @@ namespace LeMuReViewer.UI
             // Range selection
             { "RangeAll", "Range: all" },
             { "RangeSelected", "Range: {0:yyyy-MM-dd HH:mm:ss} — {1:yyyy-MM-dd HH:mm:ss}" },
+            { "RangeSelectedOverlay", "Range: {0} — {1}" },
             { "ResetRange", "Reset selection" },
+            { "OverlayXAxisTitle", "Time from test start" },
         };
     }
 }

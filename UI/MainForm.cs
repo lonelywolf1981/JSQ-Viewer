@@ -41,6 +41,7 @@ namespace LeMuReViewer.UI
         private readonly Label _recentLabel;
         private readonly Label _targetLabel;
         private readonly Label _manualLabel;
+        private readonly CheckBox _compareOverlayCheck;
         private readonly Label _channelsHeader;
         private readonly Label _refrigLabel;
         private readonly TextBox _presetNameBox;
@@ -71,6 +72,7 @@ namespace LeMuReViewer.UI
         private double _rangeEndOa = double.NaN;
         private readonly List<RangeTrackBar> _detachedRangeBars = new List<RangeTrackBar>();
         private bool _syncingRange;
+        private static readonly DateTime OverlayBaseLocalDate = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Local);
 
         private int _dragIndex = -1;
         private Point _dragStartPoint = Point.Empty;
@@ -149,6 +151,7 @@ namespace LeMuReViewer.UI
             _targetPointsBox = new ComboBox(); _targetPointsBox.DropDownStyle = ComboBoxStyle.DropDownList; _targetPointsBox.Width = 90; _targetPointsBox.Items.Add("1000"); _targetPointsBox.Items.Add("2000"); _targetPointsBox.Items.Add("5000"); _targetPointsBox.Items.Add("10000"); _targetPointsBox.Items.Add("20000"); _targetPointsBox.SelectedIndex = 2; _targetPointsBox.SelectedIndexChanged += StepControlsOnChanged; stepRow.Controls.Add(_targetPointsBox);
             _manualLabel = new Label(); _manualLabel.Text = Loc.Get("Manual"); _manualLabel.AutoSize = true; _manualLabel.Padding = new Padding(8, 5, 2, 0); stepRow.Controls.Add(_manualLabel);
             _manualStepUpDown = new NumericUpDown(); _manualStepUpDown.Width = 70; _manualStepUpDown.Minimum = 1; _manualStepUpDown.Maximum = 100000; _manualStepUpDown.Value = 1; _manualStepUpDown.Enabled = false; _manualStepUpDown.ValueChanged += StepControlsOnChanged; stepRow.Controls.Add(_manualStepUpDown);
+            _compareOverlayCheck = new CheckBox(); _compareOverlayCheck.Text = Loc.Get("CompareOverlayMode"); _compareOverlayCheck.AutoSize = true; _compareOverlayCheck.Padding = new Padding(12, 2, 0, 0); _compareOverlayCheck.Enabled = false; _compareOverlayCheck.CheckedChanged += CompareOverlayCheckOnCheckedChanged; stepRow.Controls.Add(_compareOverlayCheck);
 
             var channelsHeaderRow = NewRow(); left.Controls.Add(channelsHeaderRow, 0, 6);
             _channelsHeader = new Label(); _channelsHeader.Text = Loc.Get("Channels"); _channelsHeader.AutoSize = true; _channelsHeader.Padding = new Padding(4, 6, 2, 0); channelsHeaderRow.Controls.Add(_channelsHeader);
@@ -323,6 +326,7 @@ namespace LeMuReViewer.UI
             _autoStepCheck.Text = Loc.Get("AutoStep");
             _targetLabel.Text = Loc.Get("Target");
             _manualLabel.Text = Loc.Get("Manual");
+            _compareOverlayCheck.Text = Loc.Get("CompareOverlayMode");
             _channelsHeader.Text = Loc.Get("Channels");
             _selectedOnlyCheck.Text = Loc.Get("SelectedOnly");
             _selectAllChannelsButton.Text = Loc.Get("SelectAll");
@@ -345,7 +349,7 @@ namespace LeMuReViewer.UI
             ((ToolStripMenuItem)_chartContextMenu.Items[6]).Text = Loc.Get("ChartDetach");
             ((ToolStripMenuItem)_chartContextMenu.Items[8]).Text = Loc.Get("ChartSaveImage");
             ((ToolStripMenuItem)_chartContextMenu.Items[9]).Text = Loc.Get("ChartCopyImage");
-            _rangeLabel.Text = Loc.Get("RangeAll");
+            _rangeLabel.Text = BuildRangeLabelText(_rangeStartOa, _rangeEndOa);
             _resetRangeButton.Text = Loc.Get("ResetRange");
 
             // Force sort combo to re-read ToString() of items
@@ -366,6 +370,7 @@ namespace LeMuReViewer.UI
             _toolTip.SetToolTip(_autoStepCheck, Loc.Get("TipAutoStep"));
             _toolTip.SetToolTip(_targetPointsBox, Loc.Get("TipTarget"));
             _toolTip.SetToolTip(_manualStepUpDown, Loc.Get("TipManualStep"));
+            _toolTip.SetToolTip(_compareOverlayCheck, Loc.Get("TipCompareOverlayMode"));
             _toolTip.SetToolTip(_channelFilterBox, Loc.Get("TipFilter"));
             _toolTip.SetToolTip(_sortModeBox, Loc.Get("TipSort"));
             _toolTip.SetToolTip(_selectedOnlyCheck, Loc.Get("TipSelectedOnly"));
@@ -439,7 +444,7 @@ namespace LeMuReViewer.UI
             {
                 _rangeStartOa = double.NaN;
                 _rangeEndOa = double.NaN;
-                _rangeLabel.Text = Loc.Get("RangeAll");
+                _rangeLabel.Text = BuildRangeLabelText(_rangeStartOa, _rangeEndOa);
                 _resetRangeButton.Visible = false;
                 if (_chart.ChartAreas.Count > 0)
                 {
@@ -451,9 +456,7 @@ namespace LeMuReViewer.UI
             {
                 _rangeStartOa = lo;
                 _rangeEndOa = hi;
-                DateTime dtStart = DateTime.FromOADate(lo);
-                DateTime dtEnd = DateTime.FromOADate(hi);
-                _rangeLabel.Text = string.Format(Loc.Get("RangeSelected"), dtStart, dtEnd);
+                _rangeLabel.Text = BuildRangeLabelText(lo, hi);
                 _resetRangeButton.Visible = true;
                 if (_chart.ChartAreas.Count > 0)
                 {
@@ -505,7 +508,7 @@ namespace LeMuReViewer.UI
                 {
                     _mainCrosshairPixelX = e.X;
                     _chart.Invalidate();
-                    BuildCrosshairTooltip(_chart, _toolTip, xVal, e.Location);
+                        BuildCrosshairTooltip(_chart, _toolTip, xVal, e.Location, IsOverlayCompareModeActive());
                 }
             }
             catch { }
@@ -539,7 +542,7 @@ namespace LeMuReViewer.UI
             }
         }
 
-        private static void BuildCrosshairTooltip(Chart chart, ToolTip toolTip, double xVal, Point mousePoint)
+        private static void BuildCrosshairTooltip(Chart chart, ToolTip toolTip, double xVal, Point mousePoint, bool overlayMode)
         {
             if (chart.Series.Count == 0)
             {
@@ -551,9 +554,16 @@ namespace LeMuReViewer.UI
                 return;
             }
 
-            DateTime cursorTime = DateTime.FromOADate(xVal);
             var sb = new System.Text.StringBuilder();
-            sb.AppendFormat("{0:yyyy-MM-dd HH:mm:ss}", cursorTime);
+            if (overlayMode)
+            {
+                sb.Append(FormatOverlayElapsed(xVal));
+            }
+            else
+            {
+                DateTime cursorTime = DateTime.FromOADate(xVal);
+                sb.AppendFormat("{0:yyyy-MM-dd HH:mm:ss}", cursorTime);
+            }
 
             Series closestSeries = null;
             double closestDist = double.MaxValue;
@@ -696,7 +706,7 @@ namespace LeMuReViewer.UI
             _rangeEndOa = double.NaN;
             _rangeTrackBar.LowerValue = _rangeTrackBar.Minimum;
             _rangeTrackBar.UpperValue = _rangeTrackBar.Maximum;
-            _rangeLabel.Text = Loc.Get("RangeAll");
+            _rangeLabel.Text = BuildRangeLabelText(_rangeStartOa, _rangeEndOa);
             _resetRangeButton.Visible = false;
             if (_chart.ChartAreas.Count > 0)
             {
@@ -746,6 +756,7 @@ namespace LeMuReViewer.UI
         private void DetachChartMenuItemOnClick(object sender, EventArgs e)
         {
             if (_chart.Series.Count == 0) return;
+            bool overlayMode = IsOverlayCompareModeActive();
 
             var form = new Form();
             form.Text = string.Format(Loc.Get("ChartWindowTitle"), AppState.Folder ?? Loc.Get("AppTitle"));
@@ -756,6 +767,12 @@ namespace LeMuReViewer.UI
             try { form.Icon = Icon; } catch { }
 
             var detachedChart = BuildChart();
+            if (detachedChart.ChartAreas.Count > 0)
+            {
+                ChartArea detachedArea = detachedChart.ChartAreas[0];
+                detachedArea.AxisX.LabelStyle.Format = overlayMode ? "HH:mm:ss" : "HH:mm\ndd.MM";
+                detachedArea.AxisX.Title = overlayMode ? Loc.Get("OverlayXAxisTitle") : string.Empty;
+            }
             detachedChart.SuspendLayout();
             try
             {
@@ -820,13 +837,13 @@ namespace LeMuReViewer.UI
                 detachedChart.ChartAreas[0].AxisX.Maximum = _rangeEndOa;
             }
 
-            AttachChartInteractivity(detachedChart, form);
+            AttachChartInteractivity(detachedChart, form, overlayMode);
             form.Controls.Add(detachedChart);
             form.Controls.Add(detachedRangeBar);
             form.Show(this);
         }
 
-        private void AttachChartInteractivity(Chart chart, Form ownerForm)
+        private void AttachChartInteractivity(Chart chart, Form ownerForm, bool overlayMode)
         {
             var tip = new ToolTip { AutoPopDelay = 600000, InitialDelay = 400, ReshowDelay = 200 };
             bool crosshair = true;
@@ -843,7 +860,7 @@ namespace LeMuReViewer.UI
                     {
                         crosshairPixelX = ev.X;
                         chart.Invalidate();
-                        BuildCrosshairTooltip(chart, tip, xVal, ev.Location);
+                        BuildCrosshairTooltip(chart, tip, xVal, ev.Location, overlayMode);
                     }
                 }
                 catch { }
@@ -1165,8 +1182,31 @@ namespace LeMuReViewer.UI
                 _folderBox.Text = spec;
                 SetBusy(true, Loc.Get("LoadingData"));
                 Cursor = Cursors.WaitCursor;
-                TestData data = await Task.Run(() =>
-                    folders.Count == 1 ? TestLoader.LoadTest(folders[0]) : TestLoader.LoadAndMergeTests(folders));
+                TestData data;
+                if (folders.Count == 1)
+                {
+                    data = await Task.Run(() => TestLoader.LoadTest(folders[0]));
+                }
+                else
+                {
+                    List<TestData> loaded = await Task.Run(() => TestLoader.LoadTests(folders));
+                    List<string> overlaps = TestLoader.FindOverlappingCodes(loaded);
+                    bool splitOverlaps = false;
+                    if (overlaps.Count > 0)
+                    {
+                        string preview = string.Join(", ", overlaps.Take(12).ToArray());
+                        if (overlaps.Count > 12) preview += ", ...";
+                        string msg = string.Format(Loc.Get("OverlappingChannelsPrompt"), overlaps.Count, preview);
+                        DialogResult dr = MessageBox.Show(this, msg, Loc.Get("OverlappingChannelsTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                        if (dr != DialogResult.Yes)
+                        {
+                            NotifyError(Loc.Get("LoadCancelled"));
+                            return;
+                        }
+                        splitOverlaps = true;
+                    }
+                    data = TestLoader.MergeLoadedTests(loaded, splitOverlaps);
+                }
                 AppState.SetData(spec, data);
                 BindLoadedData(data);
                 if (addToRecent)
@@ -1234,6 +1274,12 @@ namespace LeMuReViewer.UI
                 _allChannels.Add(new ChannelItem(code, label, unit));
             }
             RebuildChannelList();
+            bool canOverlay = IsOverlayCompareModeAvailable(data);
+            _compareOverlayCheck.Enabled = canOverlay;
+            if (!canOverlay)
+            {
+                _compareOverlayCheck.Checked = false;
+            }
             CloseSourceChannelWindows();
             DataSummary summary = AppState.BuildSummary(data);
             _summaryLabel.Text = string.Format(Loc.Get("Points"), summary.Points, summary.Start, summary.End);
@@ -1391,6 +1437,30 @@ namespace LeMuReViewer.UI
             RedrawChart();
         }
 
+        private void CompareOverlayCheckOnCheckedChanged(object sender, EventArgs e)
+        {
+            TestData data = AppState.Data;
+            if (data == null)
+            {
+                return;
+            }
+            if (!IsOverlayCompareModeAvailable(data))
+            {
+                if (_compareOverlayCheck.Checked)
+                {
+                    _compareOverlayCheck.Checked = false;
+                    return;
+                }
+                return;
+            }
+
+            _rangeStartOa = double.NaN;
+            _rangeEndOa = double.NaN;
+            _rangeLabel.Text = BuildRangeLabelText(_rangeStartOa, _rangeEndOa);
+            _resetRangeButton.Visible = false;
+            RedrawChart();
+        }
+
         private void ChannelViewOptionsChanged(object sender, EventArgs e)
         {
             RebuildChannelList();
@@ -1485,16 +1555,22 @@ namespace LeMuReViewer.UI
             _chart.Series.Clear();
             TestData data = AppState.Data;
             if (data == null || data.RowCount == 0) return;
+            bool overlayMode = IsOverlayCompareModeActive();
+            ApplyAxisXMode(overlayMode);
             List<string> selectedCodes = GetSelectedCodes();
             if (selectedCodes.Count == 0) return;
             int step = ResolveStep(data.TimestampsMs.Length);
             SeriesSlice slice = SeriesCache.GetOrBuild(AppState.DataVersion, data, selectedCodes, data.TimestampsMs[0], data.TimestampsMs[data.TimestampsMs.Length - 1], step);
 
-            // Pre-convert timestamps to OADate once for all channels
+            // Pre-convert timestamps to OADate once for all channels in normal mode
             long[] ts = slice.Timestamps;
-            double[] oaDates = new double[ts.Length];
-            for (int i = 0; i < ts.Length; i++)
-                oaDates[i] = AppState.UnixMsToLocalDateTime(ts[i]).ToOADate();
+            double[] oaDates = null;
+            if (!overlayMode)
+            {
+                oaDates = new double[ts.Length];
+                for (int i = 0; i < ts.Length; i++)
+                    oaDates[i] = AppState.UnixMsToLocalDateTime(ts[i]).ToOADate();
+            }
 
             // Hide legend when too many series (major perf killer)
             bool showLegend = selectedCodes.Count <= 20;
@@ -1515,7 +1591,24 @@ namespace LeMuReViewer.UI
                     series.XValueType = ChartValueType.DateTime;
                     series.BorderWidth = selectedCodes.Count > 20 ? 1 : 2;
                     series.IsVisibleInLegend = showLegend;
-                    int n = Math.Min(oaDates.Length, values.Length);
+                    int n = Math.Min(ts.Length, values.Length);
+                    string sourceRoot = null;
+                    long sourceStartMs = 0L;
+                    if (overlayMode)
+                    {
+                        if (data.CodeSources != null)
+                        {
+                            data.CodeSources.TryGetValue(code, out sourceRoot);
+                        }
+                        if (string.IsNullOrWhiteSpace(sourceRoot))
+                        {
+                            sourceRoot = data.Root;
+                        }
+                        if (data.SourceStartMs != null && !string.IsNullOrWhiteSpace(sourceRoot))
+                        {
+                            data.SourceStartMs.TryGetValue(sourceRoot, out sourceStartMs);
+                        }
+                    }
 
                     // Count non-null first to allocate exact size
                     int count = 0;
@@ -1529,7 +1622,9 @@ namespace LeMuReViewer.UI
                         {
                             if (values[i].HasValue)
                             {
-                                xArr[w] = oaDates[i];
+                                xArr[w] = overlayMode
+                                    ? OverlayBaseLocalDate.AddMilliseconds(Math.Max(0L, ts[i] - sourceStartMs)).ToOADate()
+                                    : oaDates[i];
                                 yArr[w] = values[i].Value;
                                 w++;
                             }
@@ -1539,22 +1634,31 @@ namespace LeMuReViewer.UI
                     _chart.Series.Add(series);
                 }
 
-                // Update range track bar bounds from data
-                if (oaDates.Length > 0)
+                // Update range track bar bounds from displayed X-space
+                double dataMin = double.NaN;
+                double dataMax = double.NaN;
+                if (overlayMode)
                 {
-                    double dataMin = oaDates[0];
-                    double dataMax = oaDates[oaDates.Length - 1];
-                    if (dataMin < dataMax)
+                    long maxDurationMs = ResolveOverlayMaxDurationMs(data, selectedCodes);
+                    dataMin = OverlayBaseLocalDate.ToOADate();
+                    dataMax = OverlayBaseLocalDate.AddMilliseconds(Math.Max(1000L, maxDurationMs)).ToOADate();
+                }
+                else if (oaDates != null && oaDates.Length > 0)
+                {
+                    dataMin = oaDates[0];
+                    dataMax = oaDates[oaDates.Length - 1];
+                }
+
+                if (!double.IsNaN(dataMin) && !double.IsNaN(dataMax) && dataMin < dataMax)
+                {
+                    bool wasFullRange = Math.Abs(_rangeTrackBar.LowerValue - _rangeTrackBar.Minimum) < 1e-10
+                                     && Math.Abs(_rangeTrackBar.UpperValue - _rangeTrackBar.Maximum) < 1e-10;
+                    _rangeTrackBar.Minimum = dataMin;
+                    _rangeTrackBar.Maximum = dataMax;
+                    if (wasFullRange || double.IsNaN(_rangeStartOa))
                     {
-                        bool wasFullRange = Math.Abs(_rangeTrackBar.LowerValue - _rangeTrackBar.Minimum) < 1e-10
-                                         && Math.Abs(_rangeTrackBar.UpperValue - _rangeTrackBar.Maximum) < 1e-10;
-                        _rangeTrackBar.Minimum = dataMin;
-                        _rangeTrackBar.Maximum = dataMax;
-                        if (wasFullRange || double.IsNaN(_rangeStartOa))
-                        {
-                            _rangeTrackBar.LowerValue = dataMin;
-                            _rangeTrackBar.UpperValue = dataMax;
-                        }
+                        _rangeTrackBar.LowerValue = dataMin;
+                        _rangeTrackBar.UpperValue = dataMax;
                     }
                 }
 
@@ -1570,6 +1674,81 @@ namespace LeMuReViewer.UI
                 _chart.ResumeLayout();
                 _chart.EndInit();
             }
+        }
+
+        private void ApplyAxisXMode(bool overlayMode)
+        {
+            if (_chart.ChartAreas.Count == 0) return;
+            ChartArea area = _chart.ChartAreas[0];
+            area.AxisX.LabelStyle.Format = overlayMode ? "HH:mm:ss" : "HH:mm\ndd.MM";
+            area.AxisX.Title = overlayMode ? Loc.Get("OverlayXAxisTitle") : string.Empty;
+        }
+
+        private bool IsOverlayCompareModeAvailable(TestData data)
+        {
+            return data != null
+                   && data.SourceColumns != null
+                   && data.SourceColumns.Count > 1
+                   && data.CodeSources != null
+                   && data.SourceStartMs != null;
+        }
+
+        private bool IsOverlayCompareModeActive()
+        {
+            return _compareOverlayCheck.Checked && IsOverlayCompareModeAvailable(AppState.Data);
+        }
+
+        private static long ResolveOverlayMaxDurationMs(TestData data, List<string> selectedCodes)
+        {
+            long maxDuration = 0L;
+            if (data == null || selectedCodes == null) return maxDuration;
+            for (int i = 0; i < selectedCodes.Count; i++)
+            {
+                string code = selectedCodes[i];
+                string source = null;
+                if (data.CodeSources != null)
+                {
+                    data.CodeSources.TryGetValue(code, out source);
+                }
+                if (string.IsNullOrWhiteSpace(source)) continue;
+
+                long startMs;
+                long endMs;
+                if (data.SourceStartMs == null || !data.SourceStartMs.TryGetValue(source, out startMs)) continue;
+                if (data.SourceEndMs == null || !data.SourceEndMs.TryGetValue(source, out endMs)) continue;
+                long duration = Math.Max(0L, endMs - startMs);
+                if (duration > maxDuration) maxDuration = duration;
+            }
+
+            if (maxDuration == 0L && data.TimestampsMs != null && data.TimestampsMs.Length > 1)
+            {
+                maxDuration = Math.Max(0L, data.TimestampsMs[data.TimestampsMs.Length - 1] - data.TimestampsMs[0]);
+            }
+            return maxDuration;
+        }
+
+        private string BuildRangeLabelText(double startOa, double endOa)
+        {
+            if (double.IsNaN(startOa) || double.IsNaN(endOa))
+            {
+                return Loc.Get("RangeAll");
+            }
+            if (IsOverlayCompareModeActive())
+            {
+                return string.Format(Loc.Get("RangeSelectedOverlay"), FormatOverlayElapsed(startOa), FormatOverlayElapsed(endOa));
+            }
+            DateTime dtStart = DateTime.FromOADate(startOa);
+            DateTime dtEnd = DateTime.FromOADate(endOa);
+            return string.Format(Loc.Get("RangeSelected"), dtStart, dtEnd);
+        }
+
+        private static string FormatOverlayElapsed(double oaValue)
+        {
+            DateTime dt = DateTime.FromOADate(oaValue);
+            TimeSpan ts = dt - OverlayBaseLocalDate;
+            if (ts < TimeSpan.Zero) ts = TimeSpan.Zero;
+            int hh = (int)ts.TotalHours;
+            return string.Format(CultureInfo.InvariantCulture, "{0:00}:{1:00}:{2:00}", hh, ts.Minutes, ts.Seconds);
         }
 
         private int ResolveStep(int totalPoints)
@@ -1605,7 +1784,7 @@ namespace LeMuReViewer.UI
             // Read selected range from stored values
             long? rangeStartMs = null;
             long? rangeEndMs = null;
-            if (!double.IsNaN(_rangeStartOa) && !double.IsNaN(_rangeEndOa))
+            if (!IsOverlayCompareModeActive() && !double.IsNaN(_rangeStartOa) && !double.IsNaN(_rangeEndOa))
             {
                 DateTime dtStart = DateTime.FromOADate(_rangeStartOa);
                 DateTime dtEnd = DateTime.FromOADate(_rangeEndOa);
@@ -2160,6 +2339,7 @@ namespace LeMuReViewer.UI
                 state.auto_step = _autoStepCheck.Checked;
                 state.target_points = _targetPointsBox.SelectedItem == null ? "5000" : _targetPointsBox.SelectedItem.ToString();
                 state.manual_step = (int)_manualStepUpDown.Value;
+                state.compare_overlay = _compareOverlayCheck.Checked;
                 state.sort_mode = GetSelectedSortKey();
                 state.selected_only = _selectedOnlyCheck.Checked;
                 state.channel_filter = _channelFilterBox.Text;
@@ -2200,6 +2380,7 @@ namespace LeMuReViewer.UI
                 }
 
                 _autoStepCheck.Checked = state.auto_step.GetValueOrDefault(true);
+                _compareOverlayCheck.Checked = state.compare_overlay.GetValueOrDefault(false);
                 if (state.manual_step.HasValue)
                 {
                     int m = Math.Max((int)_manualStepUpDown.Minimum, Math.Min((int)_manualStepUpDown.Maximum, state.manual_step.Value));
@@ -2283,6 +2464,7 @@ namespace LeMuReViewer.UI
             public bool? auto_step { get; set; }
             public string target_points { get; set; }
             public int? manual_step { get; set; }
+            public bool? compare_overlay { get; set; }
             public string sort_mode { get; set; }
             public bool? selected_only { get; set; }
             public string channel_filter { get; set; }

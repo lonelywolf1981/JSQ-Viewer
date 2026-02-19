@@ -148,6 +148,15 @@ namespace LeMuReViewer.Core
                 Root = root,
                 Meta = meta,
                 Channels = channels,
+                CodeSources = columnNames.ToDictionary(c => c, c => root, StringComparer.OrdinalIgnoreCase),
+                SourceStartMs = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+                {
+                    { root, totalValid > 0 ? sortedTs[0] : 0L }
+                },
+                SourceEndMs = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+                {
+                    { root, totalValid > 0 ? sortedTs[totalValid - 1] : 0L }
+                },
                 TimestampsMs = sortedTs,
                 Columns = sortedCols,
                 ColumnNames = columnNames,
@@ -159,7 +168,7 @@ namespace LeMuReViewer.Core
             };
         }
 
-        public static TestData LoadAndMergeTests(IList<string> folders)
+        public static List<TestData> LoadTests(IList<string> folders)
         {
             if (folders == null || folders.Count == 0)
             {
@@ -171,21 +180,95 @@ namespace LeMuReViewer.Core
             {
                 list.Add(LoadTest(folders[i]));
             }
+            return list;
+        }
 
+        public static List<string> FindOverlappingCodes(IList<TestData> list)
+        {
+            var codeToSources = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (list == null) return new List<string>();
+            for (int i = 0; i < list.Count; i++)
+            {
+                TestData td = list[i];
+                var seenInSource = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                for (int c = 0; c < td.ColumnNames.Length; c++)
+                {
+                    string code = td.ColumnNames[c];
+                    if (!seenInSource.Add(code)) continue;
+                    int count;
+                    codeToSources.TryGetValue(code, out count);
+                    codeToSources[code] = count + 1;
+                }
+            }
+            return codeToSources.Where(kv => kv.Value > 1).Select(kv => kv.Key).OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        public static TestData MergeLoadedTests(IList<TestData> list, bool splitOverlappingCodes)
+        {
             if (list.Count == 1)
             {
                 return list[0];
             }
 
-            var channels = new Dictionary<string, ChannelInfo>(StringComparer.OrdinalIgnoreCase);
-            var meta = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var colSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            int totalRows = 0;
+            Dictionary<string, string> sourceTags = BuildSourceTags(list);
+            HashSet<string> overlaps = new HashSet<string>(FindOverlappingCodes(list), StringComparer.OrdinalIgnoreCase);
+            var codeMapsBySource = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+            var usedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             for (int i = 0; i < list.Count; i++)
             {
                 TestData td = list[i];
+                string source = td.Root ?? ("source_" + (i + 1).ToString(CultureInfo.InvariantCulture));
+                string tag = sourceTags[source];
+                var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                for (int c = 0; c < td.ColumnNames.Length; c++)
+                {
+                    string code = td.ColumnNames[c];
+                    string mergedCode = code;
+                    if (splitOverlappingCodes && overlaps.Contains(code))
+                    {
+                        mergedCode = tag + "::" + code;
+                    }
+                    if (usedCodes.Contains(mergedCode))
+                    {
+                        int suffix = 2;
+                        string candidate = mergedCode + "#" + suffix.ToString(CultureInfo.InvariantCulture);
+                        while (usedCodes.Contains(candidate))
+                        {
+                            suffix++;
+                            candidate = mergedCode + "#" + suffix.ToString(CultureInfo.InvariantCulture);
+                        }
+                        mergedCode = candidate;
+                    }
+                    usedCodes.Add(mergedCode);
+                    map[code] = mergedCode;
+                }
+                codeMapsBySource[source] = map;
+            }
+
+            var channels = new Dictionary<string, ChannelInfo>(StringComparer.OrdinalIgnoreCase);
+            var codeSources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var meta = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var colSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            int totalRows = 0;
+            var sourceStartMs = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            var sourceEndMs = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                TestData td = list[i];
+                string source = td.Root ?? ("source_" + (i + 1).ToString(CultureInfo.InvariantCulture));
+                string tag = sourceTags[source];
+                Dictionary<string, string> codeMap = codeMapsBySource[source];
                 totalRows += td.RowCount;
+                long sourceStart = td.SourceStartMs != null && td.SourceStartMs.ContainsKey(source)
+                    ? td.SourceStartMs[source]
+                    : (td.TimestampsMs != null && td.TimestampsMs.Length > 0 ? td.TimestampsMs[0] : 0L);
+                long sourceEnd = td.SourceEndMs != null && td.SourceEndMs.ContainsKey(source)
+                    ? td.SourceEndMs[source]
+                    : (td.TimestampsMs != null && td.TimestampsMs.Length > 0 ? td.TimestampsMs[td.TimestampsMs.Length - 1] : 0L);
+                sourceStartMs[source] = sourceStart;
+                sourceEndMs[source] = sourceEnd;
 
                 foreach (var kv in td.Meta)
                 {
@@ -197,10 +280,20 @@ namespace LeMuReViewer.Core
 
                 foreach (var kv in td.Channels)
                 {
-                    ChannelInfo existing;
-                    if (!channels.TryGetValue(kv.Key, out existing))
+                    string mergedCode;
+                    if (!codeMap.TryGetValue(kv.Key, out mergedCode))
                     {
-                        channels[kv.Key] = new ChannelInfo { Code = kv.Value.Code, Name = kv.Value.Name, Unit = kv.Value.Unit };
+                        mergedCode = kv.Key;
+                    }
+                    ChannelInfo existing;
+                    if (!channels.TryGetValue(mergedCode, out existing))
+                    {
+                        string mergedName = kv.Value.Name;
+                        if (splitOverlappingCodes && overlaps.Contains(kv.Key))
+                        {
+                            mergedName = string.IsNullOrWhiteSpace(mergedName) ? ("[" + tag + "]") : (mergedName + " [" + tag + "]");
+                        }
+                        channels[mergedCode] = new ChannelInfo { Code = mergedCode, Name = mergedName, Unit = kv.Value.Unit };
                     }
                     else
                     {
@@ -217,7 +310,17 @@ namespace LeMuReViewer.Core
 
                 for (int c = 0; c < td.ColumnNames.Length; c++)
                 {
-                    colSet.Add(td.ColumnNames[c]);
+                    string origCode = td.ColumnNames[c];
+                    string mergedCode;
+                    if (!codeMap.TryGetValue(origCode, out mergedCode))
+                    {
+                        mergedCode = origCode;
+                    }
+                    colSet.Add(mergedCode);
+                    if (!codeSources.ContainsKey(mergedCode))
+                    {
+                        codeSources[mergedCode] = source;
+                    }
                 }
             }
 
@@ -233,6 +336,8 @@ namespace LeMuReViewer.Core
             for (int i = 0; i < list.Count; i++)
             {
                 TestData td = list[i];
+                string source = td.Root ?? ("source_" + (i + 1).ToString(CultureInfo.InvariantCulture));
+                Dictionary<string, string> codeMap = codeMapsBySource[source];
                 int n = td.RowCount;
                 if (n <= 0) continue;
 
@@ -240,9 +345,14 @@ namespace LeMuReViewer.Core
                 for (int c = 0; c < td.ColumnNames.Length; c++)
                 {
                     string col = td.ColumnNames[c];
+                    string mergedCol;
+                    if (!codeMap.TryGetValue(col, out mergedCol))
+                    {
+                        mergedCol = col;
+                    }
                     double?[] src;
                     if (!td.Columns.TryGetValue(col, out src)) continue;
-                    Array.Copy(src, 0, compactCols[col], writePos, n);
+                    Array.Copy(src, 0, compactCols[mergedCol], writePos, n);
                 }
                 writePos += n;
             }
@@ -279,15 +389,60 @@ namespace LeMuReViewer.Core
                 Root = string.Join(" ; ", list.Select(d => d.Root).Where(s => !string.IsNullOrWhiteSpace(s))),
                 Meta = meta,
                 Channels = channels,
+                CodeSources = codeSources,
+                SourceStartMs = sourceStartMs,
+                SourceEndMs = sourceEndMs,
                 TimestampsMs = sortedTs,
                 Columns = sortedCols,
                 ColumnNames = columnNames,
                 SourceColumns = list.ToDictionary(
                     d => d.Root,
-                    d => (d.ColumnNames ?? new string[0]).ToArray(),
+                    d =>
+                    {
+                        Dictionary<string, string> map = codeMapsBySource[d.Root];
+                        var arr = new string[d.ColumnNames.Length];
+                        for (int i = 0; i < d.ColumnNames.Length; i++)
+                        {
+                            string merged;
+                            arr[i] = map.TryGetValue(d.ColumnNames[i], out merged) ? merged : d.ColumnNames[i];
+                        }
+                        return arr;
+                    },
                     StringComparer.OrdinalIgnoreCase),
                 RowCount = totalRows
             };
+        }
+
+        public static TestData LoadAndMergeTests(IList<string> folders)
+        {
+            List<TestData> list = LoadTests(folders);
+            return MergeLoadedTests(list, false);
+        }
+
+        private static Dictionary<string, string> BuildSourceTags(IList<TestData> list)
+        {
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < list.Count; i++)
+            {
+                string root = list[i].Root ?? ("source_" + (i + 1).ToString(CultureInfo.InvariantCulture));
+                string trimmed = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string baseName = Path.GetFileName(trimmed);
+                if (string.IsNullOrWhiteSpace(baseName))
+                {
+                    baseName = "source_" + (i + 1).ToString(CultureInfo.InvariantCulture);
+                }
+                string tag = baseName;
+                int suffix = 2;
+                while (used.Contains(tag))
+                {
+                    tag = baseName + "_" + suffix.ToString(CultureInfo.InvariantCulture);
+                    suffix++;
+                }
+                used.Add(tag);
+                result[root] = tag;
+            }
+            return result;
         }
 
         private static int[] BuildTimeFieldIndices(DbfHeader header)
