@@ -38,6 +38,7 @@ namespace LeMuReViewer.UI
             // MainForm
             { "AppTitle", "ИЛХО Viewer" },
             { "Browse", "Обзор" },
+            { "AddData", "Добавить еще данные" },
             { "Load", "Загрузить" },
             { "CopyPath", "Копировать путь" },
             { "Recent", "Недавние:" },
@@ -67,6 +68,7 @@ namespace LeMuReViewer.UI
             { "CopyPathFailed", "Ошибка копирования пути." },
             { "SelectFolder", "Сначала выберите папку." },
             { "TooManyFolders", "Можно загрузить не более 3 папок (разделитель: ;)." },
+            { "FolderAlreadyAdded", "Эта папка уже добавлена." },
             { "LoadedTest", "Загружен тест: {0} строк." },
             { "LoadFailed", "Ошибка загрузки." },
             { "SelectChannel", "Выберите хотя бы один канал." },
@@ -105,6 +107,7 @@ namespace LeMuReViewer.UI
             // Tooltips
             { "TipFolder", "Путь к папке(ам) с данными теста, разделитель: ;" },
             { "TipBrowse", "Выбрать папку с данными через диалог" },
+            { "TipAddData", "Добавить еще одну папку с данными к текущему набору" },
             { "TipLoad", "Загрузить данные из указанной папки" },
             { "TipCopyPath", "Скопировать путь папки в буфер обмена" },
             { "TipLang", "Переключить язык интерфейса (RU/EN)" },
@@ -206,6 +209,7 @@ namespace LeMuReViewer.UI
             // MainForm
             { "AppTitle", "ILHO Viewer" },
             { "Browse", "Browse" },
+            { "AddData", "Add More Data" },
             { "Load", "Load" },
             { "CopyPath", "Copy Path" },
             { "Recent", "Recent:" },
@@ -235,6 +239,7 @@ namespace LeMuReViewer.UI
             { "CopyPathFailed", "Copy path failed." },
             { "SelectFolder", "Select a folder first." },
             { "TooManyFolders", "You can load up to 3 folders (separator: ;)." },
+            { "FolderAlreadyAdded", "This folder is already added." },
             { "LoadedTest", "Loaded test: {0} rows." },
             { "LoadFailed", "Load failed." },
             { "SelectChannel", "Select at least one channel." },
@@ -273,6 +278,7 @@ namespace LeMuReViewer.UI
             // Tooltips
             { "TipFolder", "Path to test data folder(s), separator: ;" },
             { "TipBrowse", "Select data folder via dialog" },
+            { "TipAddData", "Add one more data folder to the current set" },
             { "TipLoad", "Load data from the specified folder" },
             { "TipCopyPath", "Copy folder path to clipboard" },
             { "TipLang", "Switch interface language (RU/EN)" },
