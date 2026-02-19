@@ -85,3 +85,9 @@ viewer_settings.json
 ui_state.json
 saved_presets/
 saved_orders/
+
+# Local assets/artifacts that should stay untracked
+img.png
+styles.png
+LeMuReViewer_Setup.zip
+build.bat
