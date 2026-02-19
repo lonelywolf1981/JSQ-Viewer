@@ -245,16 +245,14 @@ namespace LeMuReViewer.UI
             _resetRangeButton.Visible = false;
             _resetRangeButton.Click += ResetRangeButtonOnClick;
             rangePanel.Controls.Add(_resetRangeButton);
-            _splitMain.Panel2.Controls.Add(rangePanel);
 
             _rangeTrackBar = new RangeTrackBar();
             _rangeTrackBar.Dock = DockStyle.Bottom;
             _rangeTrackBar.Height = 48;
             _rangeTrackBar.RangeChanged += RangeTrackBarOnRangeChanged;
-            _splitMain.Panel2.Controls.Add(_rangeTrackBar);
-
             _splitMain.Panel2.Controls.Add(_chart);
-
+            _splitMain.Panel2.Controls.Add(_rangeTrackBar);
+            _splitMain.Panel2.Controls.Add(rangePanel);
             _busyPanel = new Panel();
             _busyPanel.Dock = DockStyle.Fill;
             _busyPanel.BackColor = Color.FromArgb(180, 230, 230, 230);
@@ -823,8 +821,8 @@ namespace LeMuReViewer.UI
             }
 
             AttachChartInteractivity(detachedChart, form);
-            form.Controls.Add(detachedRangeBar);
             form.Controls.Add(detachedChart);
+            form.Controls.Add(detachedRangeBar);
             form.Show(this);
         }
 
