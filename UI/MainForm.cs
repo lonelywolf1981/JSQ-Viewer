@@ -78,6 +78,9 @@ namespace LeMuReViewer.UI
         private readonly List<ChannelItem> _allChannels = new List<ChannelItem>();
         private readonly HashSet<string> _checkedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _pendingCheckedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<Form> _sourceChannelForms = new List<Form>();
+        private readonly Dictionary<string, CheckedListBox> _sourceChannelLists = new Dictionary<string, CheckedListBox>(StringComparer.OrdinalIgnoreCase);
+        private bool _syncingSourceChannelSelection;
         private readonly string _projectRoot;
         private readonly string _orderFilePath;
         private readonly string _recentFoldersFilePath;
@@ -298,6 +301,7 @@ namespace LeMuReViewer.UI
             ReloadOrders();
             FormClosing += OnFormClosingSaveOrder;
             FormClosing += OnFormClosingSaveUiState;
+            FormClosing += delegate { CloseSourceChannelWindows(); };
             KeyDown += MainFormOnKeyDown;
             Loc.LanguageChanged += ApplyLocalization;
             LoadUiState();
@@ -1008,13 +1012,26 @@ namespace LeMuReViewer.UI
 
         private void BrowseButtonOnClick(object sender, EventArgs e)
         {
+            List<string> current = ParseFolderSpec(_folderBox.Text);
+            string initial = current.Count > 0 && Directory.Exists(current[0]) ? current[0] : string.Empty;
             using (var dialog = new FolderBrowserDialog())
             {
-                dialog.SelectedPath = Directory.Exists(_folderBox.Text) ? _folderBox.Text : string.Empty;
+                dialog.SelectedPath = initial;
                 if (dialog.ShowDialog(this) == DialogResult.OK)
                 {
-                    _folderBox.Text = dialog.SelectedPath;
-                    LoadFolder(dialog.SelectedPath, true);
+                    string selected = dialog.SelectedPath;
+                    if (!current.Any(f => string.Equals(f, selected, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        if (current.Count >= 3)
+                        {
+                            NotifyError(Loc.Get("TooManyFolders"));
+                            return;
+                        }
+                        current.Add(selected);
+                    }
+                    string spec = JoinFolderSpec(current);
+                    _folderBox.Text = spec;
+                    LoadFolder(spec, true);
                 }
             }
         }
@@ -1030,7 +1047,7 @@ namespace LeMuReViewer.UI
             if (_recentFoldersBox.SelectedItem == null) return;
             string folder = _recentFoldersBox.SelectedItem.ToString();
             _folderBox.Text = folder;
-            if (!string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder))
+            if (IsValidFolderSpec(folder))
             {
                 LoadFolder(folder, false);
             }
@@ -1046,7 +1063,7 @@ namespace LeMuReViewer.UI
                 }
 
                 string folder = _recentFoldersBox.SelectedItem.ToString();
-                if (!string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder))
+                if (IsValidFolderSpec(folder))
                 {
                     LoadFolder(folder, false);
                 }
@@ -1100,19 +1117,74 @@ namespace LeMuReViewer.UI
         {
             try
             {
+                List<string> folders = ParseFolderSpec(folder);
+                if (folders.Count == 0)
+                {
+                    NotifyError(Loc.Get("SelectFolder"));
+                    return;
+                }
+                if (folders.Count > 3)
+                {
+                    NotifyError(Loc.Get("TooManyFolders"));
+                    return;
+                }
+                for (int i = 0; i < folders.Count; i++)
+                {
+                    if (!Directory.Exists(folders[i]))
+                    {
+                        throw new DirectoryNotFoundException("Folder not found: " + folders[i]);
+                    }
+                }
+
+                string spec = JoinFolderSpec(folders);
+                _folderBox.Text = spec;
                 SetBusy(true, Loc.Get("LoadingData"));
                 Cursor = Cursors.WaitCursor;
-                TestData data = await Task.Run(() => TestLoader.LoadTest(folder));
-                AppState.SetData(folder, data);
+                TestData data = await Task.Run(() =>
+                    folders.Count == 1 ? TestLoader.LoadTest(folders[0]) : TestLoader.LoadAndMergeTests(folders));
+                AppState.SetData(spec, data);
                 BindLoadedData(data);
                 if (addToRecent)
                 {
-                    AddRecentFolder(folder);
+                    AddRecentFolder(spec);
                 }
                 NotifySuccess(string.Format(Loc.Get("LoadedTest"), data.RowCount));
             }
             catch (Exception ex) { AppLogger.LogError(_projectRoot, "Load test failed.", ex); MessageBox.Show(this, ex.Message, Loc.Get("LoadFailed"), MessageBoxButtons.OK, MessageBoxIcon.Error); NotifyError(Loc.Get("LoadFailed")); }
             finally { Cursor = Cursors.Default; SetBusy(false, null); }
+        }
+
+        private static List<string> ParseFolderSpec(string spec)
+        {
+            var list = new List<string>();
+            string raw = spec ?? string.Empty;
+            string[] parts = raw.Split(new[] { ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < parts.Length; i++)
+            {
+                string p = parts[i].Trim().Trim('"');
+                if (p.Length == 0) continue;
+                if (!list.Any(x => string.Equals(x, p, StringComparison.OrdinalIgnoreCase)))
+                {
+                    list.Add(p);
+                }
+            }
+            return list;
+        }
+
+        private static string JoinFolderSpec(List<string> folders)
+        {
+            return string.Join(" ; ", folders ?? new List<string>());
+        }
+
+        private static bool IsValidFolderSpec(string spec)
+        {
+            List<string> folders = ParseFolderSpec(spec);
+            if (folders.Count == 0 || folders.Count > 3) return false;
+            for (int i = 0; i < folders.Count; i++)
+            {
+                if (!Directory.Exists(folders[i])) return false;
+            }
+            return true;
         }
 
         private void BindLoadedData(TestData data)
@@ -1137,6 +1209,7 @@ namespace LeMuReViewer.UI
                 _allChannels.Add(new ChannelItem(code, label, unit));
             }
             RebuildChannelList();
+            RebuildSourceChannelWindows(data);
             DataSummary summary = AppState.BuildSummary(data);
             _summaryLabel.Text = string.Format(Loc.Get("Points"), summary.Points, summary.Start, summary.End);
             _exportTemplateButton.Enabled = _savePresetButton.Enabled = true;
@@ -1145,6 +1218,144 @@ namespace LeMuReViewer.UI
             _loadOrderButton.Enabled = _deleteOrderButton.Enabled = _ordersBox.Items.Count > 0;
             UpdateSelectionInfo();
             RedrawChart();
+        }
+
+        private void RebuildSourceChannelWindows(TestData data)
+        {
+            CloseSourceChannelWindows();
+            if (data == null || data.SourceColumns == null || data.SourceColumns.Count <= 1)
+            {
+                return;
+            }
+
+            int baseX = Right + 12;
+            int baseY = Top + 40;
+            int offsetY = 0;
+            string[] globalOrdered = ApplySavedOrder(data.ColumnNames);
+
+            foreach (var kv in data.SourceColumns)
+            {
+                string sourceRoot = kv.Key;
+                string[] sourceCols = kv.Value ?? new string[0];
+                var set = new HashSet<string>(sourceCols, StringComparer.OrdinalIgnoreCase);
+                string[] ordered = globalOrdered.Where(set.Contains).ToArray();
+
+                var form = new Form();
+                form.Text = string.Format(Loc.Get("ChannelsForSource"), Path.GetFileName(sourceRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
+                form.Width = 360;
+                form.Height = 540;
+                form.StartPosition = FormStartPosition.Manual;
+                form.Location = new Point(baseX, baseY + offsetY);
+                form.ShowInTaskbar = false;
+                form.FormBorderStyle = FormBorderStyle.SizableToolWindow;
+
+                var list = new CheckedListBox();
+                list.Dock = DockStyle.Fill;
+                list.CheckOnClick = true;
+                list.IntegralHeight = false;
+                list.Tag = sourceRoot;
+                list.ItemCheck += SourceListOnItemCheck;
+
+                for (int i = 0; i < ordered.Length; i++)
+                {
+                    string code = ordered[i];
+                    ChannelInfo ch;
+                    string label = data.Channels.TryGetValue(code, out ch) ? ch.Label : code;
+                    string unit = data.Channels.TryGetValue(code, out ch) ? (ch.Unit ?? string.Empty) : string.Empty;
+                    var item = new ChannelItem(code, label, unit);
+                    list.Items.Add(item, _checkedCodes.Contains(code));
+                }
+
+                form.Controls.Add(list);
+                form.FormClosed += delegate
+                {
+                    _sourceChannelForms.Remove(form);
+                    _sourceChannelLists.Remove(sourceRoot);
+                };
+
+                _sourceChannelForms.Add(form);
+                _sourceChannelLists[sourceRoot] = list;
+                form.Show(this);
+
+                offsetY += 28;
+            }
+        }
+
+        private void CloseSourceChannelWindows()
+        {
+            for (int i = _sourceChannelForms.Count - 1; i >= 0; i--)
+            {
+                Form f = _sourceChannelForms[i];
+                if (f == null) continue;
+                try
+                {
+                    if (!f.IsDisposed) f.Close();
+                }
+                catch { }
+            }
+            _sourceChannelForms.Clear();
+            _sourceChannelLists.Clear();
+        }
+
+        private void SyncSourceWindowsChecksFromSelectedCodes()
+        {
+            if (_syncingSourceChannelSelection) return;
+            _syncingSourceChannelSelection = true;
+            try
+            {
+                foreach (var kv in _sourceChannelLists)
+                {
+                    CheckedListBox list = kv.Value;
+                    if (list == null || list.IsDisposed) continue;
+                    for (int i = 0; i < list.Items.Count; i++)
+                    {
+                        ChannelItem item = list.Items[i] as ChannelItem;
+                        if (item == null) continue;
+                        bool shouldCheck = _checkedCodes.Contains(item.Code);
+                        if (list.GetItemChecked(i) != shouldCheck)
+                        {
+                            list.SetItemChecked(i, shouldCheck);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                _syncingSourceChannelSelection = false;
+            }
+        }
+
+        private void SourceListOnItemCheck(object sender, ItemCheckEventArgs e)
+        {
+            if (_syncingSourceChannelSelection) return;
+            var list = sender as CheckedListBox;
+            if (list == null) return;
+
+            BeginInvoke((Action)(delegate
+            {
+                if (_syncingSourceChannelSelection) return;
+                _syncingSourceChannelSelection = true;
+                try
+                {
+                    for (int i = 0; i < list.Items.Count; i++)
+                    {
+                        ChannelItem item = list.Items[i] as ChannelItem;
+                        if (item == null) continue;
+                        bool checkedNow = list.GetItemChecked(i);
+                        if (checkedNow) _checkedCodes.Add(item.Code);
+                        else _checkedCodes.Remove(item.Code);
+                    }
+                }
+                finally
+                {
+                    _syncingSourceChannelSelection = false;
+                }
+
+                RebuildChannelList();
+                SyncSourceWindowsChecksFromSelectedCodes();
+                UpdateSelectionInfo();
+                RedrawChart();
+            }));
         }
 
         private void StepControlsOnChanged(object sender, EventArgs e)
@@ -1167,6 +1378,7 @@ namespace LeMuReViewer.UI
             BeginInvoke((Action)(delegate
             {
                 SyncCheckedFromVisibleList();
+                SyncSourceWindowsChecksFromSelectedCodes();
                 UpdateSelectionInfo();
                 RedrawChart();
             }));
@@ -1182,6 +1394,7 @@ namespace LeMuReViewer.UI
             {
                 _channelsList.SetItemChecked(i, true);
             }
+            SyncSourceWindowsChecksFromSelectedCodes();
             UpdateSelectionInfo();
             RedrawChart();
         }
@@ -1193,6 +1406,7 @@ namespace LeMuReViewer.UI
             {
                 _channelsList.SetItemChecked(i, false);
             }
+            SyncSourceWindowsChecksFromSelectedCodes();
             UpdateSelectionInfo();
             RedrawChart();
         }
@@ -1544,6 +1758,7 @@ namespace LeMuReViewer.UI
             _checkedCodes.Clear();
             if (checkedCodes != null) for (int i = 0; i < checkedCodes.Count; i++) _checkedCodes.Add(checkedCodes[i]);
             RebuildChannelList();
+            SyncSourceWindowsChecksFromSelectedCodes();
             UpdateSelectionInfo();
             RedrawChart();
         }

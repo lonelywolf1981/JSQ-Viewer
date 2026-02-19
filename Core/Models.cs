@@ -28,6 +28,7 @@ namespace LeMuReViewer.Core
         public long[] TimestampsMs { get; set; }
         public Dictionary<string, double?[]> Columns { get; set; }
         public string[] ColumnNames { get; set; }
+        public Dictionary<string, string[]> SourceColumns { get; set; }
         public int RowCount { get; set; }
 
         public TestData()
@@ -38,6 +39,7 @@ namespace LeMuReViewer.Core
             TimestampsMs = new long[0];
             Columns = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase);
             ColumnNames = new string[0];
+            SourceColumns = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
         }
     }
 

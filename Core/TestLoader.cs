@@ -151,7 +151,142 @@ namespace LeMuReViewer.Core
                 TimestampsMs = sortedTs,
                 Columns = sortedCols,
                 ColumnNames = columnNames,
+                SourceColumns = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+                {
+                    { root, columnNames.ToArray() }
+                },
                 RowCount = totalValid
+            };
+        }
+
+        public static TestData LoadAndMergeTests(IList<string> folders)
+        {
+            if (folders == null || folders.Count == 0)
+            {
+                throw new ArgumentException("No folders provided for loading.", "folders");
+            }
+
+            var list = new List<TestData>(folders.Count);
+            for (int i = 0; i < folders.Count; i++)
+            {
+                list.Add(LoadTest(folders[i]));
+            }
+
+            if (list.Count == 1)
+            {
+                return list[0];
+            }
+
+            var channels = new Dictionary<string, ChannelInfo>(StringComparer.OrdinalIgnoreCase);
+            var meta = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var colSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            int totalRows = 0;
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                TestData td = list[i];
+                totalRows += td.RowCount;
+
+                foreach (var kv in td.Meta)
+                {
+                    if (!meta.ContainsKey(kv.Key))
+                    {
+                        meta[kv.Key] = kv.Value;
+                    }
+                }
+
+                foreach (var kv in td.Channels)
+                {
+                    ChannelInfo existing;
+                    if (!channels.TryGetValue(kv.Key, out existing))
+                    {
+                        channels[kv.Key] = new ChannelInfo { Code = kv.Value.Code, Name = kv.Value.Name, Unit = kv.Value.Unit };
+                    }
+                    else
+                    {
+                        if (string.IsNullOrWhiteSpace(existing.Name) && !string.IsNullOrWhiteSpace(kv.Value.Name))
+                        {
+                            existing.Name = kv.Value.Name;
+                        }
+                        if (string.IsNullOrWhiteSpace(existing.Unit) && !string.IsNullOrWhiteSpace(kv.Value.Unit))
+                        {
+                            existing.Unit = kv.Value.Unit;
+                        }
+                    }
+                }
+
+                for (int c = 0; c < td.ColumnNames.Length; c++)
+                {
+                    colSet.Add(td.ColumnNames[c]);
+                }
+            }
+
+            string[] columnNames = colSet.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToArray();
+            long[] compactTs = new long[totalRows];
+            var compactCols = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase);
+            foreach (string col in columnNames)
+            {
+                compactCols[col] = new double?[totalRows];
+            }
+
+            int writePos = 0;
+            for (int i = 0; i < list.Count; i++)
+            {
+                TestData td = list[i];
+                int n = td.RowCount;
+                if (n <= 0) continue;
+
+                Array.Copy(td.TimestampsMs, 0, compactTs, writePos, n);
+                for (int c = 0; c < td.ColumnNames.Length; c++)
+                {
+                    string col = td.ColumnNames[c];
+                    double?[] src;
+                    if (!td.Columns.TryGetValue(col, out src)) continue;
+                    Array.Copy(src, 0, compactCols[col], writePos, n);
+                }
+                writePos += n;
+            }
+
+            int[] sortIndices = new int[totalRows];
+            for (int i = 0; i < totalRows; i++) sortIndices[i] = i;
+            Array.Sort(sortIndices, delegate(int a, int b) { return compactTs[a].CompareTo(compactTs[b]); });
+
+            long[] sortedTs = new long[totalRows];
+            var sortedCols = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase);
+            foreach (string col in columnNames)
+            {
+                sortedCols[col] = new double?[totalRows];
+            }
+
+            for (int i = 0; i < totalRows; i++)
+            {
+                int srcIdx = sortIndices[i];
+                sortedTs[i] = compactTs[srcIdx];
+            }
+
+            foreach (string col in columnNames)
+            {
+                double?[] srcArr = compactCols[col];
+                double?[] dstArr = sortedCols[col];
+                for (int i = 0; i < totalRows; i++)
+                {
+                    dstArr[i] = srcArr[sortIndices[i]];
+                }
+            }
+
+            return new TestData
+            {
+                Root = string.Join(" ; ", list.Select(d => d.Root).Where(s => !string.IsNullOrWhiteSpace(s))),
+                Meta = meta,
+                Channels = channels,
+                TimestampsMs = sortedTs,
+                Columns = sortedCols,
+                ColumnNames = columnNames,
+                SourceColumns = list.ToDictionary(
+                    d => d.Root,
+                    d => (d.ColumnNames ?? new string[0]).ToArray(),
+                    StringComparer.OrdinalIgnoreCase),
+                RowCount = totalRows
             };
         }
 

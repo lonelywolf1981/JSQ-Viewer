@@ -47,6 +47,7 @@ namespace LeMuReViewer.UI
             { "Target", "Цель:" },
             { "Manual", "Ручной:" },
             { "Channels", "Каналы" },
+            { "ChannelsForSource", "Каналы: {0}" },
             { "SelectedOnly", "Выбранные" },
             { "SelectAll", "Выбрать все" },
             { "Clear", "Очистить" },
@@ -65,6 +66,7 @@ namespace LeMuReViewer.UI
             { "PathCopied", "Путь скопирован." },
             { "CopyPathFailed", "Ошибка копирования пути." },
             { "SelectFolder", "Сначала выберите папку." },
+            { "TooManyFolders", "Можно загрузить не более 3 папок (разделитель: ;)." },
             { "LoadedTest", "Загружен тест: {0} строк." },
             { "LoadFailed", "Ошибка загрузки." },
             { "SelectChannel", "Выберите хотя бы один канал." },
@@ -101,7 +103,7 @@ namespace LeMuReViewer.UI
             { "Language", "EN" },
 
             // Tooltips
-            { "TipFolder", "Путь к папке с данными теста" },
+            { "TipFolder", "Путь к папке(ам) с данными теста, разделитель: ;" },
             { "TipBrowse", "Выбрать папку с данными через диалог" },
             { "TipLoad", "Загрузить данные из указанной папки" },
             { "TipCopyPath", "Скопировать путь папки в буфер обмена" },
@@ -213,6 +215,7 @@ namespace LeMuReViewer.UI
             { "Target", "Target:" },
             { "Manual", "Manual:" },
             { "Channels", "Channels" },
+            { "ChannelsForSource", "Channels: {0}" },
             { "SelectedOnly", "Selected" },
             { "SelectAll", "Select all" },
             { "Clear", "Clear" },
@@ -231,6 +234,7 @@ namespace LeMuReViewer.UI
             { "PathCopied", "Path copied to clipboard." },
             { "CopyPathFailed", "Copy path failed." },
             { "SelectFolder", "Select a folder first." },
+            { "TooManyFolders", "You can load up to 3 folders (separator: ;)." },
             { "LoadedTest", "Loaded test: {0} rows." },
             { "LoadFailed", "Load failed." },
             { "SelectChannel", "Select at least one channel." },
@@ -267,7 +271,7 @@ namespace LeMuReViewer.UI
             { "Language", "RU" },
 
             // Tooltips
-            { "TipFolder", "Path to test data folder" },
+            { "TipFolder", "Path to test data folder(s), separator: ;" },
             { "TipBrowse", "Select data folder via dialog" },
             { "TipLoad", "Load data from the specified folder" },
             { "TipCopyPath", "Copy folder path to clipboard" },
