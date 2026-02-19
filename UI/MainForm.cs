@@ -63,6 +63,7 @@ namespace LeMuReViewer.UI
         private readonly ContextMenuStrip _chartContextMenu;
         private readonly ToolStripMenuItem _crosshairMenuItem;
         private bool _crosshairEnabled = true;
+        private int? _mainCrosshairPixelX;
         private readonly RangeTrackBar _rangeTrackBar;
         private readonly Label _rangeLabel;
         private readonly Button _resetRangeButton;
@@ -191,8 +192,10 @@ namespace LeMuReViewer.UI
 
             _chart = BuildChart();
             _chart.MouseMove += ChartOnMouseMove;
+            _chart.MouseLeave += ChartOnMouseLeave;
             _chart.MouseWheel += ChartOnMouseWheel;
             _chart.MouseDoubleClick += ChartOnMouseDoubleClick;
+            _chart.Paint += ChartOnPaint;
 
             _chartContextMenu = new ContextMenuStrip();
             _crosshairMenuItem = new ToolStripMenuItem(Loc.Get("ChartCrosshair")) { Checked = _crosshairEnabled, CheckOnClick = true };
@@ -285,7 +288,7 @@ namespace LeMuReViewer.UI
             _busyPanel.VisibleChanged += delegate { if (_busyPanel.Visible) centerBusyBox(null, EventArgs.Empty); };
 
             _toolTip = new ToolTip();
-            _toolTip.AutoPopDelay = 10000;
+            _toolTip.AutoPopDelay = 600000;
             _toolTip.InitialDelay = 400;
             _toolTip.ReshowDelay = 200;
             ApplyTooltips();
@@ -397,15 +400,15 @@ namespace LeMuReViewer.UI
             area.AxisX.IntervalAutoMode = IntervalAutoMode.VariableCount;
             area.AxisX.MajorGrid.LineColor = Color.Gainsboro;
             area.AxisY.MajorGrid.LineColor = Color.Gainsboro;
-            area.CursorX.IsUserEnabled = true;
+            area.CursorX.IsUserEnabled = false;
             area.CursorX.IsUserSelectionEnabled = false;
-            area.CursorX.LineColor = Color.Gray;
+            area.CursorX.LineColor = Color.Black;
             area.CursorX.LineDashStyle = ChartDashStyle.Dash;
-            area.CursorX.LineWidth = 1;
-            area.CursorY.IsUserEnabled = true;
-            area.CursorY.LineColor = Color.Gray;
+            area.CursorX.LineWidth = 2;
+            area.CursorY.IsUserEnabled = false;
+            area.CursorY.LineColor = Color.Transparent;
             area.CursorY.LineDashStyle = ChartDashStyle.Dash;
-            area.CursorY.LineWidth = 1;
+            area.CursorY.LineWidth = 0;
             area.AxisX.ScrollBar.Enabled = false;
             area.AxisX.ScaleView.Zoomable = false;
             area.AxisY.ScaleView.Zoomable = false;
@@ -493,26 +496,53 @@ namespace LeMuReViewer.UI
             try
             {
                 double xVal = area.AxisX.PixelPositionToValue(e.X);
-                double yVal = area.AxisY.PixelPositionToValue(e.Y);
 
                 if (_crosshairEnabled)
                 {
-                    area.CursorX.SetCursorPosition(xVal);
-                    area.CursorY.SetCursorPosition(yVal);
+                    _mainCrosshairPixelX = e.X;
+                    _chart.Invalidate();
+                    BuildCrosshairTooltip(_chart, _toolTip, xVal, e.Location);
                 }
-                BuildCrosshairTooltip(_chart, _toolTip, xVal);
             }
             catch { }
         }
 
-        private static void BuildCrosshairTooltip(Chart chart, ToolTip toolTip, double xVal)
+        private void ChartOnMouseLeave(object sender, EventArgs e)
+        {
+            _mainCrosshairPixelX = null;
+            _chart.Invalidate();
+            _toolTip.Hide(_chart);
+        }
+
+        private void ChartOnPaint(object sender, PaintEventArgs e)
+        {
+            if (!_crosshairEnabled || !_mainCrosshairPixelX.HasValue || _chart.ChartAreas.Count == 0) return;
+            ChartArea area = _chart.ChartAreas[0];
+
+            RectangleF areaRect = new RectangleF(
+                _chart.ClientSize.Width * area.Position.X / 100f,
+                _chart.ClientSize.Height * area.Position.Y / 100f,
+                _chart.ClientSize.Width * area.Position.Width / 100f,
+                _chart.ClientSize.Height * area.Position.Height / 100f);
+
+            int x = _mainCrosshairPixelX.Value;
+            if (x < areaRect.Left || x > areaRect.Right) return;
+
+            using (var pen = new Pen(Color.Black, 1f))
+            {
+                pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
+                e.Graphics.DrawLine(pen, x, areaRect.Top, x, areaRect.Bottom);
+            }
+        }
+
+        private static void BuildCrosshairTooltip(Chart chart, ToolTip toolTip, double xVal, Point mousePoint)
         {
             if (chart.Series.Count == 0)
             {
                 if ((chart.Tag as string) != string.Empty)
                 {
                     chart.Tag = string.Empty;
-                    toolTip.SetToolTip(chart, string.Empty);
+                    toolTip.Hide(chart);
                 }
                 return;
             }
@@ -546,7 +576,8 @@ namespace LeMuReViewer.UI
             if (!string.Equals(prev, text, StringComparison.Ordinal))
             {
                 chart.Tag = text;
-                toolTip.SetToolTip(chart, text);
+                // Show tooltip a bit to the right of the cursor and only on content change to avoid flicker.
+                toolTip.Show(text, chart, mousePoint.X + 24, mousePoint.Y + 8);
             }
         }
 
@@ -631,8 +662,9 @@ namespace LeMuReViewer.UI
             _crosshairEnabled = _crosshairMenuItem.Checked;
             if (!_crosshairEnabled && _chart.ChartAreas.Count > 0)
             {
-                _chart.ChartAreas[0].CursorX.SetCursorPosition(double.NaN);
-                _chart.ChartAreas[0].CursorY.SetCursorPosition(double.NaN);
+                _mainCrosshairPixelX = null;
+                _chart.Invalidate();
+                _toolTip.Hide(_chart);
             }
         }
 
@@ -792,8 +824,9 @@ namespace LeMuReViewer.UI
 
         private void AttachChartInteractivity(Chart chart, Form ownerForm)
         {
-            var tip = new ToolTip { AutoPopDelay = 10000, InitialDelay = 400, ReshowDelay = 200 };
+            var tip = new ToolTip { AutoPopDelay = 600000, InitialDelay = 400, ReshowDelay = 200 };
             bool crosshair = true;
+            int? crosshairPixelX = null;
 
             chart.MouseMove += delegate(object s, MouseEventArgs ev)
             {
@@ -802,15 +835,37 @@ namespace LeMuReViewer.UI
                 try
                 {
                     double xVal = area.AxisX.PixelPositionToValue(ev.X);
-                    double yVal = area.AxisY.PixelPositionToValue(ev.Y);
                     if (crosshair)
                     {
-                        area.CursorX.SetCursorPosition(xVal);
-                        area.CursorY.SetCursorPosition(yVal);
+                        crosshairPixelX = ev.X;
+                        chart.Invalidate();
+                        BuildCrosshairTooltip(chart, tip, xVal, ev.Location);
                     }
-                    BuildCrosshairTooltip(chart, tip, xVal);
                 }
                 catch { }
+            };
+            chart.MouseLeave += delegate
+            {
+                crosshairPixelX = null;
+                chart.Invalidate();
+                tip.Hide(chart);
+            };
+            chart.Paint += delegate(object s, PaintEventArgs ev)
+            {
+                if (!crosshair || !crosshairPixelX.HasValue || chart.ChartAreas.Count == 0) return;
+                ChartArea area = chart.ChartAreas[0];
+                RectangleF areaRect = new RectangleF(
+                    chart.ClientSize.Width * area.Position.X / 100f,
+                    chart.ClientSize.Height * area.Position.Y / 100f,
+                    chart.ClientSize.Width * area.Position.Width / 100f,
+                    chart.ClientSize.Height * area.Position.Height / 100f);
+                int x = crosshairPixelX.Value;
+                if (x < areaRect.Left || x > areaRect.Right) return;
+                using (var pen = new Pen(Color.Black, 1f))
+                {
+                    pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
+                    ev.Graphics.DrawLine(pen, x, areaRect.Top, x, areaRect.Bottom);
+                }
             };
 
             chart.MouseWheel += delegate(object s, MouseEventArgs ev)
@@ -862,8 +917,9 @@ namespace LeMuReViewer.UI
                 crosshair = crosshairItem.Checked;
                 if (!crosshair && chart.ChartAreas.Count > 0)
                 {
-                    chart.ChartAreas[0].CursorX.SetCursorPosition(double.NaN);
-                    chart.ChartAreas[0].CursorY.SetCursorPosition(double.NaN);
+                    crosshairPixelX = null;
+                    chart.Invalidate();
+                    tip.Hide(chart);
                 }
             };
             ctx.Items.Add(crosshairItem);

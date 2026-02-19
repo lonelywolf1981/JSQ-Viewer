@@ -9,20 +9,25 @@ namespace LeMuReViewer.UI
 {
     public sealed class SettingsDialog : Form
     {
-        private readonly NumericUpDown _rowThreshold;
-        private readonly Panel _rowColorPanel;
-        private readonly NumericUpDown _rowIntensity;
-        private readonly TextBox _dischargeThreshold;
-        private readonly Panel _dischargeColorPanel;
-        private readonly TextBox _suctionThreshold;
-        private readonly Panel _suctionColorPanel;
-        private readonly DataGridView _scalesGrid;
-        private readonly Button _okButton;
-        private readonly Button _cancelButton;
+        private const int ContentWidth = 530;
 
-        private string _rowColor;
-        private string _dischargeColor;
-        private string _suctionColor;
+        private sealed class ScaleEditors
+        {
+            public TextBox MinBox;
+            public TextBox MaxBox;
+            public TextBox LowHexBox;
+            public TextBox NormHexBox;
+            public TextBox HighHexBox;
+        }
+
+        private readonly NumericUpDown _rowThreshold;
+        private readonly TextBox _dischargeThreshold;
+        private readonly TextBox _suctionThreshold;
+        private readonly TextBox _rowHexBox;
+        private readonly TextBox _dischargeHexBox;
+        private readonly TextBox _suctionHexBox;
+        private readonly Button _okButton;
+        private readonly Dictionary<string, ScaleEditors> _scaleEditors = new Dictionary<string, ScaleEditors>(StringComparer.OrdinalIgnoreCase);
 
         public ViewerSettingsModel Result { get; private set; }
 
@@ -31,151 +36,164 @@ namespace LeMuReViewer.UI
             Result = Clone(source ?? ViewerSettingsModel.CreateDefault());
 
             Text = Loc.Get("StylesTitle");
-            Width = 900;
-            Height = 520;
+            Width = 560;
+            Height = 700;
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
+            BackColor = SystemColors.Control;
 
             var root = new TableLayoutPanel();
             root.Dock = DockStyle.Fill;
             root.ColumnCount = 1;
-            root.RowCount = 4;
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            root.RowCount = 3;
+            root.Padding = new Padding(8, 8, 8, 6);
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 1f));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             Controls.Add(root);
 
-            // Row mark group
-            var rowMarkGroup = new GroupBox();
-            rowMarkGroup.Text = Loc.Get("RowMark");
-            rowMarkGroup.Dock = DockStyle.Fill;
-            root.Controls.Add(rowMarkGroup, 0, 0);
+            var content = new FlowLayoutPanel();
+            content.Dock = DockStyle.Fill;
+            content.FlowDirection = FlowDirection.TopDown;
+            content.WrapContents = false;
+            content.AutoScroll = false;
+            content.Padding = new Padding(0);
+            root.Controls.Add(content, 0, 0);
 
-            var rowMarkPanel = new FlowLayoutPanel();
-            rowMarkPanel.Dock = DockStyle.Fill;
-            rowMarkPanel.AutoSize = true;
-            rowMarkPanel.WrapContents = false;
-            rowMarkGroup.Controls.Add(rowMarkPanel);
+            var title = new Label();
+            title.Text = Loc.Get("StylesHeader");
+            title.Font = new Font(Font, FontStyle.Bold);
+            title.AutoSize = true;
+            title.Margin = new Padding(0, 0, 0, 8);
+            content.Controls.Add(title);
 
-            rowMarkPanel.Controls.Add(NewLabel(Loc.Get("TThreshold")));
-            _rowThreshold = new NumericUpDown();
-            _rowThreshold.DecimalPlaces = 2;
-            _rowThreshold.Minimum = -100000;
-            _rowThreshold.Maximum = 100000;
-            _rowThreshold.Value = ToDecimal(Result.row_mark.threshold_T, 150m);
-            rowMarkPanel.Controls.Add(_rowThreshold);
+            _rowHexBox = CreateThresholdRow(content, Loc.Get("PowerThreshold"), ToDecimal(Result.row_mark.threshold_T, 150m), Safe(Result.row_mark.color, "#DBEA06"), out _rowThreshold);
+            _dischargeHexBox = CreateThresholdRow(content, Loc.Get("DischargeThresholdShort"), FormatNullable(Result.discharge_mark.threshold), Safe(Result.discharge_mark.color, "#F52952"), out _dischargeThreshold);
+            _suctionHexBox = CreateThresholdRow(content, Loc.Get("SuctionThresholdShort"), FormatNullable(Result.suction_mark.threshold), Safe(Result.suction_mark.color, "#F52952"), out _suctionThreshold);
 
-            rowMarkPanel.Controls.Add(NewLabel(Loc.Get("Color")));
-            _rowColor = Result.row_mark.color ?? "#EAD706";
-            _rowColorPanel = CreateColorButton(_rowColor, c => _rowColor = c);
-            rowMarkPanel.Controls.Add(_rowColorPanel);
+            AddScaleSection(content, "W", Loc.Get("ScaleWTitle"));
+            AddScaleSection(content, "X", Loc.Get("ScaleXTitle"));
+            AddScaleSection(content, "Y", Loc.Get("ScaleYTitle"));
 
-            rowMarkPanel.Controls.Add(NewLabel(Loc.Get("Intensity")));
-            _rowIntensity = new NumericUpDown();
-            _rowIntensity.Minimum = 0;
-            _rowIntensity.Maximum = 100;
-            _rowIntensity.Value = Clamp(Result.row_mark.intensity, 0, 100);
-            rowMarkPanel.Controls.Add(_rowIntensity);
+            var line = new Panel();
+            line.Height = 1;
+            line.Dock = DockStyle.Fill;
+            line.BackColor = Color.Silver;
+            root.Controls.Add(line, 0, 1);
 
-            // Discharge / Suction group
-            var marksGroup = new GroupBox();
-            marksGroup.Text = Loc.Get("DischargeSuction");
-            marksGroup.Dock = DockStyle.Fill;
-            root.Controls.Add(marksGroup, 0, 1);
-
-            var marksPanel = new FlowLayoutPanel();
-            marksPanel.Dock = DockStyle.Fill;
-            marksPanel.AutoSize = true;
-            marksPanel.WrapContents = false;
-            marksGroup.Controls.Add(marksPanel);
-
-            marksPanel.Controls.Add(NewLabel(Loc.Get("DischargeThreshold")));
-            _dischargeThreshold = NewTextBox(FormatNullable(Result.discharge_mark.threshold), 70);
-            marksPanel.Controls.Add(_dischargeThreshold);
-            marksPanel.Controls.Add(NewLabel(Loc.Get("Color")));
-            _dischargeColor = Result.discharge_mark.color ?? "#FFC000";
-            _dischargeColorPanel = CreateColorButton(_dischargeColor, c => _dischargeColor = c);
-            marksPanel.Controls.Add(_dischargeColorPanel);
-
-            marksPanel.Controls.Add(NewLabel(Loc.Get("SuctionThreshold")));
-            _suctionThreshold = NewTextBox(FormatNullable(Result.suction_mark.threshold), 70);
-            marksPanel.Controls.Add(_suctionThreshold);
-            marksPanel.Controls.Add(NewLabel(Loc.Get("Color")));
-            _suctionColor = Result.suction_mark.color ?? "#00B0F0";
-            _suctionColorPanel = CreateColorButton(_suctionColor, c => _suctionColor = c);
-            marksPanel.Controls.Add(_suctionColorPanel);
-
-            // Scales group
-            var scalesGroup = new GroupBox();
-            scalesGroup.Text = Loc.Get("ScalesWXY");
-            scalesGroup.Dock = DockStyle.Fill;
-            root.Controls.Add(scalesGroup, 0, 2);
-
-            _scalesGrid = new DataGridView();
-            _scalesGrid.Dock = DockStyle.Fill;
-            _scalesGrid.AllowUserToAddRows = false;
-            _scalesGrid.AllowUserToDeleteRows = false;
-            _scalesGrid.RowHeadersVisible = false;
-            _scalesGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-
-            _scalesGrid.Columns.Add("key", Loc.Get("Scale"));
-            _scalesGrid.Columns.Add("min", Loc.Get("Min"));
-            _scalesGrid.Columns.Add("opt", Loc.Get("Opt"));
-            _scalesGrid.Columns.Add("max", Loc.Get("Max"));
-
-            var cminCol = new DataGridViewButtonColumn();
-            cminCol.Name = "cmin"; cminCol.HeaderText = Loc.Get("ColorMin"); cminCol.FlatStyle = FlatStyle.Flat; cminCol.UseColumnTextForButtonValue = false;
-            _scalesGrid.Columns.Add(cminCol);
-            var coptCol = new DataGridViewButtonColumn();
-            coptCol.Name = "copt"; coptCol.HeaderText = Loc.Get("ColorOpt"); coptCol.FlatStyle = FlatStyle.Flat; coptCol.UseColumnTextForButtonValue = false;
-            _scalesGrid.Columns.Add(coptCol);
-            var cmaxCol = new DataGridViewButtonColumn();
-            cmaxCol.Name = "cmax"; cmaxCol.HeaderText = Loc.Get("ColorMax"); cmaxCol.FlatStyle = FlatStyle.Flat; cmaxCol.UseColumnTextForButtonValue = false;
-            _scalesGrid.Columns.Add(cmaxCol);
-
-            _scalesGrid.Columns[0].ReadOnly = true;
-            _scalesGrid.Columns[1].ReadOnly = false;
-            _scalesGrid.Columns[2].ReadOnly = false;
-            _scalesGrid.Columns[3].ReadOnly = false;
-
-            scalesGroup.Controls.Add(_scalesGrid);
-
-            AddScaleRow("W");
-            AddScaleRow("X");
-            AddScaleRow("Y");
-
-            _scalesGrid.CellPainting += ScalesGridOnCellPainting;
-            _scalesGrid.CellClick += ScalesGridOnCellClick;
-
-            // Buttons
-            var buttons = new FlowLayoutPanel();
-            buttons.Dock = DockStyle.Fill;
-            buttons.FlowDirection = FlowDirection.RightToLeft;
-            buttons.AutoSize = true;
-            root.Controls.Add(buttons, 0, 3);
+            var bottom = new Panel();
+            bottom.Height = 42;
+            bottom.Dock = DockStyle.Fill;
+            root.Controls.Add(bottom, 0, 2);
 
             _okButton = new Button();
-            _okButton.Text = Loc.Get("Save");
+            _okButton.Text = Loc.Get("Apply");
+            _okButton.AutoSize = false;
+            _okButton.Width = 98;
+            _okButton.Height = 32;
+            _okButton.Left = 0;
+            _okButton.Top = 6;
             _okButton.Click += OkButtonOnClick;
-            buttons.Controls.Add(_okButton);
+            bottom.Controls.Add(_okButton);
 
-            _cancelButton = new Button();
-            _cancelButton.Text = Loc.Get("Cancel");
-            _cancelButton.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
-            buttons.Controls.Add(_cancelButton);
+            var loadedLabel = new Label();
+            loadedLabel.Text = Loc.Get("SettingsLoaded");
+            loadedLabel.AutoSize = true;
+            loadedLabel.Left = 114;
+            loadedLabel.Top = 14;
+            bottom.Controls.Add(loadedLabel);
         }
 
-        private static Panel CreateColorButton(string hexColor, Action<string> onColorChanged)
+        private static Panel NewRowPanel(int width, int height)
         {
+            var p = new Panel();
+            p.Width = width;
+            p.Height = height;
+            p.Margin = new Padding(0, 0, 0, 6);
+            return p;
+        }
+
+        private static Label NewPlainLabel(string text, int x, int y)
+        {
+            var l = new Label();
+            l.Text = text;
+            l.AutoSize = true;
+            l.Left = x;
+            l.Top = y;
+            l.Font = new Font("Microsoft Sans Serif", 10f, FontStyle.Regular);
+            return l;
+        }
+
+        private static Label NewMutedLabel(string text, int x, int y)
+        {
+            var l = NewPlainLabel(text, x, y);
+            l.ForeColor = SystemColors.ControlDarkDark;
+            return l;
+        }
+
+        private TextBox CreateThresholdRow(Control parent, string title, decimal value, string colorHex, out NumericUpDown editor)
+        {
+            var row = NewRowPanel(ContentWidth, 30);
+            row.Controls.Add(NewPlainLabel(title, 0, 7));
+
+            editor = new NumericUpDown();
+            editor.DecimalPlaces = 0;
+            editor.Minimum = -100000;
+            editor.Maximum = 100000;
+            editor.Width = 88;
+            editor.Left = 178;
+            editor.Top = 3;
+            editor.Value = value;
+            row.Controls.Add(editor);
+
+            row.Controls.Add(NewPlainLabel(Loc.Get("Color"), 282, 7));
+            var hexBox = AddColorPicker(row, colorHex, 338);
+            hexBox.Width = 152;
+            parent.Controls.Add(row);
+            return hexBox;
+        }
+
+        private TextBox CreateThresholdRow(Control parent, string title, string value, string colorHex, out TextBox editor)
+        {
+            var row = NewRowPanel(ContentWidth, 30);
+            row.Controls.Add(NewPlainLabel(title, 0, 7));
+
+            editor = new TextBox();
+            editor.Width = 88;
+            editor.Left = 178;
+            editor.Top = 3;
+            editor.Text = value ?? string.Empty;
+            row.Controls.Add(editor);
+
+            row.Controls.Add(NewPlainLabel(Loc.Get("Color"), 282, 7));
+            var hexBox = AddColorPicker(row, colorHex, 338);
+            hexBox.Width = 152;
+            parent.Controls.Add(row);
+            return hexBox;
+        }
+
+        private static TextBox AddColorPicker(Control row, string initialHex, int left)
+        {
+            string hex = NormalizeHex(initialHex, "#FFFFFF");
             var panel = new Panel();
-            panel.Width = 60;
+            panel.Width = 34;
             panel.Height = 24;
+            panel.Left = left;
+            panel.Top = 2;
+            panel.BackColor = HexToColor(hex);
             panel.BorderStyle = BorderStyle.FixedSingle;
-            panel.BackColor = HexToColor(hexColor);
             panel.Cursor = Cursors.Hand;
+            row.Controls.Add(panel);
+
+            var hexBox = new TextBox();
+            hexBox.Width = 122;
+            hexBox.Left = left + 42;
+            hexBox.Top = 2;
+            hexBox.Text = hex;
+            row.Controls.Add(hexBox);
+
             panel.Click += delegate
             {
                 using (var dlg = new ColorDialog())
@@ -184,12 +202,180 @@ namespace LeMuReViewer.UI
                     dlg.FullOpen = true;
                     if (dlg.ShowDialog() == DialogResult.OK)
                     {
+                        string selected = ColorToHex(dlg.Color);
                         panel.BackColor = dlg.Color;
-                        onColorChanged(ColorToHex(dlg.Color));
+                        hexBox.Text = selected;
                     }
                 }
             };
-            return panel;
+
+            hexBox.TextChanged += delegate
+            {
+                string normalized = NormalizeHex(hexBox.Text, string.Empty);
+                if (!string.IsNullOrWhiteSpace(normalized))
+                {
+                    panel.BackColor = HexToColor(normalized);
+                }
+            };
+
+            return hexBox;
+        }
+
+        private static TextBox AddColorPickerAt(Control row, string initialHex, int panelLeft, int panelTop, int hexLeft, int hexTop)
+        {
+            string hex = NormalizeHex(initialHex, "#FFFFFF");
+            var panel = new Panel();
+            panel.Width = 34;
+            panel.Height = 24;
+            panel.Left = panelLeft;
+            panel.Top = panelTop;
+            panel.BackColor = HexToColor(hex);
+            panel.BorderStyle = BorderStyle.FixedSingle;
+            panel.Cursor = Cursors.Hand;
+            row.Controls.Add(panel);
+
+            var hexBox = new TextBox();
+            hexBox.Width = 122;
+            hexBox.Left = hexLeft;
+            hexBox.Top = hexTop;
+            hexBox.Text = hex;
+            row.Controls.Add(hexBox);
+
+            panel.Click += delegate
+            {
+                using (var dlg = new ColorDialog())
+                {
+                    dlg.Color = panel.BackColor;
+                    dlg.FullOpen = true;
+                    if (dlg.ShowDialog() == DialogResult.OK)
+                    {
+                        string selected = ColorToHex(dlg.Color);
+                        panel.BackColor = dlg.Color;
+                        hexBox.Text = selected;
+                    }
+                }
+            };
+
+            hexBox.TextChanged += delegate
+            {
+                string normalized = NormalizeHex(hexBox.Text, string.Empty);
+                if (!string.IsNullOrWhiteSpace(normalized))
+                {
+                    panel.BackColor = HexToColor(normalized);
+                }
+            };
+
+            return hexBox;
+        }
+
+        private void AddScaleSection(Control parent, string key, string title)
+        {
+            ScaleSettings s = Result.scales.ContainsKey(key) ? Result.scales[key] : ScaleSettings.CreateDefault();
+            ScaleColors colors = s.colors ?? ScaleSettings.CreateDefault().colors;
+
+            var section = new Panel();
+            section.Width = ContentWidth;
+            section.Height = 122;
+            section.Margin = new Padding(0, 0, 0, 4);
+            parent.Controls.Add(section);
+
+            section.Controls.Add(NewPlainLabel(title, 0, 2));
+            section.Controls.Add(NewMutedLabel(Loc.Get("NormFrom"), 156, 2));
+
+            var minBox = new TextBox();
+            minBox.Width = 70;
+            minBox.Left = 230;
+            minBox.Top = 0;
+            minBox.Text = Fmt(s.min);
+            section.Controls.Add(minBox);
+
+            section.Controls.Add(NewMutedLabel(Loc.Get("NormTo"), 312, 2));
+
+            var maxBox = new TextBox();
+            maxBox.Width = 70;
+            maxBox.Left = 346;
+            maxBox.Top = 0;
+            maxBox.Text = Fmt(s.opt);
+            section.Controls.Add(maxBox);
+
+            section.Controls.Add(NewMutedLabel(Loc.Get("Low"), 0, 38));
+            section.Controls.Add(NewMutedLabel(Loc.Get("Norm"), 186, 38));
+            section.Controls.Add(NewMutedLabel(Loc.Get("High"), 370, 38));
+
+            var lowHex = AddColorPickerAt(section, Safe(colors.min, "#1CBCF2"), 120, 56, 0, 84);
+            var normHex = AddColorPickerAt(section, Safe(colors.opt, "#00FF00"), 304, 56, 184, 84);
+            var highHex = AddColorPickerAt(section, Safe(colors.max, "#F3919B"), 488, 56, 368, 84);
+            lowHex.Width = 150;
+            normHex.Width = 150;
+            highHex.Width = 150;
+
+            _scaleEditors[key] = new ScaleEditors
+            {
+                MinBox = minBox,
+                MaxBox = maxBox,
+                LowHexBox = lowHex,
+                NormHexBox = normHex,
+                HighHexBox = highHex
+            };
+        }
+
+        private void OkButtonOnClick(object sender, EventArgs e)
+        {
+            ViewerSettingsModel updated = ViewerSettingsModel.CreateDefault();
+            updated.row_mark.threshold_T = (double)_rowThreshold.Value;
+            updated.row_mark.color = NormalizeHex(_rowHexBox.Text, "#EAD706");
+            updated.row_mark.intensity = 100;
+
+            double? dThr;
+            if (!TryParseNullableDouble(_dischargeThreshold.Text, out dThr))
+            {
+                MessageBox.Show(this, Loc.Get("InvalidDischargeThreshold"), Loc.Get("Settings"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            updated.discharge_mark.threshold = dThr;
+            updated.discharge_mark.color = NormalizeHex(_dischargeHexBox.Text, "#F52952");
+
+            double? sThr;
+            if (!TryParseNullableDouble(_suctionThreshold.Text, out sThr))
+            {
+                MessageBox.Show(this, Loc.Get("InvalidSuctionThreshold"), Loc.Get("Settings"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            updated.suction_mark.threshold = sThr;
+            updated.suction_mark.color = NormalizeHex(_suctionHexBox.Text, "#F52952");
+
+            updated.scales = new Dictionary<string, ScaleSettings>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in _scaleEditors)
+            {
+                string key = kv.Key;
+                ScaleEditors ed = kv.Value;
+                double min;
+                double max;
+                if (!TryParseDouble(ed.MinBox.Text, out min) || !TryParseDouble(ed.MaxBox.Text, out max))
+                {
+                    MessageBox.Show(this, Loc.Get("InvalidScaleValues"), Loc.Get("Settings"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                if (min >= max) max = min + 1;
+
+                var ss = ScaleSettings.CreateDefault();
+                ss.min = min;
+                ss.opt = max;
+                ss.max = max;
+                ss.colors.min = NormalizeHex(ed.LowHexBox.Text, "#1CBCF2");
+                ss.colors.opt = NormalizeHex(ed.NormHexBox.Text, "#00FF00");
+                ss.colors.max = NormalizeHex(ed.HighHexBox.Text, "#F3919B");
+                updated.scales[key] = ss;
+            }
+
+            Result = updated;
+            DialogResult = DialogResult.OK;
+            Close();
+        }
+
+        private static string Safe(string value, string fallback)
+        {
+            return string.IsNullOrWhiteSpace(value) ? fallback : value;
         }
 
         private static Color HexToColor(string hex)
@@ -212,147 +398,6 @@ namespace LeMuReViewer.UI
         private static string ColorToHex(Color c)
         {
             return "#" + c.R.ToString("X2") + c.G.ToString("X2") + c.B.ToString("X2");
-        }
-
-        private static Label NewLabel(string text)
-        {
-            var l = new Label();
-            l.Text = text;
-            l.AutoSize = true;
-            l.Padding = new Padding(6, 7, 2, 0);
-            return l;
-        }
-
-        private static TextBox NewTextBox(string text, int width)
-        {
-            var tb = new TextBox();
-            tb.Width = width;
-            tb.Text = text ?? string.Empty;
-            return tb;
-        }
-
-        private void AddScaleRow(string key)
-        {
-            ScaleSettings s = Result.scales.ContainsKey(key) ? Result.scales[key] : ScaleSettings.CreateDefault();
-            int rowIdx = _scalesGrid.Rows.Add(
-                key,
-                Fmt(s.min),
-                Fmt(s.opt),
-                Fmt(s.max),
-                "",
-                "",
-                "");
-            _scalesGrid.Rows[rowIdx].Tag = new string[]
-            {
-                Safe(s.colors.min, "#1CBCF2"),
-                Safe(s.colors.opt, "#00FF00"),
-                Safe(s.colors.max, "#F3919B")
-            };
-        }
-
-        private void ScalesGridOnCellPainting(object sender, DataGridViewCellPaintingEventArgs e)
-        {
-            if (e.RowIndex < 0 || e.ColumnIndex < 4 || e.ColumnIndex > 6)
-                return;
-
-            var colors = _scalesGrid.Rows[e.RowIndex].Tag as string[];
-            if (colors == null) return;
-
-            int ci = e.ColumnIndex - 4;
-            Color c = HexToColor(colors[ci]);
-
-            e.PaintBackground(e.ClipBounds, true);
-            using (var brush = new SolidBrush(c))
-            {
-                var rect = e.CellBounds;
-                rect.Inflate(-4, -3);
-                e.Graphics.FillRectangle(brush, rect);
-                e.Graphics.DrawRectangle(Pens.Gray, rect);
-            }
-            e.Handled = true;
-        }
-
-        private void ScalesGridOnCellClick(object sender, DataGridViewCellEventArgs e)
-        {
-            if (e.RowIndex < 0 || e.ColumnIndex < 4 || e.ColumnIndex > 6)
-                return;
-
-            var colors = _scalesGrid.Rows[e.RowIndex].Tag as string[];
-            if (colors == null) return;
-
-            int ci = e.ColumnIndex - 4;
-            using (var dlg = new ColorDialog())
-            {
-                dlg.Color = HexToColor(colors[ci]);
-                dlg.FullOpen = true;
-                if (dlg.ShowDialog(this) == DialogResult.OK)
-                {
-                    colors[ci] = ColorToHex(dlg.Color);
-                    _scalesGrid.InvalidateCell(e.ColumnIndex, e.RowIndex);
-                }
-            }
-        }
-
-        private void OkButtonOnClick(object sender, EventArgs e)
-        {
-            ViewerSettingsModel updated = ViewerSettingsModel.CreateDefault();
-            updated.row_mark.threshold_T = (double)_rowThreshold.Value;
-            updated.row_mark.color = NormalizeHex(_rowColor, "#EAD706");
-            updated.row_mark.intensity = (int)_rowIntensity.Value;
-
-            double? dThr;
-            if (!TryParseNullableDouble(_dischargeThreshold.Text, out dThr))
-            {
-                MessageBox.Show(this, Loc.Get("InvalidDischargeThreshold"), Loc.Get("Settings"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-            updated.discharge_mark.threshold = dThr;
-            updated.discharge_mark.color = NormalizeHex(_dischargeColor, "#FFC000");
-
-            double? sThr;
-            if (!TryParseNullableDouble(_suctionThreshold.Text, out sThr))
-            {
-                MessageBox.Show(this, Loc.Get("InvalidSuctionThreshold"), Loc.Get("Settings"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-            updated.suction_mark.threshold = sThr;
-            updated.suction_mark.color = NormalizeHex(_suctionColor, "#00B0F0");
-
-            updated.scales = new Dictionary<string, ScaleSettings>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < _scalesGrid.Rows.Count; i++)
-            {
-                DataGridViewRow row = _scalesGrid.Rows[i];
-                string key = Convert.ToString(row.Cells[0].Value, CultureInfo.InvariantCulture);
-                double min, opt, max;
-                if (!TryParseDouble(Convert.ToString(row.Cells[1].Value, CultureInfo.InvariantCulture), out min)
-                    || !TryParseDouble(Convert.ToString(row.Cells[2].Value, CultureInfo.InvariantCulture), out opt)
-                    || !TryParseDouble(Convert.ToString(row.Cells[3].Value, CultureInfo.InvariantCulture), out max))
-                {
-                    MessageBox.Show(this, Loc.Get("InvalidScaleValues"), Loc.Get("Settings"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-                if (min >= opt) min = opt - 1;
-                if (opt >= max) max = opt + 1;
-
-                var colors = row.Tag as string[];
-                var ss = ScaleSettings.CreateDefault();
-                ss.min = min;
-                ss.opt = opt;
-                ss.max = max;
-                ss.colors.min = NormalizeHex(colors != null ? colors[0] : "#1CBCF2", "#1CBCF2");
-                ss.colors.opt = NormalizeHex(colors != null ? colors[1] : "#00FF00", "#00FF00");
-                ss.colors.max = NormalizeHex(colors != null ? colors[2] : "#F3919B", "#F3919B");
-                updated.scales[key] = ss;
-            }
-
-            Result = updated;
-            DialogResult = DialogResult.OK;
-            Close();
-        }
-
-        private static string Safe(string value, string fallback)
-        {
-            return string.IsNullOrWhiteSpace(value) ? fallback : value;
         }
 
         private static string NormalizeHex(string value, string fallback)
@@ -401,13 +446,6 @@ namespace LeMuReViewer.UI
         private static decimal ToDecimal(double value, decimal fallback)
         {
             try { return (decimal)value; } catch { return fallback; }
-        }
-
-        private static decimal Clamp(int value, int min, int max)
-        {
-            if (value < min) value = min;
-            if (value > max) value = max;
-            return value;
         }
 
         private static ViewerSettingsModel Clone(ViewerSettingsModel src)

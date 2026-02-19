@@ -483,6 +483,13 @@ namespace LeMuReViewer.Export
                     return m.Value;
                 }
 
+                // Do not translate references that are inside quoted text literals,
+                // e.g. "R290" / "R600a".
+                if (IsInsideQuotedString(formula, m.Index))
+                {
+                    return m.Value;
+                }
+
                 if (absRow == "$")
                 {
                     return colPart + absRow + rowPart;
@@ -497,6 +504,25 @@ namespace LeMuReViewer.Export
                 int shifted = Math.Max(1, row + delta);
                 return colPart + shifted.ToString(CultureInfo.InvariantCulture);
             });
+        }
+
+        private static bool IsInsideQuotedString(string text, int index)
+        {
+            bool inside = false;
+            for (int i = 0; i < index && i < text.Length; i++)
+            {
+                if (text[i] != '"') continue;
+
+                // Escaped quote inside a string literal: ""
+                if (inside && i + 1 < index && text[i + 1] == '"')
+                {
+                    i++;
+                    continue;
+                }
+
+                inside = !inside;
+            }
+            return inside;
         }
 
         private static void ApplyConditionalFormatting(
