@@ -21,6 +21,7 @@ namespace LeMuReViewer.UI
         private readonly TextBox _folderBox;
         private readonly Button _browseButton;
         private readonly Button _addDataButton;
+        private readonly Button _closeAllButton;
         private readonly ComboBox _recentFoldersBox;
         private readonly Label _summaryLabel;
         private readonly Label _selectionInfoLabel;
@@ -66,6 +67,7 @@ namespace LeMuReViewer.UI
         private bool _crosshairEnabled = true;
         private int? _mainCrosshairPixelX;
         private readonly RangeTrackBar _rangeTrackBar;
+        private readonly FlowLayoutPanel _rangePanel;
         private readonly Label _rangeLabel;
         private readonly Button _resetRangeButton;
         private double _rangeStartOa = double.NaN;
@@ -79,10 +81,15 @@ namespace LeMuReViewer.UI
         private bool _dragInitiated;
         private readonly List<ChannelItem> _allChannels = new List<ChannelItem>();
         private readonly HashSet<string> _checkedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<string> _lastSelectedCodes = new List<string>();
         private readonly HashSet<string> _pendingCheckedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly List<Form> _sourceChannelForms = new List<Form>();
         private readonly Dictionary<string, CheckedListBox> _sourceChannelLists = new Dictionary<string, CheckedListBox>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, SourceWindowState> _sourceWindows = new Dictionary<string, SourceWindowState>(StringComparer.OrdinalIgnoreCase);
+        private Form _chartHostForm;
         private bool _syncingSourceChannelSelection;
+        private bool _closingSourceChannelWindows;
+        private int _fixedControlPanelHeight = 430;
         private readonly string _projectRoot;
         private readonly string _orderFilePath;
         private readonly string _recentFoldersFilePath;
@@ -108,10 +115,13 @@ namespace LeMuReViewer.UI
                 Icon = Icon.ExtractAssociatedIcon(exePath);
             }
             catch { }
-            Width = 1420;
-            Height = 900;
-            StartPosition = FormStartPosition.CenterScreen;
-            WindowState = FormWindowState.Maximized;
+            Rectangle wa = Screen.PrimaryScreen.WorkingArea;
+            Width = wa.Width;
+            Height = _fixedControlPanelHeight;
+            StartPosition = FormStartPosition.Manual;
+            Location = new Point(wa.Left, wa.Top);
+            MaximizeBox = true;
+            MinimumSize = new Size(980, 260);
             KeyPreview = true;
 
             _splitMain = new SplitContainer();
@@ -136,6 +146,7 @@ namespace LeMuReViewer.UI
             var folderButtonsRow = NewRow(); left.Controls.Add(folderButtonsRow, 0, 1);
             _browseButton = new Button(); _browseButton.Text = Loc.Get("Browse"); _browseButton.AutoSize = true; _browseButton.Click += BrowseButtonOnClick; folderButtonsRow.Controls.Add(_browseButton);
             _addDataButton = new Button(); _addDataButton.Text = Loc.Get("AddData"); _addDataButton.AutoSize = true; _addDataButton.Click += AddDataButtonOnClick; folderButtonsRow.Controls.Add(_addDataButton);
+            _closeAllButton = new Button(); _closeAllButton.Text = Loc.Get("CloseAll"); _closeAllButton.AutoSize = true; _closeAllButton.Click += CloseAllButtonOnClick; folderButtonsRow.Controls.Add(_closeAllButton);
             _langButton = new Button(); _langButton.Text = Loc.Get("Language"); _langButton.Width = 40; _langButton.Click += LangButtonOnClick; folderButtonsRow.Controls.Add(_langButton);
 
             var recentRow = NewRow(); left.Controls.Add(recentRow, 0, 2);
@@ -157,13 +168,7 @@ namespace LeMuReViewer.UI
             _channelsHeader = new Label(); _channelsHeader.Text = Loc.Get("Channels"); _channelsHeader.AutoSize = true; _channelsHeader.Padding = new Padding(4, 6, 2, 0); channelsHeaderRow.Controls.Add(_channelsHeader);
             _channelFilterBox = new TextBox(); _channelFilterBox.Width = 130; _channelFilterBox.TextChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_channelFilterBox);
             _sortModeBox = new ComboBox(); _sortModeBox.Width = 160; _sortModeBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            _sortModeBox.Items.Add(new SortModeItem("User", "SortUser"));
-            _sortModeBox.Items.Add(new SortModeItem("Code", "SortCode"));
-            _sortModeBox.Items.Add(new SortModeItem("Natural code", "SortNaturalCode"));
-            _sortModeBox.Items.Add(new SortModeItem("Label", "SortLabel"));
-            _sortModeBox.Items.Add(new SortModeItem("Unit", "SortUnit"));
-            _sortModeBox.Items.Add(new SortModeItem("Priority A/C", "SortPriorityAC"));
-            _sortModeBox.Items.Add(new SortModeItem("Selected first", "SortSelectedFirst"));
+            PopulateSortModeBox(_sortModeBox);
             _sortModeBox.SelectedIndex = 5; _sortModeBox.SelectedIndexChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_sortModeBox);
             _selectedOnlyCheck = new CheckBox(); _selectedOnlyCheck.Text = Loc.Get("SelectedOnly"); _selectedOnlyCheck.AutoSize = true; _selectedOnlyCheck.CheckedChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_selectedOnlyCheck);
             _selectAllChannelsButton = new Button(); _selectAllChannelsButton.Text = Loc.Get("SelectAll"); _selectAllChannelsButton.AutoSize = true; _selectAllChannelsButton.Click += SelectAllChannelsButtonOnClick; channelsHeaderRow.Controls.Add(_selectAllChannelsButton);
@@ -232,22 +237,22 @@ namespace LeMuReViewer.UI
             _chartContextMenu.Items.Add(copyImageItem);
             _chart.ContextMenuStrip = _chartContextMenu;
 
-            var rangePanel = new FlowLayoutPanel();
-            rangePanel.Dock = DockStyle.Bottom;
-            rangePanel.AutoSize = true;
-            rangePanel.WrapContents = false;
-            rangePanel.Padding = new Padding(4, 2, 4, 2);
+            _rangePanel = new FlowLayoutPanel();
+            _rangePanel.Dock = DockStyle.Bottom;
+            _rangePanel.AutoSize = true;
+            _rangePanel.WrapContents = false;
+            _rangePanel.Padding = new Padding(4, 2, 4, 2);
             _rangeLabel = new Label();
             _rangeLabel.AutoSize = true;
             _rangeLabel.Padding = new Padding(0, 4, 4, 0);
             _rangeLabel.Text = Loc.Get("RangeAll");
-            rangePanel.Controls.Add(_rangeLabel);
+            _rangePanel.Controls.Add(_rangeLabel);
             _resetRangeButton = new Button();
             _resetRangeButton.Text = Loc.Get("ResetRange");
             _resetRangeButton.AutoSize = true;
             _resetRangeButton.Visible = false;
             _resetRangeButton.Click += ResetRangeButtonOnClick;
-            rangePanel.Controls.Add(_resetRangeButton);
+            _rangePanel.Controls.Add(_resetRangeButton);
 
             _rangeTrackBar = new RangeTrackBar();
             _rangeTrackBar.Dock = DockStyle.Bottom;
@@ -255,7 +260,7 @@ namespace LeMuReViewer.UI
             _rangeTrackBar.RangeChanged += RangeTrackBarOnRangeChanged;
             _splitMain.Panel2.Controls.Add(_chart);
             _splitMain.Panel2.Controls.Add(_rangeTrackBar);
-            _splitMain.Panel2.Controls.Add(rangePanel);
+            _splitMain.Panel2.Controls.Add(_rangePanel);
             _busyPanel = new Panel();
             _busyPanel.Dock = DockStyle.Fill;
             _busyPanel.BackColor = Color.FromArgb(180, 230, 230, 230);
@@ -304,11 +309,15 @@ namespace LeMuReViewer.UI
             ReloadOrders();
             FormClosing += OnFormClosingSaveOrder;
             FormClosing += OnFormClosingSaveUiState;
-            FormClosing += delegate { CloseSourceChannelWindows(); };
+            FormClosing += delegate { CloseSourceChannelWindows(); if (_chartHostForm != null && !_chartHostForm.IsDisposed) _chartHostForm.Close(); };
             KeyDown += MainFormOnKeyDown;
             Loc.LanguageChanged += ApplyLocalization;
             LoadUiState();
             StepControlsOnChanged(this, EventArgs.Empty);
+            ConfigureMainAsControlPanel();
+            EnsureChartHostForm();
+            _chartHostForm.Hide();
+            Resize += MainFormOnResizeFixHeight;
         }
 
         private void LangButtonOnClick(object sender, EventArgs e)
@@ -321,6 +330,7 @@ namespace LeMuReViewer.UI
             Text = Loc.Get("AppTitle");
             _browseButton.Text = Loc.Get("Browse");
             _addDataButton.Text = Loc.Get("AddData");
+            _closeAllButton.Text = Loc.Get("CloseAll");
             _langButton.Text = Loc.Get("Language");
             _recentLabel.Text = Loc.Get("Recent");
             _autoStepCheck.Text = Loc.Get("AutoStep");
@@ -351,6 +361,32 @@ namespace LeMuReViewer.UI
             ((ToolStripMenuItem)_chartContextMenu.Items[9]).Text = Loc.Get("ChartCopyImage");
             _rangeLabel.Text = BuildRangeLabelText(_rangeStartOa, _rangeEndOa);
             _resetRangeButton.Text = Loc.Get("ResetRange");
+            if (_chartHostForm != null && !_chartHostForm.IsDisposed)
+            {
+                _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), AppState.Folder ?? Loc.Get("AppTitle"));
+            }
+            foreach (var kv in _sourceWindows)
+            {
+                SourceWindowState sw = kv.Value;
+                if (sw == null) continue;
+                if (sw.Form != null && !sw.Form.IsDisposed)
+                {
+                    sw.Form.Text = string.Format(Loc.Get("ChannelsForSource"), Path.GetFileName(sw.SourceRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
+                }
+                if (sw.SelectedOnlyCheck != null) sw.SelectedOnlyCheck.Text = Loc.Get("SelectedOnly");
+                if (sw.SelectAllButton != null) sw.SelectAllButton.Text = Loc.Get("SelectAll");
+                if (sw.ClearButton != null) sw.ClearButton.Text = Loc.Get("Clear");
+                if (sw.SavePresetButton != null) sw.SavePresetButton.Text = Loc.Get("SavePreset");
+                if (sw.LoadPresetButton != null) sw.LoadPresetButton.Text = Loc.Get("Load");
+                if (sw.DeletePresetButton != null) sw.DeletePresetButton.Text = Loc.Get("Delete");
+                if (sw.SaveOrderButton != null) sw.SaveOrderButton.Text = Loc.Get("SaveOrder");
+                if (sw.LoadOrderButton != null) sw.LoadOrderButton.Text = Loc.Get("Load");
+                if (sw.DeleteOrderButton != null) sw.DeleteOrderButton.Text = Loc.Get("Delete");
+                if (sw.SortModeBox != null)
+                {
+                    typeof(ComboBox).GetMethod("RefreshItems", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(sw.SortModeBox, null);
+                }
+            }
 
             // Force sort combo to re-read ToString() of items
             int selIdx = _sortModeBox.SelectedIndex;
@@ -358,6 +394,7 @@ namespace LeMuReViewer.UI
             if (selIdx >= 0 && selIdx < _sortModeBox.Items.Count) _sortModeBox.SelectedIndex = selIdx;
             ApplyTooltips();
             UpdateSelectionInfo();
+            AdjustControlPanelWidth();
         }
 
         private void ApplyTooltips()
@@ -365,6 +402,7 @@ namespace LeMuReViewer.UI
             _toolTip.SetToolTip(_folderBox, Loc.Get("TipFolder"));
             _toolTip.SetToolTip(_browseButton, Loc.Get("TipBrowse"));
             _toolTip.SetToolTip(_addDataButton, Loc.Get("TipAddData"));
+            _toolTip.SetToolTip(_closeAllButton, Loc.Get("TipCloseAll"));
             _toolTip.SetToolTip(_langButton, Loc.Get("TipLang"));
             _toolTip.SetToolTip(_recentFoldersBox, Loc.Get("TipRecent"));
             _toolTip.SetToolTip(_autoStepCheck, Loc.Get("TipAutoStep"));
@@ -390,6 +428,173 @@ namespace LeMuReViewer.UI
             _toolTip.SetToolTip(_ordersBox, Loc.Get("TipOrders"));
             _toolTip.SetToolTip(_loadOrderButton, Loc.Get("TipLoadOrder"));
             _toolTip.SetToolTip(_deleteOrderButton, Loc.Get("TipDeleteOrder"));
+        }
+
+        private void ConfigureMainAsControlPanel()
+        {
+            _splitMain.Panel2Collapsed = true;
+            _channelsHeader.Visible = false;
+            _channelFilterBox.Visible = false;
+            _sortModeBox.Visible = false;
+            _selectedOnlyCheck.Visible = false;
+            _selectAllChannelsButton.Visible = false;
+            _clearChannelsButton.Visible = false;
+            _channelsList.Visible = false;
+            _presetNameBox.Visible = false;
+            _savePresetButton.Visible = false;
+            _presetsBox.Visible = false;
+            _loadPresetButton.Visible = false;
+            _deletePresetButton.Visible = false;
+            _orderNameBox.Visible = false;
+            _saveOrderButton.Visible = false;
+            _ordersBox.Visible = false;
+            _loadOrderButton.Visible = false;
+            _deleteOrderButton.Visible = false;
+            _statusLabel.Visible = false;
+            _splitMain.SplitterDistance = ClientSize.Width - 8;
+            TableLayoutPanel left = _channelsList.Parent as TableLayoutPanel;
+            if (left != null && left.RowStyles.Count > 7)
+            {
+                left.RowStyles[7] = new RowStyle(SizeType.AutoSize);
+            }
+            AdjustControlPanelWidth();
+        }
+
+        private void MainFormOnResizeFixHeight(object sender, EventArgs e)
+        {
+            if (WindowState == FormWindowState.Minimized) return;
+            bool changed = false;
+            if (Height != _fixedControlPanelHeight)
+            {
+                Height = _fixedControlPanelHeight;
+                changed = true;
+            }
+            int minWidth = Math.Max(980, ResolveControlPanelPreferredWidth());
+            if (Width < minWidth)
+            {
+                Width = minWidth;
+                changed = true;
+            }
+            if (changed)
+            {
+                BeginInvoke((Action)AdjustControlPanelWidth);
+            }
+        }
+
+        private int ResolveControlPanelPreferredWidth()
+        {
+            if (_splitMain == null || _splitMain.Panel1.Controls.Count == 0) return 980;
+            Control content = _splitMain.Panel1.Controls[0];
+            Size pref = content.GetPreferredSize(new Size(10000, 0));
+            int frameWidth = Width - ClientSize.Width;
+            return pref.Width + frameWidth + 20;
+        }
+
+        private void AdjustControlPanelWidth()
+        {
+            if (WindowState == FormWindowState.Minimized) return;
+            _fixedControlPanelHeight = ResolveControlPanelPreferredHeight();
+            if (Height != _fixedControlPanelHeight)
+            {
+                Height = _fixedControlPanelHeight;
+            }
+            MinimumSize = new Size(980, _fixedControlPanelHeight);
+            int minWidth = Math.Max(980, ResolveControlPanelPreferredWidth());
+            if (Width < minWidth)
+            {
+                Width = minWidth;
+            }
+        }
+
+        private int ResolveControlPanelPreferredHeight()
+        {
+            if (_splitMain == null || _splitMain.Panel1.Controls.Count == 0) return 430;
+            Control content = _splitMain.Panel1.Controls[0];
+            int targetClientHeight = content.GetPreferredSize(new Size(Math.Max(860, ClientSize.Width - 24), 0)).Height + 16;
+            int frameHeight = Height - ClientSize.Height;
+            int calculated = targetClientHeight + frameHeight;
+            Rectangle wa = Screen.FromControl(this).WorkingArea;
+            return Math.Max(260, Math.Min(calculated, wa.Height));
+        }
+
+        private void EnsureChartHostForm()
+        {
+            if (_chartHostForm != null && !_chartHostForm.IsDisposed) return;
+            _chartHostForm = new Form();
+            _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), Loc.Get("AppTitle"));
+            _chartHostForm.Width = 1220;
+            _chartHostForm.Height = 760;
+            _chartHostForm.StartPosition = FormStartPosition.Manual;
+            Rectangle wa = Screen.FromControl(this).WorkingArea;
+            int hostX = wa.Left + Math.Max(20, (wa.Width - _chartHostForm.Width) / 2);
+            int hostY = Bottom + 12;
+            int maxY = wa.Bottom - _chartHostForm.Height - 20;
+            if (hostY > maxY) hostY = Math.Max(wa.Top + 20, maxY);
+            _chartHostForm.Location = new Point(hostX, hostY);
+            _chartHostForm.FormBorderStyle = FormBorderStyle.Sizable;
+            _chartHostForm.FormClosing += delegate(object s, FormClosingEventArgs e)
+            {
+                if (e.CloseReason == CloseReason.UserClosing)
+                {
+                    e.Cancel = true;
+                    _chartHostForm.Hide();
+                }
+            };
+            try { _chartHostForm.Icon = Icon; } catch { }
+
+            if (_chart.Parent != null) _chart.Parent.Controls.Remove(_chart);
+            if (_rangeTrackBar.Parent != null) _rangeTrackBar.Parent.Controls.Remove(_rangeTrackBar);
+            if (_rangePanel.Parent != null) _rangePanel.Parent.Controls.Remove(_rangePanel);
+            _chartHostForm.Controls.Add(_chart);
+            _chartHostForm.Controls.Add(_rangeTrackBar);
+            _chartHostForm.Controls.Add(_rangePanel);
+        }
+
+        private void ShowChartHost()
+        {
+            EnsureChartHostForm();
+            if (!_chartHostForm.Visible)
+            {
+                _chartHostForm.Show(this);
+            }
+            if (_chartHostForm.WindowState == FormWindowState.Minimized)
+            {
+                _chartHostForm.WindowState = FormWindowState.Normal;
+            }
+            _chartHostForm.BringToFront();
+            _chartHostForm.Activate();
+        }
+
+        private void HideChartHost()
+        {
+            _mainCrosshairPixelX = null;
+            _toolTip.Hide(_chart);
+            if (_chartHostForm != null && !_chartHostForm.IsDisposed && _chartHostForm.Visible)
+            {
+                _chartHostForm.Hide();
+            }
+        }
+
+        private void CloseAllButtonOnClick(object sender, EventArgs e)
+        {
+            _folderBox.Text = string.Empty;
+            _checkedCodes.Clear();
+            _lastSelectedCodes.Clear();
+            _allChannels.Clear();
+            _pendingCheckedCodes.Clear();
+            AppState.SetData(string.Empty, null);
+            _chart.Series.Clear();
+            _summaryLabel.Text = Loc.Get("NoTestLoaded");
+            _selectionInfoLabel.Text = Loc.Get("Selected");
+            _exportTemplateButton.Enabled = _savePresetButton.Enabled = false;
+            _saveOrderButton.Enabled = false;
+            _loadPresetButton.Enabled = _deletePresetButton.Enabled = _presetsBox.Items.Count > 0;
+            _loadOrderButton.Enabled = _deleteOrderButton.Enabled = _ordersBox.Items.Count > 0;
+            _compareOverlayCheck.Checked = false;
+            _compareOverlayCheck.Enabled = false;
+            CloseSourceChannelWindows();
+            HideChartHost();
+            NotifySuccess(Loc.Get("ClearedAll"));
         }
 
         private static FlowLayoutPanel NewRow()
@@ -1190,22 +1395,7 @@ namespace LeMuReViewer.UI
                 else
                 {
                     List<TestData> loaded = await Task.Run(() => TestLoader.LoadTests(folders));
-                    List<string> overlaps = TestLoader.FindOverlappingCodes(loaded);
-                    bool splitOverlaps = false;
-                    if (overlaps.Count > 0)
-                    {
-                        string preview = string.Join(", ", overlaps.Take(12).ToArray());
-                        if (overlaps.Count > 12) preview += ", ...";
-                        string msg = string.Format(Loc.Get("OverlappingChannelsPrompt"), overlaps.Count, preview);
-                        DialogResult dr = MessageBox.Show(this, msg, Loc.Get("OverlappingChannelsTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                        if (dr != DialogResult.Yes)
-                        {
-                            NotifyError(Loc.Get("LoadCancelled"));
-                            return;
-                        }
-                        splitOverlaps = true;
-                    }
-                    data = TestLoader.MergeLoadedTests(loaded, splitOverlaps);
+                    data = TestLoader.MergeLoadedTests(loaded, true);
                 }
                 AppState.SetData(spec, data);
                 BindLoadedData(data);
@@ -1252,6 +1442,26 @@ namespace LeMuReViewer.UI
             return true;
         }
 
+        private static string NormalizeChannelCodeForDisplay(string code)
+        {
+            if (string.IsNullOrWhiteSpace(code)) return string.Empty;
+            int sep = code.IndexOf("::", StringComparison.Ordinal);
+            string result = sep >= 0 ? code.Substring(sep + 2) : code;
+            int hash = result.IndexOf('#');
+            if (hash > 0)
+            {
+                result = result.Substring(0, hash);
+            }
+            return result;
+        }
+
+        private static string BuildDisplayLabel(string displayCode, ChannelInfo channel)
+        {
+            string unitPart = channel == null || string.IsNullOrEmpty(channel.Unit) ? string.Empty : " (" + channel.Unit + ")";
+            string namePart = channel == null || string.IsNullOrEmpty(channel.Name) ? string.Empty : " - " + channel.Name;
+            return (displayCode ?? string.Empty) + namePart + unitPart;
+        }
+
         private void BindLoadedData(TestData data)
         {
             _allChannels.Clear();
@@ -1280,9 +1490,17 @@ namespace LeMuReViewer.UI
             {
                 _compareOverlayCheck.Checked = false;
             }
-            CloseSourceChannelWindows();
+            if (data.SourceColumns != null && data.SourceColumns.Count > 0)
+            {
+                _folderBox.Text = JoinFolderSpec(data.SourceColumns.Keys.ToList());
+            }
+            RebuildSourceChannelWindows(data);
             DataSummary summary = AppState.BuildSummary(data);
             _summaryLabel.Text = string.Format(Loc.Get("Points"), summary.Points, summary.Start, summary.End);
+            if (_chartHostForm != null && !_chartHostForm.IsDisposed)
+            {
+                _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), AppState.Folder ?? Loc.Get("AppTitle"));
+            }
             _exportTemplateButton.Enabled = _savePresetButton.Enabled = true;
             _loadPresetButton.Enabled = _deletePresetButton.Enabled = _presetsBox.Items.Count > 0;
             _saveOrderButton.Enabled = true;
@@ -1294,14 +1512,15 @@ namespace LeMuReViewer.UI
         private void RebuildSourceChannelWindows(TestData data)
         {
             CloseSourceChannelWindows();
-            if (data == null || data.SourceColumns == null || data.SourceColumns.Count <= 1)
+            if (data == null || data.SourceColumns == null || data.SourceColumns.Count == 0)
             {
                 return;
             }
 
-            int baseX = Right + 12;
-            int baseY = Top + 40;
-            int offsetY = 0;
+            Rectangle wa = Screen.FromControl(this).WorkingArea;
+            int baseX = wa.Left + 12;
+            int baseY = Bottom + 10;
+            int col = 0;
             string[] globalOrdered = ApplySavedOrder(data.ColumnNames);
 
             foreach (var kv in data.SourceColumns)
@@ -1313,12 +1532,45 @@ namespace LeMuReViewer.UI
 
                 var form = new Form();
                 form.Text = string.Format(Loc.Get("ChannelsForSource"), Path.GetFileName(sourceRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
-                form.Width = 360;
-                form.Height = 540;
+                form.Width = 560;
+                form.Height = 640;
                 form.StartPosition = FormStartPosition.Manual;
-                form.Location = new Point(baseX, baseY + offsetY);
+                form.Location = new Point(baseX + (col * 570), baseY);
                 form.ShowInTaskbar = false;
                 form.FormBorderStyle = FormBorderStyle.SizableToolWindow;
+                var top = new FlowLayoutPanel();
+                top.Dock = DockStyle.Top;
+                top.Height = 32;
+                top.WrapContents = false;
+                top.Padding = new Padding(4, 4, 4, 2);
+
+                var filterBox = new TextBox();
+                filterBox.Width = 130;
+                filterBox.Text = _channelFilterBox.Text;
+                top.Controls.Add(filterBox);
+
+                var sortBox = new ComboBox();
+                sortBox.DropDownStyle = ComboBoxStyle.DropDownList;
+                sortBox.Width = 150;
+                PopulateSortModeBox(sortBox);
+                SelectSortModeByKey(sortBox, GetSelectedSortKey());
+                top.Controls.Add(sortBox);
+
+                var selectedOnly = new CheckBox();
+                selectedOnly.Text = Loc.Get("SelectedOnly");
+                selectedOnly.AutoSize = true;
+                selectedOnly.Checked = _selectedOnlyCheck.Checked;
+                top.Controls.Add(selectedOnly);
+
+                var selectAll = new Button();
+                selectAll.Text = Loc.Get("SelectAll");
+                selectAll.AutoSize = true;
+                top.Controls.Add(selectAll);
+
+                var clear = new Button();
+                clear.Text = Loc.Get("Clear");
+                clear.AutoSize = true;
+                top.Controls.Add(clear);
 
                 var list = new CheckedListBox();
                 list.Dock = DockStyle.Fill;
@@ -1327,45 +1579,163 @@ namespace LeMuReViewer.UI
                 list.Tag = sourceRoot;
                 list.ItemCheck += SourceListOnItemCheck;
 
-                for (int i = 0; i < ordered.Length; i++)
+                var bottom = new TableLayoutPanel();
+                bottom.Dock = DockStyle.Bottom;
+                bottom.AutoSize = true;
+                bottom.ColumnCount = 1;
+                bottom.RowCount = 4;
+
+                var presetSaveRow = NewRow();
+                var presetNameBox = new TextBox(); presetNameBox.Width = 190; presetNameBox.Text = _presetNameBox.Text;
+                var savePresetButton = new Button(); savePresetButton.Text = Loc.Get("SavePreset"); savePresetButton.AutoSize = true;
+                presetSaveRow.Controls.Add(presetNameBox);
+                presetSaveRow.Controls.Add(savePresetButton);
+                bottom.Controls.Add(presetSaveRow, 0, 0);
+
+                var presetLoadRow = NewRow();
+                var presetsBox = new ComboBox(); presetsBox.Width = 220; presetsBox.DropDownStyle = ComboBoxStyle.DropDownList;
+                var loadPresetButton = new Button(); loadPresetButton.Text = Loc.Get("Load"); loadPresetButton.AutoSize = true;
+                var deletePresetButton = new Button(); deletePresetButton.Text = Loc.Get("Delete"); deletePresetButton.AutoSize = true;
+                presetLoadRow.Controls.Add(presetsBox);
+                presetLoadRow.Controls.Add(loadPresetButton);
+                presetLoadRow.Controls.Add(deletePresetButton);
+                bottom.Controls.Add(presetLoadRow, 0, 1);
+
+                var orderRow = NewRow();
+                var orderNameBox = new TextBox(); orderNameBox.Width = 150; orderNameBox.Text = _orderNameBox.Text;
+                var saveOrderButton = new Button(); saveOrderButton.Text = Loc.Get("SaveOrder"); saveOrderButton.AutoSize = true;
+                var ordersBox = new ComboBox(); ordersBox.Width = 180; ordersBox.DropDownStyle = ComboBoxStyle.DropDownList;
+                var loadOrderButton = new Button(); loadOrderButton.Text = Loc.Get("Load"); loadOrderButton.AutoSize = true;
+                var deleteOrderButton = new Button(); deleteOrderButton.Text = Loc.Get("Delete"); deleteOrderButton.AutoSize = true;
+                orderRow.Controls.Add(orderNameBox);
+                orderRow.Controls.Add(saveOrderButton);
+                orderRow.Controls.Add(ordersBox);
+                orderRow.Controls.Add(loadOrderButton);
+                orderRow.Controls.Add(deleteOrderButton);
+                bottom.Controls.Add(orderRow, 0, 2);
+
+                var status = new Label();
+                status.AutoSize = true;
+                status.Padding = new Padding(4, 4, 4, 6);
+                status.Text = _statusLabel.Text;
+                bottom.Controls.Add(status, 0, 3);
+
+                var state = new SourceWindowState
                 {
-                    string code = ordered[i];
-                    ChannelInfo ch;
-                    string label = data.Channels.TryGetValue(code, out ch) ? ch.Label : code;
-                    string unit = data.Channels.TryGetValue(code, out ch) ? (ch.Unit ?? string.Empty) : string.Empty;
-                    var item = new ChannelItem(code, label, unit);
-                    list.Items.Add(item, _checkedCodes.Contains(code));
-                }
+                    SourceRoot = sourceRoot,
+                    Form = form,
+                    FilterBox = filterBox,
+                    SortModeBox = sortBox,
+                    SelectedOnlyCheck = selectedOnly,
+                    SelectAllButton = selectAll,
+                    ClearButton = clear,
+                    PresetNameBox = presetNameBox,
+                    SavePresetButton = savePresetButton,
+                    PresetsBox = presetsBox,
+                    LoadPresetButton = loadPresetButton,
+                    DeletePresetButton = deletePresetButton,
+                    OrderNameBox = orderNameBox,
+                    SaveOrderButton = saveOrderButton,
+                    OrdersBox = ordersBox,
+                    LoadOrderButton = loadOrderButton,
+                    DeleteOrderButton = deleteOrderButton,
+                    StatusLabel = status,
+                    List = list,
+                    Items = ordered.Select(code =>
+                    {
+                        ChannelInfo ch;
+                        string displayCode = NormalizeChannelCodeForDisplay(code);
+                        string label = data.Channels.TryGetValue(code, out ch)
+                            ? BuildDisplayLabel(displayCode, ch)
+                            : displayCode;
+                        string unit = data.Channels.TryGetValue(code, out ch) ? (ch.Unit ?? string.Empty) : string.Empty;
+                        return new ChannelItem(code, label, unit);
+                    }).ToList()
+                };
+
+                filterBox.TextChanged += delegate { SourceWindowOptionsChanged(state); };
+                sortBox.SelectedIndexChanged += delegate { SourceWindowOptionsChanged(state); };
+                selectedOnly.CheckedChanged += delegate { SourceWindowOptionsChanged(state); };
+                selectAll.Click += delegate { SelectAllInSource(state); };
+                clear.Click += delegate { ClearAllInSource(state); };
+                savePresetButton.Click += delegate { SavePresetFromSource(state); };
+                loadPresetButton.Click += delegate { LoadPresetFromSource(state); };
+                deletePresetButton.Click += delegate { DeletePresetFromSource(state); };
+                saveOrderButton.Click += delegate { SaveOrderFromSource(state); };
+                loadOrderButton.Click += delegate { LoadOrderFromSource(state); };
+                deleteOrderButton.Click += delegate { DeleteOrderFromSource(state); };
 
                 form.Controls.Add(list);
+                form.Controls.Add(bottom);
+                form.Controls.Add(top);
                 form.FormClosed += delegate
                 {
+                    if (!_closingSourceChannelWindows)
+                    {
+                        SourceWindowState closedState;
+                        if (_sourceWindows.TryGetValue(sourceRoot, out closedState) && closedState != null && closedState.Items != null)
+                        {
+                            for (int i = 0; i < closedState.Items.Count; i++)
+                            {
+                                _checkedCodes.Remove(closedState.Items[i].Code);
+                            }
+                        }
+                        var folders = ParseFolderSpec(_folderBox.Text);
+                        folders = folders.Where(f => !string.Equals(f, sourceRoot, StringComparison.OrdinalIgnoreCase)).ToList();
+                        _folderBox.Text = JoinFolderSpec(folders);
+                        BeginInvoke((Action)(delegate
+                        {
+                            if (folders.Count == 0)
+                            {
+                                CloseAllButtonOnClick(null, EventArgs.Empty);
+                            }
+                            else
+                            {
+                                LoadFolder(_folderBox.Text, false);
+                            }
+                        }));
+                    }
                     _sourceChannelForms.Remove(form);
                     _sourceChannelLists.Remove(sourceRoot);
+                    _sourceWindows.Remove(sourceRoot);
                 };
 
                 _sourceChannelForms.Add(form);
                 _sourceChannelLists[sourceRoot] = list;
+                _sourceWindows[sourceRoot] = state;
+                BindPresetControlsForSource(state);
+                BindOrderControlsForSource(state);
+                RebuildSourceWindowList(state);
                 form.Show(this);
 
-                offsetY += 28;
+                col++;
             }
         }
 
         private void CloseSourceChannelWindows()
         {
-            for (int i = _sourceChannelForms.Count - 1; i >= 0; i--)
+            _closingSourceChannelWindows = true;
+            try
             {
-                Form f = _sourceChannelForms[i];
-                if (f == null) continue;
-                try
+                for (int i = _sourceChannelForms.Count - 1; i >= 0; i--)
                 {
-                    if (!f.IsDisposed) f.Close();
+                    Form f = _sourceChannelForms[i];
+                    if (f == null) continue;
+                    try
+                    {
+                        if (!f.IsDisposed) f.Close();
+                    }
+                    catch { }
                 }
-                catch { }
+            }
+            finally
+            {
+                _closingSourceChannelWindows = false;
             }
             _sourceChannelForms.Clear();
             _sourceChannelLists.Clear();
+            _sourceWindows.Clear();
+            HideChartHost();
         }
 
         private void SyncSourceWindowsChecksFromSelectedCodes()
@@ -1374,9 +1744,9 @@ namespace LeMuReViewer.UI
             _syncingSourceChannelSelection = true;
             try
             {
-                foreach (var kv in _sourceChannelLists)
+                foreach (var kv in _sourceWindows)
                 {
-                    CheckedListBox list = kv.Value;
+                    CheckedListBox list = kv.Value.List;
                     if (list == null || list.IsDisposed) continue;
                     for (int i = 0; i < list.Items.Count; i++)
                     {
@@ -1454,16 +1824,73 @@ namespace LeMuReViewer.UI
                 return;
             }
 
-            _rangeStartOa = double.NaN;
-            _rangeEndOa = double.NaN;
-            _rangeLabel.Text = BuildRangeLabelText(_rangeStartOa, _rangeEndOa);
-            _resetRangeButton.Visible = false;
-            RedrawChart();
+            BeginInvoke((Action)(delegate
+            {
+                AppLogger.LogInfo(_projectRoot, string.Format(
+                    "COMPARE_TOGGLE begin checked={0} dataRows={1} sourceWindows={2} checkedCodes={3}",
+                    _compareOverlayCheck.Checked ? "1" : "0",
+                    data.RowCount,
+                    _sourceWindows.Count,
+                    string.Join(",", _checkedCodes.Take(20).ToArray())));
+
+                _rangeStartOa = double.NaN;
+                _rangeEndOa = double.NaN;
+                _rangeLabel.Text = BuildRangeLabelText(_rangeStartOa, _rangeEndOa);
+                _resetRangeButton.Visible = false;
+                List<string> previousSelection = _checkedCodes.ToList();
+                RefreshCheckedCodesFromSourceWindows();
+                if (_checkedCodes.Count == 0 && previousSelection.Count > 0)
+                {
+                    for (int i = 0; i < previousSelection.Count; i++)
+                    {
+                        _checkedCodes.Add(previousSelection[i]);
+                    }
+                }
+                if (_checkedCodes.Count == 0 && _lastSelectedCodes.Count > 0)
+                {
+                    for (int i = 0; i < _lastSelectedCodes.Count; i++)
+                    {
+                        _checkedCodes.Add(_lastSelectedCodes[i]);
+                    }
+                }
+                if (_chart.ChartAreas.Count > 0)
+                {
+                    _chart.ChartAreas[0].AxisX.ScaleView.ZoomReset(0);
+                    _chart.ChartAreas[0].AxisY.ScaleView.ZoomReset(0);
+                    _chart.ChartAreas[0].AxisX.Minimum = double.NaN;
+                    _chart.ChartAreas[0].AxisX.Maximum = double.NaN;
+                    _chart.ChartAreas[0].AxisY.Minimum = double.NaN;
+                    _chart.ChartAreas[0].AxisY.Maximum = double.NaN;
+                }
+                RunWithoutRangeSync(delegate
+                {
+                    if (!double.IsNaN(_rangeTrackBar.Minimum) && !double.IsNaN(_rangeTrackBar.Maximum) && _rangeTrackBar.Minimum < _rangeTrackBar.Maximum)
+                    {
+                        _rangeTrackBar.LowerValue = _rangeTrackBar.Minimum;
+                        _rangeTrackBar.UpperValue = _rangeTrackBar.Maximum;
+                    }
+                });
+                ApplyChannelChecks(_checkedCodes.ToList());
+                _chart.Invalidate();
+                AppLogger.LogInfo(_projectRoot, string.Format(
+                    "COMPARE_TOGGLE end checked={0} checkedCodes={1} axisX=[{2};{3}] range=[{4};{5}] series={6}",
+                    _compareOverlayCheck.Checked ? "1" : "0",
+                    string.Join(",", _checkedCodes.Take(20).ToArray()),
+                    _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Minimum.ToString(CultureInfo.InvariantCulture) : "na",
+                    _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Maximum.ToString(CultureInfo.InvariantCulture) : "na",
+                    _rangeTrackBar.LowerValue.ToString(CultureInfo.InvariantCulture),
+                    _rangeTrackBar.UpperValue.ToString(CultureInfo.InvariantCulture),
+                    _chart.Series.Count));
+            }));
         }
 
         private void ChannelViewOptionsChanged(object sender, EventArgs e)
         {
             RebuildChannelList();
+            foreach (var kv in _sourceWindows)
+            {
+                RebuildSourceWindowList(kv.Value);
+            }
             UpdateSelectionInfo();
             RedrawChart();
         }
@@ -1554,11 +1981,34 @@ namespace LeMuReViewer.UI
         {
             _chart.Series.Clear();
             TestData data = AppState.Data;
-            if (data == null || data.RowCount == 0) return;
+            if (data == null || data.RowCount == 0)
+            {
+                HideChartHost();
+                return;
+            }
             bool overlayMode = IsOverlayCompareModeActive();
             ApplyAxisXMode(overlayMode);
             List<string> selectedCodes = GetSelectedCodes();
-            if (selectedCodes.Count == 0) return;
+            if (selectedCodes.Count == 0 && _lastSelectedCodes.Count > 0)
+            {
+                selectedCodes = _lastSelectedCodes.ToList();
+            }
+            if (selectedCodes.Count == 0)
+            {
+                HideChartHost();
+                return;
+            }
+            if (overlayMode)
+            {
+                AppLogger.LogInfo(_projectRoot, string.Format(
+                    "REDRAW overlay=1 selected={0} codes={1} dataRows={2}",
+                    selectedCodes.Count,
+                    string.Join(",", selectedCodes.Take(20).ToArray()),
+                    data.RowCount));
+            }
+            _lastSelectedCodes.Clear();
+            _lastSelectedCodes.AddRange(selectedCodes);
+            ShowChartHost();
             int step = ResolveStep(data.TimestampsMs.Length);
             SeriesSlice slice = SeriesCache.GetOrBuild(AppState.DataVersion, data, selectedCodes, data.TimestampsMs[0], data.TimestampsMs[data.TimestampsMs.Length - 1], step);
 
@@ -1582,6 +2032,8 @@ namespace LeMuReViewer.UI
             _chart.AntiAliasing = selectedCodes.Count > 10 ? AntiAliasingStyles.None : AntiAliasingStyles.All;
             try
             {
+                long maxOverlayDurationMs = 0L;
+                int builtSeries = 0;
                 foreach (string code in selectedCodes)
                 {
                     double?[] values;
@@ -1592,23 +2044,16 @@ namespace LeMuReViewer.UI
                     series.BorderWidth = selectedCodes.Count > 20 ? 1 : 2;
                     series.IsVisibleInLegend = showLegend;
                     int n = Math.Min(ts.Length, values.Length);
-                    string sourceRoot = null;
-                    long sourceStartMs = 0L;
-                    if (overlayMode)
+                    int firstValueIndex = -1;
+                    for (int i = 0; i < n; i++)
                     {
-                        if (data.CodeSources != null)
+                        if (values[i].HasValue)
                         {
-                            data.CodeSources.TryGetValue(code, out sourceRoot);
-                        }
-                        if (string.IsNullOrWhiteSpace(sourceRoot))
-                        {
-                            sourceRoot = data.Root;
-                        }
-                        if (data.SourceStartMs != null && !string.IsNullOrWhiteSpace(sourceRoot))
-                        {
-                            data.SourceStartMs.TryGetValue(sourceRoot, out sourceStartMs);
+                            firstValueIndex = i;
+                            break;
                         }
                     }
+                    long seriesBaseMs = firstValueIndex >= 0 ? ts[firstValueIndex] : (n > 0 ? ts[0] : 0L);
 
                     // Count non-null first to allocate exact size
                     int count = 0;
@@ -1622,16 +2067,29 @@ namespace LeMuReViewer.UI
                         {
                             if (values[i].HasValue)
                             {
+                                long relativeMs = Math.Max(0L, ts[i] - seriesBaseMs);
+                                if (relativeMs > 864000000L) relativeMs = 864000000L; // cap to 10 days for stable axis rendering
                                 xArr[w] = overlayMode
-                                    ? OverlayBaseLocalDate.AddMilliseconds(Math.Max(0L, ts[i] - sourceStartMs)).ToOADate()
+                                    ? OverlayBaseLocalDate.AddMilliseconds(relativeMs).ToOADate()
                                     : oaDates[i];
                                 yArr[w] = values[i].Value;
+                                if (overlayMode && relativeMs > maxOverlayDurationMs) maxOverlayDurationMs = relativeMs;
                                 w++;
                             }
                         }
                         series.Points.DataBindXY(xArr, yArr);
+                        if (overlayMode)
+                        {
+                            AppLogger.LogInfo(_projectRoot, string.Format(
+                                "REDRAW series code={0} points={1} firstX={2} lastX={3}",
+                                code,
+                                count,
+                                count > 0 ? xArr[0].ToString(CultureInfo.InvariantCulture) : "na",
+                                count > 0 ? xArr[count - 1].ToString(CultureInfo.InvariantCulture) : "na"));
+                        }
                     }
                     _chart.Series.Add(series);
+                    builtSeries++;
                 }
 
                 // Update range track bar bounds from displayed X-space
@@ -1639,9 +2097,8 @@ namespace LeMuReViewer.UI
                 double dataMax = double.NaN;
                 if (overlayMode)
                 {
-                    long maxDurationMs = ResolveOverlayMaxDurationMs(data, selectedCodes);
                     dataMin = OverlayBaseLocalDate.ToOADate();
-                    dataMax = OverlayBaseLocalDate.AddMilliseconds(Math.Max(1000L, maxDurationMs)).ToOADate();
+                    dataMax = OverlayBaseLocalDate.AddMilliseconds(Math.Max(1000L, maxOverlayDurationMs)).ToOADate();
                 }
                 else if (oaDates != null && oaDates.Length > 0)
                 {
@@ -1653,26 +2110,55 @@ namespace LeMuReViewer.UI
                 {
                     bool wasFullRange = Math.Abs(_rangeTrackBar.LowerValue - _rangeTrackBar.Minimum) < 1e-10
                                      && Math.Abs(_rangeTrackBar.UpperValue - _rangeTrackBar.Maximum) < 1e-10;
-                    _rangeTrackBar.Minimum = dataMin;
-                    _rangeTrackBar.Maximum = dataMax;
-                    if (wasFullRange || double.IsNaN(_rangeStartOa))
+                    RunWithoutRangeSync(delegate
                     {
-                        _rangeTrackBar.LowerValue = dataMin;
-                        _rangeTrackBar.UpperValue = dataMax;
-                    }
+                        _rangeTrackBar.Minimum = dataMin;
+                        _rangeTrackBar.Maximum = dataMax;
+                        if (wasFullRange || double.IsNaN(_rangeStartOa))
+                        {
+                            _rangeTrackBar.LowerValue = dataMin;
+                            _rangeTrackBar.UpperValue = dataMax;
+                        }
+                    });
                 }
 
                 // Apply range to chart axis if set
-                if (!double.IsNaN(_rangeStartOa) && !double.IsNaN(_rangeEndOa) && _chart.ChartAreas.Count > 0)
+                if (_chart.ChartAreas.Count > 0)
                 {
-                    _chart.ChartAreas[0].AxisX.Minimum = _rangeStartOa;
-                    _chart.ChartAreas[0].AxisX.Maximum = _rangeEndOa;
+                    if (!double.IsNaN(_rangeStartOa) && !double.IsNaN(_rangeEndOa))
+                    {
+                        _chart.ChartAreas[0].AxisX.Minimum = _rangeStartOa;
+                        _chart.ChartAreas[0].AxisX.Maximum = _rangeEndOa;
+                    }
+                    else
+                    {
+                        _chart.ChartAreas[0].AxisX.Minimum = double.NaN;
+                        _chart.ChartAreas[0].AxisX.Maximum = double.NaN;
+                    }
+                }
+                _chart.ResetAutoValues();
+                if (_chart.ChartAreas.Count > 0)
+                {
+                    _chart.ChartAreas[0].RecalculateAxesScale();
+                }
+                if (overlayMode)
+                {
+                    AppLogger.LogInfo(_projectRoot, string.Format(
+                        "REDRAW done overlay=1 builtSeries={0} axisX=[{1};{2}] track=[{3};{4}] maxOverlayMs={5}",
+                        builtSeries,
+                        _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Minimum.ToString(CultureInfo.InvariantCulture) : "na",
+                        _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Maximum.ToString(CultureInfo.InvariantCulture) : "na",
+                        _rangeTrackBar.LowerValue.ToString(CultureInfo.InvariantCulture),
+                        _rangeTrackBar.UpperValue.ToString(CultureInfo.InvariantCulture),
+                        maxOverlayDurationMs));
                 }
             }
             finally
             {
                 _chart.ResumeLayout();
                 _chart.EndInit();
+                _chart.Invalidate();
+                _chart.Update();
             }
         }
 
@@ -1749,6 +2235,47 @@ namespace LeMuReViewer.UI
             if (ts < TimeSpan.Zero) ts = TimeSpan.Zero;
             int hh = (int)ts.TotalHours;
             return string.Format(CultureInfo.InvariantCulture, "{0:00}:{1:00}:{2:00}", hh, ts.Minutes, ts.Seconds);
+        }
+
+        private void RunWithoutRangeSync(Action action)
+        {
+            if (action == null) return;
+            bool prev = _syncingRange;
+            _syncingRange = true;
+            try
+            {
+                action();
+            }
+            finally
+            {
+                _syncingRange = prev;
+            }
+        }
+
+        private void RefreshCheckedCodesFromSourceWindows()
+        {
+            if (_sourceWindows == null || _sourceWindows.Count == 0) return;
+            var fresh = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in _sourceWindows)
+            {
+                SourceWindowState state = kv.Value;
+                if (state == null || state.List == null || state.List.IsDisposed) continue;
+                CheckedListBox list = state.List;
+                for (int i = 0; i < list.Items.Count; i++)
+                {
+                    ChannelItem item = list.Items[i] as ChannelItem;
+                    if (item == null) continue;
+                    if (list.GetItemChecked(i))
+                    {
+                        fresh.Add(item.Code);
+                    }
+                }
+            }
+            if (fresh.Count > 0)
+            {
+                _checkedCodes.Clear();
+                foreach (string code in fresh) _checkedCodes.Add(code);
+            }
         }
 
         private int ResolveStep(int totalPoints)
@@ -1868,6 +2395,15 @@ namespace LeMuReViewer.UI
             ReloadPresets(); SelectPresetByKey(preset.key); NotifySuccess(string.Format(existed ? Loc.Get("PresetUpdated") : Loc.Get("PresetSaved"), preset.name));
         }
 
+        private void SavePresetFromSource(SourceWindowState state)
+        {
+            if (state == null) return;
+            if (state.PresetNameBox != null) _presetNameBox.Text = state.PresetNameBox.Text;
+            SavePresetButtonOnClick(this, EventArgs.Empty);
+            if (state.PresetNameBox != null) state.PresetNameBox.Text = _presetNameBox.Text;
+            BindPresetControlsForSource(state);
+        }
+
         private void LoadPresetButtonOnClick(object sender, EventArgs e)
         {
             var item = _presetsBox.SelectedItem as PresetItem; if (item == null) return;
@@ -1901,6 +2437,14 @@ namespace LeMuReViewer.UI
             ApplyChannelChecks(preset.channels); NotifySuccess(string.Format(Loc.Get("PresetLoaded"), preset.name ?? item.Key));
         }
 
+        private void LoadPresetFromSource(SourceWindowState state)
+        {
+            if (state == null || state.PresetsBox == null) return;
+            _presetsBox.SelectedIndex = state.PresetsBox.SelectedIndex;
+            LoadPresetButtonOnClick(this, EventArgs.Empty);
+            BindPresetControlsForSource(state);
+        }
+
         private void DeletePresetButtonOnClick(object sender, EventArgs e)
         {
             var item = _presetsBox.SelectedItem as PresetItem; if (item == null) return;
@@ -1909,6 +2453,14 @@ namespace LeMuReViewer.UI
             ReloadPresets();
             if (ok) NotifySuccess(string.Format(Loc.Get("PresetDeleted"), item.Name));
             else NotifyError(Loc.Get("PresetDeleteFailed"));
+        }
+
+        private void DeletePresetFromSource(SourceWindowState state)
+        {
+            if (state == null || state.PresetsBox == null) return;
+            _presetsBox.SelectedIndex = state.PresetsBox.SelectedIndex;
+            DeletePresetButtonOnClick(this, EventArgs.Empty);
+            BindPresetControlsForSource(state);
         }
 
         private void SaveOrderButtonOnClick(object sender, EventArgs e)
@@ -1932,6 +2484,15 @@ namespace LeMuReViewer.UI
             NotifySuccess(string.Format(existed ? Loc.Get("OrderUpdated") : Loc.Get("OrderSaved"), saved.name));
         }
 
+        private void SaveOrderFromSource(SourceWindowState state)
+        {
+            if (state == null) return;
+            if (state.OrderNameBox != null) _orderNameBox.Text = state.OrderNameBox.Text;
+            SaveOrderButtonOnClick(this, EventArgs.Empty);
+            if (state.OrderNameBox != null) state.OrderNameBox.Text = _orderNameBox.Text;
+            BindOrderControlsForSource(state);
+        }
+
         private void LoadOrderButtonOnClick(object sender, EventArgs e)
         {
             var item = _ordersBox.SelectedItem as OrderItem;
@@ -1946,6 +2507,14 @@ namespace LeMuReViewer.UI
             NotifySuccess(string.Format(Loc.Get("OrderLoaded"), order.name ?? item.Key));
         }
 
+        private void LoadOrderFromSource(SourceWindowState state)
+        {
+            if (state == null || state.OrdersBox == null) return;
+            _ordersBox.SelectedIndex = state.OrdersBox.SelectedIndex;
+            LoadOrderButtonOnClick(this, EventArgs.Empty);
+            BindOrderControlsForSource(state);
+        }
+
         private void DeleteOrderButtonOnClick(object sender, EventArgs e)
         {
             var item = _ordersBox.SelectedItem as OrderItem;
@@ -1955,6 +2524,14 @@ namespace LeMuReViewer.UI
             ReloadOrders();
             if (ok) NotifySuccess(string.Format(Loc.Get("OrderDeleted"), item.Name));
             else NotifyError(Loc.Get("OrderDeleteFailed"));
+        }
+
+        private void DeleteOrderFromSource(SourceWindowState state)
+        {
+            if (state == null || state.OrdersBox == null) return;
+            _ordersBox.SelectedIndex = state.OrdersBox.SelectedIndex;
+            DeleteOrderButtonOnClick(this, EventArgs.Empty);
+            BindOrderControlsForSource(state);
         }
 
         private void ApplyChannelChecks(IList<string> checkedCodes)
@@ -1969,7 +2546,6 @@ namespace LeMuReViewer.UI
 
         private List<string> GetSelectedCodes()
         {
-            SyncCheckedFromVisibleList();
             var result = new List<string>();
             for (int i = 0; i < _allChannels.Count; i++)
             {
@@ -1981,7 +2557,6 @@ namespace LeMuReViewer.UI
 
         private void RebuildChannelList()
         {
-            SyncCheckedFromVisibleList();
             IEnumerable<ChannelItem> items = _allChannels;
 
             string filter = (_channelFilterBox.Text ?? string.Empty).Trim();
@@ -2036,14 +2611,7 @@ namespace LeMuReViewer.UI
 
         private void SyncCheckedFromVisibleList()
         {
-            for (int i = 0; i < _channelsList.Items.Count; i++)
-            {
-                ChannelItem item = _channelsList.Items[i] as ChannelItem;
-                if (item == null) continue;
-                bool isChecked = _channelsList.GetItemChecked(i);
-                if (isChecked) _checkedCodes.Add(item.Code);
-                else _checkedCodes.Remove(item.Code);
-            }
+            // Main list is hidden in multi-window UI mode; selection state is driven by source windows.
         }
 
         private void RebuildAllChannelsFromVisibleList()
@@ -2064,6 +2632,109 @@ namespace LeMuReViewer.UI
             }
         }
 
+        private void SourceWindowOptionsChanged(SourceWindowState origin)
+        {
+            if (origin == null) return;
+            if (_syncingSourceChannelSelection) return;
+            _syncingSourceChannelSelection = true;
+            try
+            {
+                string filter = origin.FilterBox == null ? string.Empty : origin.FilterBox.Text;
+                string sortKey = GetSelectedSortKey(origin.SortModeBox);
+                bool selectedOnly = origin.SelectedOnlyCheck != null && origin.SelectedOnlyCheck.Checked;
+
+                _channelFilterBox.Text = filter;
+                _selectedOnlyCheck.Checked = selectedOnly;
+                SelectSortModeByKey(_sortModeBox, sortKey);
+
+                foreach (var kv in _sourceWindows)
+                {
+                    SourceWindowState state = kv.Value;
+                    if (state == null || state == origin) continue;
+                    if (state.FilterBox != null && state.FilterBox.Text != filter) state.FilterBox.Text = filter;
+                    if (state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked != selectedOnly) state.SelectedOnlyCheck.Checked = selectedOnly;
+                    SelectSortModeByKey(state.SortModeBox, sortKey);
+                }
+
+                foreach (var kv in _sourceWindows)
+                {
+                    RebuildSourceWindowList(kv.Value);
+                }
+            }
+            finally
+            {
+                _syncingSourceChannelSelection = false;
+            }
+        }
+
+        private void SelectAllInSource(SourceWindowState state)
+        {
+            if (state == null || state.Items == null) return;
+            for (int i = 0; i < state.Items.Count; i++)
+            {
+                _checkedCodes.Add(state.Items[i].Code);
+            }
+            SyncSourceWindowsChecksFromSelectedCodes();
+            UpdateSelectionInfo();
+            RedrawChart();
+        }
+
+        private void ClearAllInSource(SourceWindowState state)
+        {
+            if (state == null || state.Items == null) return;
+            for (int i = 0; i < state.Items.Count; i++)
+            {
+                _checkedCodes.Remove(state.Items[i].Code);
+            }
+            SyncSourceWindowsChecksFromSelectedCodes();
+            UpdateSelectionInfo();
+            RedrawChart();
+        }
+
+        private void RebuildSourceWindowList(SourceWindowState state)
+        {
+            if (state == null || state.List == null || state.List.IsDisposed) return;
+            IEnumerable<ChannelItem> items = state.Items ?? Enumerable.Empty<ChannelItem>();
+            string filter = state.FilterBox == null ? string.Empty : (state.FilterBox.Text ?? string.Empty).Trim();
+            if (filter.Length > 0)
+            {
+                string f = filter.ToLowerInvariant();
+                items = items.Where(c => (c.Code ?? string.Empty).ToLowerInvariant().Contains(f) || (c.Label ?? string.Empty).ToLowerInvariant().Contains(f));
+            }
+            if (state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked)
+            {
+                items = items.Where(c => _checkedCodes.Contains(c.Code));
+            }
+
+            string mode = GetSelectedSortKey(state.SortModeBox);
+            if (mode == "Code") items = items.OrderBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
+            else if (mode == "Natural code") items = items.OrderBy(c => c.Code, new NaturalStringComparer());
+            else if (mode == "Label") items = items.OrderBy(c => c.Label, StringComparer.OrdinalIgnoreCase);
+            else if (mode == "Unit") items = items.OrderBy(c => c.Unit, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
+            else if (mode == "Priority A/C") items = items.OrderBy(c => PrefixPriority(c.Code)).ThenBy(c => c.Code, new NaturalStringComparer());
+            else if (mode == "Selected first") items = items.OrderByDescending(c => _checkedCodes.Contains(c.Code)).ThenBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
+
+            state.List.Items.Clear();
+            foreach (ChannelItem c in items)
+            {
+                state.List.Items.Add(c, _checkedCodes.Contains(c.Code));
+            }
+        }
+
+        private static void PopulateSortModeBox(ComboBox box)
+        {
+            if (box == null) return;
+            box.Items.Clear();
+            box.Items.Add(new SortModeItem("User", "SortUser"));
+            box.Items.Add(new SortModeItem("Code", "SortCode"));
+            box.Items.Add(new SortModeItem("Natural code", "SortNaturalCode"));
+            box.Items.Add(new SortModeItem("Label", "SortLabel"));
+            box.Items.Add(new SortModeItem("Unit", "SortUnit"));
+            box.Items.Add(new SortModeItem("Priority A/C", "SortPriorityAC"));
+            box.Items.Add(new SortModeItem("Selected first", "SortSelectedFirst"));
+            if (box.Items.Count > 0) box.SelectedIndex = 0;
+        }
+
         private void ReloadPresets()
         {
             _presetsBox.Items.Clear();
@@ -2075,6 +2746,10 @@ namespace LeMuReViewer.UI
             }
             if (_presetsBox.Items.Count > 0) _presetsBox.SelectedIndex = 0;
             _loadPresetButton.Enabled = _deletePresetButton.Enabled = _presetsBox.Items.Count > 0;
+            foreach (var kv in _sourceWindows)
+            {
+                BindPresetControlsForSource(kv.Value);
+            }
         }
 
         private void ReloadOrders()
@@ -2091,6 +2766,42 @@ namespace LeMuReViewer.UI
                 _ordersBox.SelectedIndex = 0;
             }
             _loadOrderButton.Enabled = _deleteOrderButton.Enabled = _ordersBox.Items.Count > 0;
+            foreach (var kv in _sourceWindows)
+            {
+                BindOrderControlsForSource(kv.Value);
+            }
+        }
+
+        private void BindPresetControlsForSource(SourceWindowState state)
+        {
+            if (state == null || state.PresetsBox == null) return;
+            state.PresetsBox.Items.Clear();
+            for (int i = 0; i < _presetsBox.Items.Count; i++)
+            {
+                state.PresetsBox.Items.Add(_presetsBox.Items[i]);
+            }
+            if (_presetsBox.SelectedIndex >= 0 && _presetsBox.SelectedIndex < state.PresetsBox.Items.Count)
+            {
+                state.PresetsBox.SelectedIndex = _presetsBox.SelectedIndex;
+            }
+            if (state.LoadPresetButton != null) state.LoadPresetButton.Enabled = state.PresetsBox.Items.Count > 0;
+            if (state.DeletePresetButton != null) state.DeletePresetButton.Enabled = state.PresetsBox.Items.Count > 0;
+        }
+
+        private void BindOrderControlsForSource(SourceWindowState state)
+        {
+            if (state == null || state.OrdersBox == null) return;
+            state.OrdersBox.Items.Clear();
+            for (int i = 0; i < _ordersBox.Items.Count; i++)
+            {
+                state.OrdersBox.Items.Add(_ordersBox.Items[i]);
+            }
+            if (_ordersBox.SelectedIndex >= 0 && _ordersBox.SelectedIndex < state.OrdersBox.Items.Count)
+            {
+                state.OrdersBox.SelectedIndex = _ordersBox.SelectedIndex;
+            }
+            if (state.LoadOrderButton != null) state.LoadOrderButton.Enabled = state.OrdersBox.Items.Count > 0;
+            if (state.DeleteOrderButton != null) state.DeleteOrderButton.Enabled = state.OrdersBox.Items.Count > 0;
         }
 
         private void SelectPresetByKey(string key)
@@ -2113,13 +2824,18 @@ namespace LeMuReViewer.UI
 
         private void SelectSortModeByKey(string key)
         {
-            if (string.IsNullOrWhiteSpace(key)) return;
-            for (int i = 0; i < _sortModeBox.Items.Count; i++)
+            SelectSortModeByKey(_sortModeBox, key);
+        }
+
+        private static void SelectSortModeByKey(ComboBox box, string key)
+        {
+            if (box == null || string.IsNullOrWhiteSpace(key)) return;
+            for (int i = 0; i < box.Items.Count; i++)
             {
-                var item = _sortModeBox.Items[i] as SortModeItem;
+                var item = box.Items[i] as SortModeItem;
                 if (item != null && string.Equals(item.Key, key, StringComparison.OrdinalIgnoreCase))
                 {
-                    _sortModeBox.SelectedIndex = i;
+                    box.SelectedIndex = i;
                     return;
                 }
             }
@@ -2144,7 +2860,6 @@ namespace LeMuReViewer.UI
 
         private void UpdateSelectionInfo()
         {
-            SyncCheckedFromVisibleList();
             int selected = _checkedCodes.Count;
             int total = _allChannels.Count;
             string stepInfo = string.Empty;
@@ -2158,7 +2873,18 @@ namespace LeMuReViewer.UI
             _selectionInfoLabel.Text = string.Format(Loc.Get("SelectedInfo"), selected, total, stepInfo);
         }
 
-        private void SetStatus(string text) { _statusLabel.Text = text ?? string.Empty; }
+        private void SetStatus(string text)
+        {
+            string value = text ?? string.Empty;
+            _statusLabel.Text = value;
+            foreach (var kv in _sourceWindows)
+            {
+                if (kv.Value != null && kv.Value.StatusLabel != null)
+                {
+                    kv.Value.StatusLabel.Text = value;
+                }
+            }
+        }
 
         private void NotifySuccess(string text)
         {
@@ -2187,6 +2913,8 @@ namespace LeMuReViewer.UI
             _busyPanel.BringToFront();
 
             _browseButton.Enabled = !busy;
+            _addDataButton.Enabled = !busy;
+            _closeAllButton.Enabled = !busy;
             _exportTemplateButton.Enabled = !busy && AppState.IsLoaded;
             _savePresetButton.Enabled = !busy && AppState.IsLoaded;
             _saveOrderButton.Enabled = !busy && AppState.IsLoaded;
@@ -2474,6 +3202,30 @@ namespace LeMuReViewer.UI
             public List<string> checked_channels { get; set; }
         }
 
+        private sealed class SourceWindowState
+        {
+            public string SourceRoot { get; set; }
+            public Form Form { get; set; }
+            public TextBox FilterBox { get; set; }
+            public ComboBox SortModeBox { get; set; }
+            public CheckBox SelectedOnlyCheck { get; set; }
+            public Button SelectAllButton { get; set; }
+            public Button ClearButton { get; set; }
+            public TextBox PresetNameBox { get; set; }
+            public Button SavePresetButton { get; set; }
+            public ComboBox PresetsBox { get; set; }
+            public Button LoadPresetButton { get; set; }
+            public Button DeletePresetButton { get; set; }
+            public TextBox OrderNameBox { get; set; }
+            public Button SaveOrderButton { get; set; }
+            public ComboBox OrdersBox { get; set; }
+            public Button LoadOrderButton { get; set; }
+            public Button DeleteOrderButton { get; set; }
+            public Label StatusLabel { get; set; }
+            public CheckedListBox List { get; set; }
+            public List<ChannelItem> Items { get; set; }
+        }
+
         private sealed class SortModeItem
         {
             public string Key { get; private set; }
@@ -2485,6 +3237,12 @@ namespace LeMuReViewer.UI
         private string GetSelectedSortKey()
         {
             var item = _sortModeBox.SelectedItem as SortModeItem;
+            return item != null ? item.Key : "User";
+        }
+
+        private static string GetSelectedSortKey(ComboBox box)
+        {
+            var item = box == null ? null : box.SelectedItem as SortModeItem;
             return item != null ? item.Key : "User";
         }
 

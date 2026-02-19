@@ -289,10 +289,6 @@ namespace LeMuReViewer.Core
                     if (!channels.TryGetValue(mergedCode, out existing))
                     {
                         string mergedName = kv.Value.Name;
-                        if (splitOverlappingCodes && overlaps.Contains(kv.Key))
-                        {
-                            mergedName = string.IsNullOrWhiteSpace(mergedName) ? ("[" + tag + "]") : (mergedName + " [" + tag + "]");
-                        }
                         channels[mergedCode] = new ChannelInfo { Code = mergedCode, Name = mergedName, Unit = kv.Value.Unit };
                     }
                     else
