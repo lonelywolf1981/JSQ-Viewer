@@ -75,7 +75,6 @@ namespace JSQViewer.UI
         private double _rangeEndOa = double.NaN;
         private readonly List<RangeTrackBar> _detachedRangeBars = new List<RangeTrackBar>();
         private bool _syncingRange;
-        private static readonly DateTime OverlayBaseLocalDate = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Local);
 
         private int _dragIndex = -1;
         private Point _dragStartPoint = Point.Empty;
@@ -766,7 +765,7 @@ namespace JSQViewer.UI
             var sb = new System.Text.StringBuilder();
             if (overlayMode)
             {
-                sb.Append(FormatOverlayElapsed(xVal));
+                sb.Append(FormatOverlayElapsedHours(xVal));
             }
             else
             {
@@ -783,7 +782,7 @@ namespace JSQViewer.UI
                 int idx = FindNearestPointIndex(s.Points, xVal);
                 if (idx < 0) continue;
                 DataPoint dp = s.Points[idx];
-                sb.AppendFormat("\n{0}: {1:F2}", s.Name, dp.YValues[0]);
+                sb.AppendFormat("\n{0}: {1:F2}", GetSeriesDisplayName(s), dp.YValues[0]);
 
                 double dist = Math.Abs(dp.XValue - xVal);
                 if (dist < closestDist) { closestDist = dist; closestSeries = s; }
@@ -802,6 +801,12 @@ namespace JSQViewer.UI
                 // Show tooltip a bit to the right of the cursor and only on content change to avoid flicker.
                 toolTip.Show(text, chart, mousePoint.X + 24, mousePoint.Y + 8);
             }
+        }
+
+        private static string GetSeriesDisplayName(Series series)
+        {
+            if (series == null) return string.Empty;
+            return string.IsNullOrWhiteSpace(series.LegendText) ? series.Name : series.LegendText;
         }
 
         private static int FindNearestPointIndex(DataPointCollection points, double xValue)
@@ -979,7 +984,7 @@ namespace JSQViewer.UI
             if (detachedChart.ChartAreas.Count > 0)
             {
                 ChartArea detachedArea = detachedChart.ChartAreas[0];
-                detachedArea.AxisX.LabelStyle.Format = overlayMode ? "HH:mm:ss" : "HH:mm\ndd.MM";
+                detachedArea.AxisX.LabelStyle.Format = overlayMode ? "0.##" : "HH:mm\ndd.MM";
                 detachedArea.AxisX.Title = overlayMode ? Loc.Get("OverlayXAxisTitle") : string.Empty;
             }
             detachedChart.SuspendLayout();
@@ -992,6 +997,7 @@ namespace JSQViewer.UI
                     s.XValueType = src.XValueType;
                     s.BorderWidth = src.BorderWidth;
                     s.Color = src.Color;
+                    s.LegendText = src.LegendText;
                     foreach (DataPoint dp in src.Points)
                     {
                         s.Points.AddXY(dp.XValue, dp.YValues[0]);
@@ -2138,9 +2144,10 @@ namespace JSQViewer.UI
                     if (!slice.Series.TryGetValue(code, out values)) continue;
                     var series = new Series(code);
                     series.ChartType = SeriesChartType.FastLine;
-                    series.XValueType = ChartValueType.DateTime;
+                    series.XValueType = overlayMode ? ChartValueType.Double : ChartValueType.DateTime;
                     series.BorderWidth = selectedCodes.Count > 20 ? 1 : 2;
                     series.IsVisibleInLegend = showLegend;
+                    series.LegendText = BuildSeriesLegendText(data, code);
                     int n = Math.Min(ts.Length, values.Length);
                     int firstValueIndex = -1;
                     for (int i = 0; i < n; i++)
@@ -2166,9 +2173,8 @@ namespace JSQViewer.UI
                             if (values[i].HasValue)
                             {
                                 long relativeMs = Math.Max(0L, ts[i] - seriesBaseMs);
-                                if (relativeMs > 864000000L) relativeMs = 864000000L; // cap to 10 days for stable axis rendering
                                 xArr[w] = overlayMode
-                                    ? OverlayBaseLocalDate.AddMilliseconds(relativeMs).ToOADate()
+                                    ? relativeMs / 3600000.0
                                     : oaDates[i];
                                 yArr[w] = values[i].Value;
                                 if (overlayMode && relativeMs > maxOverlayDurationMs) maxOverlayDurationMs = relativeMs;
@@ -2195,8 +2201,10 @@ namespace JSQViewer.UI
                 double dataMax = double.NaN;
                 if (overlayMode)
                 {
-                    dataMin = OverlayBaseLocalDate.ToOADate();
-                    dataMax = OverlayBaseLocalDate.AddMilliseconds(Math.Max(1000L, maxOverlayDurationMs)).ToOADate();
+                    long maxDurationMs = ResolveOverlayMaxDurationMs(data, selectedCodes);
+                    long overlayDurationMs = Math.Max(maxDurationMs, maxOverlayDurationMs);
+                    dataMin = 0.0;
+                    dataMax = Math.Max(1.0 / 3600.0, overlayDurationMs / 3600000.0);
                 }
                 else if (oaDates != null && oaDates.Length > 0)
                 {
@@ -2264,7 +2272,7 @@ namespace JSQViewer.UI
         {
             if (_chart.ChartAreas.Count == 0) return;
             ChartArea area = _chart.ChartAreas[0];
-            area.AxisX.LabelStyle.Format = overlayMode ? "HH:mm:ss" : "HH:mm\ndd.MM";
+            area.AxisX.LabelStyle.Format = overlayMode ? "0.##" : "HH:mm\ndd.MM";
             area.AxisX.Title = overlayMode ? Loc.Get("OverlayXAxisTitle") : string.Empty;
         }
 
@@ -2319,20 +2327,51 @@ namespace JSQViewer.UI
             }
             if (IsOverlayCompareModeActive())
             {
-                return string.Format(Loc.Get("RangeSelectedOverlay"), FormatOverlayElapsed(startOa), FormatOverlayElapsed(endOa));
+                return string.Format(Loc.Get("RangeSelectedOverlay"), FormatOverlayElapsedHours(startOa), FormatOverlayElapsedHours(endOa));
             }
             DateTime dtStart = DateTime.FromOADate(startOa);
             DateTime dtEnd = DateTime.FromOADate(endOa);
             return string.Format(Loc.Get("RangeSelected"), dtStart, dtEnd);
         }
 
-        private static string FormatOverlayElapsed(double oaValue)
+        private static string FormatOverlayElapsedHours(double overlayHours)
         {
-            DateTime dt = DateTime.FromOADate(oaValue);
-            TimeSpan ts = dt - OverlayBaseLocalDate;
+            if (double.IsNaN(overlayHours) || double.IsInfinity(overlayHours))
+            {
+                return "00:00:00";
+            }
+            if (overlayHours < 0)
+            {
+                overlayHours = 0;
+            }
+            TimeSpan ts = TimeSpan.FromHours(overlayHours);
             if (ts < TimeSpan.Zero) ts = TimeSpan.Zero;
             int hh = (int)ts.TotalHours;
             return string.Format(CultureInfo.InvariantCulture, "{0:00}:{1:00}:{2:00}", hh, ts.Minutes, ts.Seconds);
+        }
+
+        private static string BuildSeriesLegendText(TestData data, string code)
+        {
+            string displayCode = NormalizeChannelCodeForDisplay(code);
+            if (data == null || data.SourceColumns == null || data.SourceColumns.Count <= 1 || data.CodeSources == null)
+            {
+                return displayCode;
+            }
+
+            string source;
+            if (!data.CodeSources.TryGetValue(code, out source) || string.IsNullOrWhiteSpace(source))
+            {
+                return displayCode;
+            }
+
+            string trimmed = source.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string sourceName = Path.GetFileName(trimmed);
+            if (string.IsNullOrWhiteSpace(sourceName))
+            {
+                sourceName = source;
+            }
+
+            return string.Format(CultureInfo.InvariantCulture, "[{0}] {1}", sourceName, displayCode);
         }
 
         private void RunWithoutRangeSync(Action action)

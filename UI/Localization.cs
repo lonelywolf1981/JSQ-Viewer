@@ -213,7 +213,7 @@ namespace JSQViewer.UI
             { "RangeSelected", "Диапазон: {0:yyyy-MM-dd HH:mm:ss} — {1:yyyy-MM-dd HH:mm:ss}" },
             { "RangeSelectedOverlay", "Диапазон: {0} — {1}" },
             { "ResetRange", "Сбросить выделение" },
-            { "OverlayXAxisTitle", "Время от старта теста" },
+            { "OverlayXAxisTitle", "Время от старта теста, ч" },
         };
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -396,7 +396,7 @@ namespace JSQViewer.UI
             { "RangeSelected", "Range: {0:yyyy-MM-dd HH:mm:ss} — {1:yyyy-MM-dd HH:mm:ss}" },
             { "RangeSelectedOverlay", "Range: {0} — {1}" },
             { "ResetRange", "Reset selection" },
-            { "OverlayXAxisTitle", "Time from test start" },
+            { "OverlayXAxisTitle", "Time from test start, h" },
         };
     }
 }
