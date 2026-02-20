@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace LeMuReViewer.Core
+namespace JSQViewer.Core
 {
     public sealed class ChannelInfo
     {

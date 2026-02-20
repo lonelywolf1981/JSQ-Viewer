@@ -3,7 +3,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Xml.Linq;
 
-namespace LeMuReViewer.Export
+namespace JSQViewer.Export
 {
     public sealed class TemplateValidationResult
     {

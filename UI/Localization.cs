@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace LeMuReViewer.UI
+namespace JSQViewer.UI
 {
     public enum Lang { Ru, En }
 
@@ -39,6 +39,7 @@ namespace LeMuReViewer.UI
             { "AppTitle", "ИЛХО Viewer" },
             { "Browse", "Обзор" },
             { "AddData", "Добавить еще данные" },
+            { "Refresh", "Обновить" },
             { "CloseAll", "Закрыть все" },
             { "Load", "Загрузить" },
             { "CopyPath", "Копировать путь" },
@@ -114,6 +115,7 @@ namespace LeMuReViewer.UI
             { "TipFolder", "Путь к папке(ам) с данными теста, разделитель: ;" },
             { "TipBrowse", "Выбрать папку с данными через диалог" },
             { "TipAddData", "Добавить еще одну папку с данными к текущему набору" },
+            { "TipRefresh", "Перечитать данные из текущих папок без сброса выбора каналов" },
             { "TipCloseAll", "Закрыть все окна каналов и очистить текущие данные" },
             { "TipLoad", "Загрузить данные из указанной папки" },
             { "TipCopyPath", "Скопировать путь папки в буфер обмена" },
@@ -220,6 +222,7 @@ namespace LeMuReViewer.UI
             { "AppTitle", "ILHO Viewer" },
             { "Browse", "Browse" },
             { "AddData", "Add More Data" },
+            { "Refresh", "Refresh" },
             { "CloseAll", "Close All" },
             { "Load", "Load" },
             { "CopyPath", "Copy Path" },
@@ -295,6 +298,7 @@ namespace LeMuReViewer.UI
             { "TipFolder", "Path to test data folder(s), separator: ;" },
             { "TipBrowse", "Select data folder via dialog" },
             { "TipAddData", "Add one more data folder to the current set" },
+            { "TipRefresh", "Reload data from current folders without resetting selected channels" },
             { "TipCloseAll", "Close all channel windows and clear current data" },
             { "TipLoad", "Load data from the specified folder" },
             { "TipCopyPath", "Copy folder path to clipboard" },

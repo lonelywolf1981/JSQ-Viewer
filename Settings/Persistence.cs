@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
 
-namespace LeMuReViewer.Settings
+namespace JSQViewer.Settings
 {
     public static class Persistence
     {

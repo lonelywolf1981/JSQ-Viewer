@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
-namespace LeMuReViewer.Core
+namespace JSQViewer.Core
 {
     public static class TestLoader
     {

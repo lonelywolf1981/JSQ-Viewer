@@ -1,7 +1,7 @@
 using System;
 using System.Threading;
 
-namespace LeMuReViewer.Core
+namespace JSQViewer.Core
 {
     public static class AppState
     {

@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Text;
 
-namespace LeMuReViewer.Core
+namespace JSQViewer.Core
 {
     public static class AppLogger
     {

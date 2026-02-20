@@ -1,10 +1,10 @@
 using System;
 using System.Threading;
 using System.Windows.Forms;
-using LeMuReViewer.Core;
-using LeMuReViewer.UI;
+using JSQViewer.Core;
+using JSQViewer.UI;
 
-namespace LeMuReViewer
+namespace JSQViewer
 {
     internal static class Program
     {
@@ -27,7 +27,7 @@ namespace LeMuReViewer
                 AppLogger.LogError(AppDomain.CurrentDomain.BaseDirectory, "Unhandled UI exception.", e.Exception);
                 MessageBox.Show(
                     "An unexpected error occurred:\n" + e.Exception.Message,
-                    "LeMuReViewer Error",
+                    "JSQViewer Error",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
@@ -44,7 +44,7 @@ namespace LeMuReViewer
                 AppLogger.LogError(AppDomain.CurrentDomain.BaseDirectory, "Unhandled fatal exception.", ex);
                 MessageBox.Show(
                     "A fatal error occurred:\n" + (ex != null ? ex.Message : "Unknown error"),
-                    "LeMuReViewer Fatal Error",
+                    "JSQViewer Fatal Error",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }

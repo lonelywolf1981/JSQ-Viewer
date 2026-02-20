@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.Windows.Forms;
-using LeMuReViewer.Settings;
+using JSQViewer.Settings;
 
-namespace LeMuReViewer.UI
+namespace JSQViewer.UI
 {
     public sealed class SettingsDialog : Form
     {

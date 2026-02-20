@@ -2,7 +2,7 @@ using System;
 using System.Drawing;
 using System.Windows.Forms;
 
-namespace LeMuReViewer.UI
+namespace JSQViewer.UI
 {
     public static class ToastNotification
     {

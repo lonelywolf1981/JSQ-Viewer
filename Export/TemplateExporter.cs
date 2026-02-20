@@ -7,10 +7,10 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
-using LeMuReViewer.Core;
-using LeMuReViewer.Settings;
+using JSQViewer.Core;
+using JSQViewer.Settings;
 
-namespace LeMuReViewer.Export
+namespace JSQViewer.Export
 {
     public static class TemplateExporter
     {

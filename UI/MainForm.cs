@@ -10,17 +10,18 @@ using System.Windows.Forms.DataVisualization.Charting;
 using System.Drawing.Imaging;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using LeMuReViewer.Core;
-using LeMuReViewer.Export;
-using LeMuReViewer.Settings;
+using JSQViewer.Core;
+using JSQViewer.Export;
+using JSQViewer.Settings;
 
-namespace LeMuReViewer.UI
+namespace JSQViewer.UI
 {
     public sealed class MainForm : Form
     {
         private readonly TextBox _folderBox;
         private readonly Button _browseButton;
         private readonly Button _addDataButton;
+        private readonly Button _refreshButton;
         private readonly Button _closeAllButton;
         private readonly ComboBox _recentFoldersBox;
         private readonly Label _summaryLabel;
@@ -146,6 +147,7 @@ namespace LeMuReViewer.UI
             var folderButtonsRow = NewRow(); left.Controls.Add(folderButtonsRow, 0, 1);
             _browseButton = new Button(); _browseButton.Text = Loc.Get("Browse"); _browseButton.AutoSize = true; _browseButton.Click += BrowseButtonOnClick; folderButtonsRow.Controls.Add(_browseButton);
             _addDataButton = new Button(); _addDataButton.Text = Loc.Get("AddData"); _addDataButton.AutoSize = true; _addDataButton.Click += AddDataButtonOnClick; folderButtonsRow.Controls.Add(_addDataButton);
+            _refreshButton = new Button(); _refreshButton.Text = Loc.Get("Refresh"); _refreshButton.AutoSize = true; _refreshButton.Click += RefreshButtonOnClick; folderButtonsRow.Controls.Add(_refreshButton);
             _closeAllButton = new Button(); _closeAllButton.Text = Loc.Get("CloseAll"); _closeAllButton.AutoSize = true; _closeAllButton.Click += CloseAllButtonOnClick; folderButtonsRow.Controls.Add(_closeAllButton);
             _langButton = new Button(); _langButton.Text = Loc.Get("Language"); _langButton.Width = 40; _langButton.Click += LangButtonOnClick; folderButtonsRow.Controls.Add(_langButton);
 
@@ -330,6 +332,7 @@ namespace LeMuReViewer.UI
             Text = Loc.Get("AppTitle");
             _browseButton.Text = Loc.Get("Browse");
             _addDataButton.Text = Loc.Get("AddData");
+            _refreshButton.Text = Loc.Get("Refresh");
             _closeAllButton.Text = Loc.Get("CloseAll");
             _langButton.Text = Loc.Get("Language");
             _recentLabel.Text = Loc.Get("Recent");
@@ -402,6 +405,7 @@ namespace LeMuReViewer.UI
             _toolTip.SetToolTip(_folderBox, Loc.Get("TipFolder"));
             _toolTip.SetToolTip(_browseButton, Loc.Get("TipBrowse"));
             _toolTip.SetToolTip(_addDataButton, Loc.Get("TipAddData"));
+            _toolTip.SetToolTip(_refreshButton, Loc.Get("TipRefresh"));
             _toolTip.SetToolTip(_closeAllButton, Loc.Get("TipCloseAll"));
             _toolTip.SetToolTip(_langButton, Loc.Get("TipLang"));
             _toolTip.SetToolTip(_recentFoldersBox, Loc.Get("TipRecent"));
@@ -1280,6 +1284,12 @@ namespace LeMuReViewer.UI
             }
         }
 
+        private void RefreshButtonOnClick(object sender, EventArgs e)
+        {
+            bool overlayMode = _compareOverlayCheck.Checked;
+            LoadFolder(_folderBox.Text, false, true, overlayMode);
+        }
+
         private string SelectSingleFolder(string initial)
         {
             using (var dialog = new FolderBrowserDialog())
@@ -1360,7 +1370,7 @@ namespace LeMuReViewer.UI
             }
         }
 
-        private async void LoadFolder(string folder, bool addToRecent)
+        private async void LoadFolder(string folder, bool addToRecent, bool preserveSelection = false, bool? preferredOverlayMode = null)
         {
             try
             {
@@ -1385,6 +1395,15 @@ namespace LeMuReViewer.UI
 
                 string spec = JoinFolderSpec(folders);
                 _folderBox.Text = spec;
+                if (preserveSelection)
+                {
+                    List<string> currentSelectedCodes = GetSelectedCodes();
+                    _pendingCheckedCodes.Clear();
+                    for (int i = 0; i < currentSelectedCodes.Count; i++)
+                    {
+                        _pendingCheckedCodes.Add(currentSelectedCodes[i]);
+                    }
+                }
                 SetBusy(true, Loc.Get("LoadingData"));
                 Cursor = Cursors.WaitCursor;
                 TestData data;
@@ -1399,6 +1418,17 @@ namespace LeMuReViewer.UI
                 }
                 AppState.SetData(spec, data);
                 BindLoadedData(data);
+                if (preferredOverlayMode.HasValue)
+                {
+                    if (_compareOverlayCheck.Enabled)
+                    {
+                        _compareOverlayCheck.Checked = preferredOverlayMode.Value;
+                    }
+                    else
+                    {
+                        _compareOverlayCheck.Checked = false;
+                    }
+                }
                 if (addToRecent)
                 {
                     AddRecentFolder(spec);
@@ -2914,6 +2944,7 @@ namespace LeMuReViewer.UI
 
             _browseButton.Enabled = !busy;
             _addDataButton.Enabled = !busy;
+            _refreshButton.Enabled = !busy;
             _closeAllButton.Enabled = !busy;
             _exportTemplateButton.Enabled = !busy && AppState.IsLoaded;
             _savePresetButton.Enabled = !busy && AppState.IsLoaded;

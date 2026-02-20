@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace LeMuReViewer.Settings
+namespace JSQViewer.Settings
 {
     public sealed class ViewerPreset
     {

@@ -2,7 +2,7 @@ using System.IO;
 using System.Text;
 using System.Web.Script.Serialization;
 
-namespace LeMuReViewer.Settings
+namespace JSQViewer.Settings
 {
     public static class JsonHelper
     {

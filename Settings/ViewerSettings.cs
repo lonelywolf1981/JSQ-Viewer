@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace LeMuReViewer.Settings
+namespace JSQViewer.Settings
 {
     public sealed class ViewerSettingsModel
     {

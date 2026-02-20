@@ -4,7 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 
-namespace LeMuReViewer.Core
+namespace JSQViewer.Core
 {
     public sealed class DbfField
     {

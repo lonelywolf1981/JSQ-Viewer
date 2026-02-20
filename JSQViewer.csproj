@@ -5,8 +5,8 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{1E0B7227-6D9C-4DC6-90DB-426F72F49E3D}</ProjectGuid>
     <OutputType>WinExe</OutputType>
-    <RootNamespace>LeMuReViewer</RootNamespace>
-    <AssemblyName>LeMuReViewer</AssemblyName>
+    <RootNamespace>JSQViewer</RootNamespace>
+    <AssemblyName>JSQViewer</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
