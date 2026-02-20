@@ -1287,7 +1287,7 @@ namespace JSQViewer.UI
         private void RefreshButtonOnClick(object sender, EventArgs e)
         {
             bool overlayMode = _compareOverlayCheck.Checked;
-            LoadFolder(_folderBox.Text, false, true, overlayMode);
+            LoadFolder(_folderBox.Text, false, true, overlayMode, true);
         }
 
         private string SelectSingleFolder(string initial)
@@ -1370,7 +1370,7 @@ namespace JSQViewer.UI
             }
         }
 
-        private async void LoadFolder(string folder, bool addToRecent, bool preserveSelection = false, bool? preferredOverlayMode = null)
+        private async void LoadFolder(string folder, bool addToRecent, bool preserveSelection = false, bool? preferredOverlayMode = null, bool preserveSourceWindowsLayout = false)
         {
             try
             {
@@ -1417,7 +1417,7 @@ namespace JSQViewer.UI
                     data = TestLoader.MergeLoadedTests(loaded, true);
                 }
                 AppState.SetData(spec, data);
-                BindLoadedData(data);
+                BindLoadedData(data, preserveSourceWindowsLayout);
                 if (preferredOverlayMode.HasValue)
                 {
                     if (_compareOverlayCheck.Enabled)
@@ -1492,7 +1492,7 @@ namespace JSQViewer.UI
             return (displayCode ?? string.Empty) + namePart + unitPart;
         }
 
-        private void BindLoadedData(TestData data)
+        private void BindLoadedData(TestData data, bool preserveSourceWindowsLayout)
         {
             _allChannels.Clear();
             _checkedCodes.Clear();
@@ -1524,7 +1524,15 @@ namespace JSQViewer.UI
             {
                 _folderBox.Text = JoinFolderSpec(data.SourceColumns.Keys.ToList());
             }
-            RebuildSourceChannelWindows(data);
+            bool refreshedInPlace = false;
+            if (preserveSourceWindowsLayout)
+            {
+                refreshedInPlace = TryRefreshSourceChannelWindows(data);
+            }
+            if (!refreshedInPlace)
+            {
+                RebuildSourceChannelWindows(data);
+            }
             DataSummary summary = AppState.BuildSummary(data);
             _summaryLabel.Text = string.Format(Loc.Get("Points"), summary.Points, summary.Start, summary.End);
             if (_chartHostForm != null && !_chartHostForm.IsDisposed)
@@ -1740,6 +1748,59 @@ namespace JSQViewer.UI
 
                 col++;
             }
+        }
+
+        private bool TryRefreshSourceChannelWindows(TestData data)
+        {
+            if (data == null || data.SourceColumns == null || data.SourceColumns.Count == 0)
+            {
+                return false;
+            }
+            if (_sourceWindows == null || _sourceWindows.Count == 0)
+            {
+                return false;
+            }
+
+            var existingRoots = new HashSet<string>(_sourceWindows.Keys, StringComparer.OrdinalIgnoreCase);
+            var incomingRoots = new HashSet<string>(data.SourceColumns.Keys, StringComparer.OrdinalIgnoreCase);
+            if (!existingRoots.SetEquals(incomingRoots))
+            {
+                return false;
+            }
+
+            string[] globalOrdered = ApplySavedOrder(data.ColumnNames);
+            foreach (var kv in data.SourceColumns)
+            {
+                string sourceRoot = kv.Key;
+                SourceWindowState state;
+                if (!_sourceWindows.TryGetValue(sourceRoot, out state) || state == null)
+                {
+                    return false;
+                }
+                if (state.Form == null || state.Form.IsDisposed || state.List == null || state.List.IsDisposed)
+                {
+                    return false;
+                }
+
+                string[] sourceCols = kv.Value ?? new string[0];
+                var set = new HashSet<string>(sourceCols, StringComparer.OrdinalIgnoreCase);
+                string[] ordered = globalOrdered.Where(set.Contains).ToArray();
+                state.Items = ordered.Select(code =>
+                {
+                    ChannelInfo ch;
+                    string displayCode = NormalizeChannelCodeForDisplay(code);
+                    string label = data.Channels.TryGetValue(code, out ch)
+                        ? BuildDisplayLabel(displayCode, ch)
+                        : displayCode;
+                    string unit = data.Channels.TryGetValue(code, out ch) ? (ch.Unit ?? string.Empty) : string.Empty;
+                    return new ChannelItem(code, label, unit);
+                }).ToList();
+
+                state.Form.Text = string.Format(Loc.Get("ChannelsForSource"), Path.GetFileName(sourceRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
+                RebuildSourceWindowList(state);
+            }
+
+            return true;
         }
 
         private void CloseSourceChannelWindows()
