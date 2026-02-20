@@ -2101,6 +2101,13 @@ namespace JSQViewer.UI
             _lastSelectedCodes.AddRange(selectedCodes);
             ShowChartHost();
             int step = ResolveStep(data.TimestampsMs.Length);
+            if (step > 1 && ShouldForceStepOneForMultiSource(data, selectedCodes))
+            {
+                AppLogger.LogInfo(_projectRoot, string.Format(
+                    "REDRAW step override from {0} to 1 for multi-source selected channels.",
+                    step));
+                step = 1;
+            }
             SeriesSlice slice = SeriesCache.GetOrBuild(AppState.DataVersion, data, selectedCodes, data.TimestampsMs[0], data.TimestampsMs[data.TimestampsMs.Length - 1], step);
 
             // Pre-convert timestamps to OADate once for all channels in normal mode
@@ -2387,6 +2394,38 @@ namespace JSQViewer.UI
                 target = Math.Min(target, perChannel);
             }
             return Math.Max(1, totalPoints / target);
+        }
+
+        private static bool ShouldForceStepOneForMultiSource(TestData data, List<string> selectedCodes)
+        {
+            if (data == null || selectedCodes == null || selectedCodes.Count == 0)
+            {
+                return false;
+            }
+            if (data.SourceColumns == null || data.SourceColumns.Count <= 1)
+            {
+                return false;
+            }
+            if (data.CodeSources == null)
+            {
+                return true;
+            }
+
+            var selectedSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < selectedCodes.Count; i++)
+            {
+                string source;
+                if (data.CodeSources.TryGetValue(selectedCodes[i], out source) && !string.IsNullOrWhiteSpace(source))
+                {
+                    selectedSources.Add(source);
+                    if (selectedSources.Count > 1)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         private async void ExportTemplateButtonOnClick(object sender, EventArgs e)
