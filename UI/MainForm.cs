@@ -38,6 +38,7 @@ namespace JSQViewer.UI
         private readonly CheckBox _includeExtraCheck;
         private readonly ComboBox _refrigerantBox;
         private readonly Button _exportTemplateButton;
+        private readonly Button _showChartButton;
         private readonly Button _settingsButton;
         private readonly Button _langButton;
         private readonly Label _recentLabel;
@@ -184,6 +185,7 @@ namespace JSQViewer.UI
 
             var exportButtonsRow = NewRow(); left.Controls.Add(exportButtonsRow, 0, 9);
             _exportTemplateButton = new Button(); _exportTemplateButton.Text = Loc.Get("ExportTemplate"); _exportTemplateButton.AutoSize = true; _exportTemplateButton.Enabled = false; _exportTemplateButton.Click += ExportTemplateButtonOnClick; exportButtonsRow.Controls.Add(_exportTemplateButton);
+            _showChartButton = new Button(); _showChartButton.Text = Loc.Get("ShowChart"); _showChartButton.AutoSize = true; _showChartButton.Enabled = false; _showChartButton.Click += ShowChartButtonOnClick; exportButtonsRow.Controls.Add(_showChartButton);
             _settingsButton = new Button(); _settingsButton.Text = Loc.Get("Styles"); _settingsButton.AutoSize = true; _settingsButton.Click += SettingsButtonOnClick; exportButtonsRow.Controls.Add(_settingsButton);
 
             var presetSaveRow = NewRow(); left.Controls.Add(presetSaveRow, 0, 10);
@@ -346,6 +348,7 @@ namespace JSQViewer.UI
             _includeExtraCheck.Text = Loc.Get("IncludeExtra");
             _refrigLabel.Text = Loc.Get("Refrigerant");
             _exportTemplateButton.Text = Loc.Get("ExportTemplate");
+            _showChartButton.Text = Loc.Get("ShowChart");
             _settingsButton.Text = Loc.Get("Styles");
             _savePresetButton.Text = Loc.Get("SavePreset");
             _loadPresetButton.Text = Loc.Get("Load");
@@ -420,6 +423,7 @@ namespace JSQViewer.UI
             _toolTip.SetToolTip(_includeExtraCheck, Loc.Get("TipIncludeExtra"));
             _toolTip.SetToolTip(_refrigerantBox, Loc.Get("TipRefrigerant"));
             _toolTip.SetToolTip(_exportTemplateButton, Loc.Get("TipExportTemplate"));
+            _toolTip.SetToolTip(_showChartButton, Loc.Get("TipShowChart"));
             _toolTip.SetToolTip(_settingsButton, Loc.Get("TipStyles"));
             _toolTip.SetToolTip(_presetNameBox, Loc.Get("TipPresetName"));
             _toolTip.SetToolTip(_savePresetButton, Loc.Get("TipSavePreset"));
@@ -590,6 +594,7 @@ namespace JSQViewer.UI
             _summaryLabel.Text = Loc.Get("NoTestLoaded");
             _selectionInfoLabel.Text = Loc.Get("Selected");
             _exportTemplateButton.Enabled = _savePresetButton.Enabled = false;
+            _showChartButton.Enabled = false;
             _saveOrderButton.Enabled = false;
             _loadPresetButton.Enabled = _deletePresetButton.Enabled = _presetsBox.Items.Count > 0;
             _loadOrderButton.Enabled = _deleteOrderButton.Enabled = _ordersBox.Items.Count > 0;
@@ -1546,6 +1551,7 @@ namespace JSQViewer.UI
                 _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), AppState.Folder ?? Loc.Get("AppTitle"));
             }
             _exportTemplateButton.Enabled = _savePresetButton.Enabled = true;
+            _showChartButton.Enabled = true;
             _loadPresetButton.Enabled = _deletePresetButton.Enabled = _presetsBox.Items.Count > 0;
             _saveOrderButton.Enabled = true;
             _loadOrderButton.Enabled = _deleteOrderButton.Enabled = _ordersBox.Items.Count > 0;
@@ -1622,28 +1628,13 @@ namespace JSQViewer.UI
                 list.IntegralHeight = false;
                 list.Tag = sourceRoot;
                 list.ItemCheck += SourceListOnItemCheck;
+                list.AllowDrop = true;
 
                 var bottom = new TableLayoutPanel();
                 bottom.Dock = DockStyle.Bottom;
                 bottom.AutoSize = true;
                 bottom.ColumnCount = 1;
-                bottom.RowCount = 4;
-
-                var presetSaveRow = NewRow();
-                var presetNameBox = new TextBox(); presetNameBox.Width = 190; presetNameBox.Text = _presetNameBox.Text;
-                var savePresetButton = new Button(); savePresetButton.Text = Loc.Get("SavePreset"); savePresetButton.AutoSize = true;
-                presetSaveRow.Controls.Add(presetNameBox);
-                presetSaveRow.Controls.Add(savePresetButton);
-                bottom.Controls.Add(presetSaveRow, 0, 0);
-
-                var presetLoadRow = NewRow();
-                var presetsBox = new ComboBox(); presetsBox.Width = 220; presetsBox.DropDownStyle = ComboBoxStyle.DropDownList;
-                var loadPresetButton = new Button(); loadPresetButton.Text = Loc.Get("Load"); loadPresetButton.AutoSize = true;
-                var deletePresetButton = new Button(); deletePresetButton.Text = Loc.Get("Delete"); deletePresetButton.AutoSize = true;
-                presetLoadRow.Controls.Add(presetsBox);
-                presetLoadRow.Controls.Add(loadPresetButton);
-                presetLoadRow.Controls.Add(deletePresetButton);
-                bottom.Controls.Add(presetLoadRow, 0, 1);
+                bottom.RowCount = 2;
 
                 var orderRow = NewRow();
                 var orderNameBox = new TextBox(); orderNameBox.Width = 150; orderNameBox.Text = _orderNameBox.Text;
@@ -1656,13 +1647,13 @@ namespace JSQViewer.UI
                 orderRow.Controls.Add(ordersBox);
                 orderRow.Controls.Add(loadOrderButton);
                 orderRow.Controls.Add(deleteOrderButton);
-                bottom.Controls.Add(orderRow, 0, 2);
+                bottom.Controls.Add(orderRow, 0, 0);
 
                 var status = new Label();
                 status.AutoSize = true;
                 status.Padding = new Padding(4, 4, 4, 6);
                 status.Text = _statusLabel.Text;
-                bottom.Controls.Add(status, 0, 3);
+                bottom.Controls.Add(status, 0, 1);
 
                 var state = new SourceWindowState
                 {
@@ -1673,11 +1664,6 @@ namespace JSQViewer.UI
                     SelectedOnlyCheck = selectedOnly,
                     SelectAllButton = selectAll,
                     ClearButton = clear,
-                    PresetNameBox = presetNameBox,
-                    SavePresetButton = savePresetButton,
-                    PresetsBox = presetsBox,
-                    LoadPresetButton = loadPresetButton,
-                    DeletePresetButton = deletePresetButton,
                     OrderNameBox = orderNameBox,
                     SaveOrderButton = saveOrderButton,
                     OrdersBox = ordersBox,
@@ -1702,12 +1688,13 @@ namespace JSQViewer.UI
                 selectedOnly.CheckedChanged += delegate { SourceWindowOptionsChanged(state); };
                 selectAll.Click += delegate { SelectAllInSource(state); };
                 clear.Click += delegate { ClearAllInSource(state); };
-                savePresetButton.Click += delegate { SavePresetFromSource(state); };
-                loadPresetButton.Click += delegate { LoadPresetFromSource(state); };
-                deletePresetButton.Click += delegate { DeletePresetFromSource(state); };
                 saveOrderButton.Click += delegate { SaveOrderFromSource(state); };
                 loadOrderButton.Click += delegate { LoadOrderFromSource(state); };
                 deleteOrderButton.Click += delegate { DeleteOrderFromSource(state); };
+                list.MouseDown += delegate(object s, MouseEventArgs me) { SourceListMouseDown(state, me); };
+                list.MouseMove += delegate(object s, MouseEventArgs me) { SourceListMouseMove(state, me); };
+                list.DragOver += ChannelsListOnDragOver;
+                list.DragDrop += delegate(object s, DragEventArgs de) { SourceListDragDrop(state, de); };
 
                 form.Controls.Add(list);
                 form.Controls.Add(bottom);
@@ -1747,7 +1734,6 @@ namespace JSQViewer.UI
                 _sourceChannelForms.Add(form);
                 _sourceChannelLists[sourceRoot] = list;
                 _sourceWindows[sourceRoot] = state;
-                BindPresetControlsForSource(state);
                 BindOrderControlsForSource(state);
                 RebuildSourceWindowList(state);
                 form.Show(this);
@@ -1892,7 +1878,6 @@ namespace JSQViewer.UI
                 RebuildChannelList();
                 SyncSourceWindowsChecksFromSelectedCodes();
                 UpdateSelectionInfo();
-                RedrawChart();
             }));
         }
 
@@ -1999,7 +1984,6 @@ namespace JSQViewer.UI
                 SyncCheckedFromVisibleList();
                 SyncSourceWindowsChecksFromSelectedCodes();
                 UpdateSelectionInfo();
-                RedrawChart();
             }));
         }
 
@@ -2028,6 +2012,42 @@ namespace JSQViewer.UI
             SyncSourceWindowsChecksFromSelectedCodes();
             UpdateSelectionInfo();
             RedrawChart();
+        }
+
+        private void SourceListMouseDown(SourceWindowState state, MouseEventArgs e)
+        {
+            _dragIndex = state.List.IndexFromPoint(e.Location);
+            _dragStartPoint = e.Button == MouseButtons.Left && _dragIndex >= 0 ? e.Location : Point.Empty;
+            _dragInitiated = false;
+        }
+
+        private void SourceListMouseMove(SourceWindowState state, MouseEventArgs e)
+        {
+            if (_dragInitiated || _dragIndex < 0 || _dragStartPoint == Point.Empty || e.Button != MouseButtons.Left) return;
+            Size threshold = SystemInformation.DragSize;
+            if (Math.Abs(e.X - _dragStartPoint.X) > threshold.Width || Math.Abs(e.Y - _dragStartPoint.Y) > threshold.Height)
+            {
+                _dragInitiated = true;
+                if (_dragIndex < state.List.Items.Count)
+                    state.List.DoDragDrop(state.List.Items[_dragIndex], DragDropEffects.Move);
+            }
+        }
+
+        private void SourceListDragDrop(SourceWindowState state, DragEventArgs e)
+        {
+            if (_dragIndex < 0 || !e.Data.GetDataPresent(typeof(ChannelItem))) return;
+            if ((state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked) ||
+                (state.FilterBox != null && !string.IsNullOrWhiteSpace(state.FilterBox.Text)) ||
+                GetSelectedSortKey(state.SortModeBox) != "User") return;
+            Point p = state.List.PointToClient(new Point(e.X, e.Y));
+            int targetIndex = state.List.IndexFromPoint(p);
+            if (targetIndex < 0) targetIndex = state.List.Items.Count - 1;
+            if (targetIndex == _dragIndex || targetIndex < 0) return;
+            ChannelItem dragged = state.Items[_dragIndex];
+            state.Items.RemoveAt(_dragIndex);
+            state.Items.Insert(targetIndex, dragged);
+            RebuildSourceWindowList(state);
+            state.List.SelectedIndex = targetIndex;
         }
 
         private void ChannelsListOnMouseDown(object sender, MouseEventArgs e)
@@ -2537,6 +2557,18 @@ namespace JSQViewer.UI
             }
         }
 
+        private void ShowChartButtonOnClick(object sender, EventArgs e)
+        {
+            if (AppState.Data == null || !AppState.IsLoaded)
+            {
+                NotifyError(Loc.Get("NoTestLoaded"));
+                return;
+            }
+
+            UpdateSelectionInfo();
+            RedrawChart();
+        }
+
         private void SavePresetButtonOnClick(object sender, EventArgs e)
         {
             List<string> selected = GetSelectedCodes();
@@ -2648,6 +2680,12 @@ namespace JSQViewer.UI
             }
             bool existed = OrderStore.Exists(_projectRoot, name);
             ChannelOrderModel saved = OrderStore.Save(_projectRoot, name, order);
+            AppLogger.LogInfo(_projectRoot, string.Format(
+                "ORDER save name='{0}' key='{1}' count={2} mode='{3}'",
+                saved == null ? name : saved.name,
+                saved == null ? string.Empty : saved.key,
+                order.Count,
+                GetSelectedSortKey()));
             ReloadOrders();
             SelectOrderByKey(saved.key);
             NotifySuccess(string.Format(existed ? Loc.Get("OrderUpdated") : Loc.Get("OrderSaved"), saved.name));
@@ -2656,9 +2694,37 @@ namespace JSQViewer.UI
         private void SaveOrderFromSource(SourceWindowState state)
         {
             if (state == null) return;
-            if (state.OrderNameBox != null) _orderNameBox.Text = state.OrderNameBox.Text;
-            SaveOrderButtonOnClick(this, EventArgs.Empty);
-            if (state.OrderNameBox != null) state.OrderNameBox.Text = _orderNameBox.Text;
+            string name = state.OrderNameBox == null
+                ? (_orderNameBox.Text ?? string.Empty).Trim()
+                : (state.OrderNameBox.Text ?? string.Empty).Trim();
+            if (name.Length == 0 || string.Equals(name, Loc.Get("OrderName"), StringComparison.OrdinalIgnoreCase))
+            {
+                NotifyError(Loc.Get("EnterOrderName"));
+                return;
+            }
+
+            List<string> order = BuildCurrentOrderFromSourceWindow(state);
+            if (order.Count == 0)
+            {
+                NotifyError(Loc.Get("NoChannelsToSave"));
+                return;
+            }
+
+            bool existed = OrderStore.Exists(_projectRoot, name);
+            ChannelOrderModel saved = OrderStore.Save(_projectRoot, name, order);
+            AppLogger.LogInfo(_projectRoot, string.Format(
+                "ORDER save source name='{0}' key='{1}' count={2} source='{3}' source_mode='{4}'",
+                saved == null ? name : saved.name,
+                saved == null ? string.Empty : saved.key,
+                order.Count,
+                state.SourceRoot ?? string.Empty,
+                GetSelectedSortKey(state.SortModeBox)));
+            ReloadOrders();
+            SelectOrderByKey(saved.key);
+            NotifySuccess(string.Format(existed ? Loc.Get("OrderUpdated") : Loc.Get("OrderSaved"), saved.name));
+
+            _orderNameBox.Text = name;
+            if (state.OrderNameBox != null) state.OrderNameBox.Text = name;
             BindOrderControlsForSource(state);
         }
 
@@ -2672,8 +2738,33 @@ namespace JSQViewer.UI
                 NotifyError(Loc.Get("OrderInvalid"));
                 return;
             }
+            AppLogger.LogInfo(_projectRoot, string.Format(
+                "ORDER load key='{0}' name='{1}' count={2} mode_before='{3}'",
+                item.Key,
+                order.name ?? string.Empty,
+                order.order.Count,
+                GetSelectedSortKey()));
+            EnsureUserSortModeForOrderApply();
             ApplyOrder(order.order);
+            AppLogger.LogInfo(_projectRoot, string.Format(
+                "ORDER load applied key='{0}' mode_after='{1}'",
+                item.Key,
+                GetSelectedSortKey()));
             NotifySuccess(string.Format(Loc.Get("OrderLoaded"), order.name ?? item.Key));
+        }
+
+        private void EnsureUserSortModeForOrderApply()
+        {
+            SelectSortModeByKey("User");
+            foreach (var kv in _sourceWindows)
+            {
+                SourceWindowState state = kv.Value;
+                if (state == null || state.SortModeBox == null || state.SortModeBox.IsDisposed)
+                {
+                    continue;
+                }
+                SelectSortModeByKey(state.SortModeBox, "User");
+            }
         }
 
         private void LoadOrderFromSource(SourceWindowState state)
@@ -2809,12 +2900,10 @@ namespace JSQViewer.UI
             try
             {
                 string filter = origin.FilterBox == null ? string.Empty : origin.FilterBox.Text;
-                string sortKey = GetSelectedSortKey(origin.SortModeBox);
                 bool selectedOnly = origin.SelectedOnlyCheck != null && origin.SelectedOnlyCheck.Checked;
 
                 _channelFilterBox.Text = filter;
                 _selectedOnlyCheck.Checked = selectedOnly;
-                SelectSortModeByKey(_sortModeBox, sortKey);
 
                 foreach (var kv in _sourceWindows)
                 {
@@ -2822,7 +2911,6 @@ namespace JSQViewer.UI
                     if (state == null || state == origin) continue;
                     if (state.FilterBox != null && state.FilterBox.Text != filter) state.FilterBox.Text = filter;
                     if (state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked != selectedOnly) state.SelectedOnlyCheck.Checked = selectedOnly;
-                    SelectSortModeByKey(state.SortModeBox, sortKey);
                 }
 
                 foreach (var kv in _sourceWindows)
@@ -3086,6 +3174,7 @@ namespace JSQViewer.UI
             _refreshButton.Enabled = !busy;
             _closeAllButton.Enabled = !busy;
             _exportTemplateButton.Enabled = !busy && AppState.IsLoaded;
+            _showChartButton.Enabled = !busy && AppState.IsLoaded;
             _savePresetButton.Enabled = !busy && AppState.IsLoaded;
             _saveOrderButton.Enabled = !busy && AppState.IsLoaded;
             _settingsButton.Enabled = !busy;
@@ -3113,6 +3202,59 @@ namespace JSQViewer.UI
             {
                 order.Add(_allChannels[i].Code);
             }
+            return order;
+        }
+
+        private List<string> BuildCurrentOrderFromSourceWindow(SourceWindowState state)
+        {
+            var order = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (state != null && state.List != null && !state.List.IsDisposed)
+            {
+                for (int i = 0; i < state.List.Items.Count; i++)
+                {
+                    ChannelItem item = state.List.Items[i] as ChannelItem;
+                    if (item == null || string.IsNullOrWhiteSpace(item.Code))
+                    {
+                        continue;
+                    }
+                    if (seen.Add(item.Code))
+                    {
+                        order.Add(item.Code);
+                    }
+                }
+            }
+
+            if (state != null && state.Items != null)
+            {
+                for (int i = 0; i < state.Items.Count; i++)
+                {
+                    ChannelItem item = state.Items[i];
+                    if (item == null || string.IsNullOrWhiteSpace(item.Code))
+                    {
+                        continue;
+                    }
+                    if (seen.Add(item.Code))
+                    {
+                        order.Add(item.Code);
+                    }
+                }
+            }
+
+            for (int i = 0; i < _allChannels.Count; i++)
+            {
+                ChannelItem item = _allChannels[i];
+                if (item == null || string.IsNullOrWhiteSpace(item.Code))
+                {
+                    continue;
+                }
+                if (seen.Add(item.Code))
+                {
+                    order.Add(item.Code);
+                }
+            }
+
             return order;
         }
 
@@ -3149,7 +3291,27 @@ namespace JSQViewer.UI
             }
             _allChannels.Clear();
             _allChannels.AddRange(reordered);
+            AppLogger.LogInfo(_projectRoot, string.Format(
+                "ORDER apply requested={0} reordered={1} mode='{2}'",
+                order.Count,
+                reordered.Count,
+                GetSelectedSortKey()));
             RebuildChannelList();
+            foreach (var kv in _sourceWindows)
+            {
+                SourceWindowState sw = kv.Value;
+                if (sw == null || sw.Items == null) continue;
+                var itemMap = new Dictionary<string, ChannelItem>(StringComparer.OrdinalIgnoreCase);
+                foreach (ChannelItem ci in sw.Items) itemMap[ci.Code] = ci;
+                var reorderedItems = new List<ChannelItem>();
+                for (int i = 0; i < _allChannels.Count; i++)
+                {
+                    ChannelItem ci;
+                    if (itemMap.TryGetValue(_allChannels[i].Code, out ci)) reorderedItems.Add(ci);
+                }
+                sw.Items = reorderedItems;
+                RebuildSourceWindowList(sw);
+            }
         }
 
         private List<string> LoadSavedOrder()
