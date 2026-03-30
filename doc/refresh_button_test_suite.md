@@ -172,3 +172,21 @@ Expected:
 - All test cases pass without crashes.
 - Refresh reliably reloads data from current folders.
 - Channel selection and chart mode are preserved as specified.
+
+## Post-Migration Smoke Checks
+
+After the Clean Architecture migration, also spot-check these flows in the same run:
+
+1. Chart pipeline:
+   - Select channels, change range, open detached chart, and confirm main/detached range bars stay synchronized.
+   - In overlay mode, confirm X-axis title is overlay-specific and range labels show elapsed time.
+
+2. Export pipeline:
+   - Export an `.xlsx` after selecting a non-full range in normal mode.
+   - Confirm file is created, validation warning does not appear on the happy path, and the file opens after save.
+
+3. Settings workflow:
+   - Open Styles dialog, enter invalid scale bounds, apply, reopen dialog, and confirm values are normalized rather than crashing the app.
+
+4. Localization:
+   - Switch RU/EN and confirm `Refresh`, chart context menu items, and Styles dialog captions all update consistently.
