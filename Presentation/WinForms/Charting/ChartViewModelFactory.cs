@@ -44,6 +44,8 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 MaxOverlayDurationMs = result.MaxOverlayDurationMs,
                 XAxisLabelFormat = result.OverlayMode ? "0.##" : "HH:mm\ndd.MM",
                 XAxisTitle = result.OverlayMode ? (overlayAxisTitle ?? string.Empty) : string.Empty,
+                XAxisSettings = CreateAxisSettings(result.XAxisSettings, result.OverlayMode),
+                YAxisSettings = CreateAxisSettings(result.YAxisSettings, true),
                 Range = new ChartRangeViewModel
                 {
                     IsActive = !double.IsNaN(result.SelectedRangeStart) && !double.IsNaN(result.SelectedRangeEnd),
@@ -78,6 +80,28 @@ namespace JSQViewer.Presentation.WinForms.Charting
             }
 
             return _timestampRangeService.UnixMsToLocalDateTime((long)value).ToOADate();
+        }
+
+        private ChartAxisSettingsViewModel CreateAxisSettings(ChartAxisSettings settings, bool overlayMode)
+        {
+            settings = settings ?? ChartAxisSettings.Automatic();
+            return new ChartAxisSettingsViewModel
+            {
+                IsManualEnabled = settings.IsManualEnabled,
+                Minimum = settings.Minimum.HasValue ? (double?)ConvertBound(settings.Minimum.Value, overlayMode) : null,
+                Maximum = settings.Maximum.HasValue ? (double?)ConvertBound(settings.Maximum.Value, overlayMode) : null,
+                Step = settings.Step.HasValue ? (double?)ConvertStep(settings.Step.Value, overlayMode) : null
+            };
+        }
+
+        private double ConvertStep(double value, bool overlayMode)
+        {
+            if (overlayMode || double.IsNaN(value) || double.IsInfinity(value))
+            {
+                return value;
+            }
+
+            return TimeSpan.FromMilliseconds(value).TotalDays;
         }
     }
 }

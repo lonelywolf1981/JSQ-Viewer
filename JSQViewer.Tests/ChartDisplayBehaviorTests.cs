@@ -16,6 +16,7 @@ using JSQViewer.Infrastructure.Platform;
 using JSQViewer.Presentation.WinForms.Charting;
 using JSQViewer.Presentation.WinForms.Composition;
 using JSQViewer.Presentation.WinForms.Presenters;
+using System.Windows.Forms.DataVisualization.Charting;
 using JSQViewer.Settings;
 using JSQViewer.UI;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -70,6 +71,135 @@ namespace JSQViewer.Tests
                 harness.InvokeChartHostUserClosing();
 
                 Assert.IsFalse(harness.Form.IsChartRequestedForTests);
+            }
+        }
+
+        [TestMethod]
+        public void EnsureChartHostForm_KeepsRenderedAxisSettingsOnSharedChartInstance()
+        {
+            using (TestMainFormHarness harness = TestMainFormHarness.Create())
+            {
+                Chart chart = harness.GetChart();
+                var renderer = new ChartRenderer();
+                renderer.Render(chart, new Presentation.WinForms.ViewModels.ChartViewModel
+                {
+                    HasData = true,
+                    OverlayMode = true,
+                    ShowLegend = true,
+                    XAxisSettings = new Presentation.WinForms.ViewModels.ChartAxisSettingsViewModel
+                    {
+                        IsManualEnabled = true,
+                        Minimum = 0.25,
+                        Maximum = 1.75,
+                        Step = 0.5
+                    },
+                    YAxisSettings = new Presentation.WinForms.ViewModels.ChartAxisSettingsViewModel
+                    {
+                        IsManualEnabled = true,
+                        Minimum = -10d,
+                        Maximum = 30d,
+                        Step = 5d
+                    },
+                    Series = new[]
+                    {
+                        new Presentation.WinForms.ViewModels.ChartSeriesViewModel
+                        {
+                            Code = "A-01",
+                            LegendText = "A-01",
+                            XValues = new[] { 0.0, 1.0, 2.0 },
+                            YValues = new[] { 1d, 2d, 3d },
+                            BorderWidth = 2,
+                            IsVisibleInLegend = true
+                        }
+                    }
+                });
+
+                Assert.AreEqual(0.25, chart.ChartAreas[0].AxisX.Minimum);
+                Assert.AreEqual(1.75, chart.ChartAreas[0].AxisX.Maximum);
+                Assert.AreEqual(0.5, chart.ChartAreas[0].AxisX.Interval);
+                Assert.AreEqual(-10d, chart.ChartAreas[0].AxisY.Minimum);
+                Assert.AreEqual(30d, chart.ChartAreas[0].AxisY.Maximum);
+                Assert.AreEqual(5d, chart.ChartAreas[0].AxisY.Interval);
+
+                harness.InvokeEnsureChartHostForm();
+
+                Chart chartAfterEnsure = harness.GetChart();
+                Assert.AreSame(chart, chartAfterEnsure);
+                Assert.AreEqual(0.25, chartAfterEnsure.ChartAreas[0].AxisX.Minimum);
+                Assert.AreEqual(1.75, chartAfterEnsure.ChartAreas[0].AxisX.Maximum);
+                Assert.AreEqual(0.5, chartAfterEnsure.ChartAreas[0].AxisX.Interval);
+                Assert.AreEqual(-10d, chartAfterEnsure.ChartAreas[0].AxisY.Minimum);
+                Assert.AreEqual(30d, chartAfterEnsure.ChartAreas[0].AxisY.Maximum);
+                Assert.AreEqual(5d, chartAfterEnsure.ChartAreas[0].AxisY.Interval);
+            }
+        }
+
+        [TestMethod]
+        public void CompareOverlayToggle_ClearsManualXAxisState()
+        {
+            using (TestMainFormHarness harness = TestMainFormHarness.Create())
+            {
+                harness.LoadMultiSourceSession();
+                harness.SetManualXAxis("0", "1000", "100");
+
+                Assert.IsTrue(harness.GetManualXAxisCheckBox().Checked);
+
+                harness.SetCompareOverlayChecked(true);
+
+                Assert.IsFalse(harness.GetManualXAxisCheckBox().Checked);
+                Assert.IsFalse(harness.GetManualXAxisCheckBox().Enabled);
+                Assert.AreEqual(string.Empty, harness.GetXAxisMinimumBox().Text);
+                Assert.AreEqual(string.Empty, harness.GetXAxisMaximumBox().Text);
+                Assert.AreEqual(string.Empty, harness.GetXAxisStepBox().Text);
+                Assert.IsFalse(harness.GetXAxisMinimumBox().Enabled);
+                Assert.IsFalse(harness.GetXAxisMaximumBox().Enabled);
+                Assert.IsFalse(harness.GetXAxisStepBox().Enabled);
+
+                harness.SetCompareOverlayChecked(false);
+
+                Assert.IsFalse(harness.GetManualXAxisCheckBox().Checked);
+                Assert.IsTrue(harness.GetManualXAxisCheckBox().Enabled);
+                Assert.IsFalse(harness.GetXAxisMinimumBox().Enabled);
+                Assert.IsFalse(harness.GetXAxisMaximumBox().Enabled);
+                Assert.IsFalse(harness.GetXAxisStepBox().Enabled);
+            }
+        }
+
+        [TestMethod]
+        public void RangeChange_DoesNotOverrideManualXAxis()
+        {
+            using (TestMainFormHarness harness = TestMainFormHarness.Create())
+            {
+                harness.LoadSession();
+                harness.SelectChartChannel();
+                harness.InvokeShowChartButtonOnClick();
+                harness.SetManualXAxis("0", "2000", "1000");
+
+                Chart chart = harness.GetChart();
+                Assert.AreEqual(new TimestampRangeService().UnixMsToLocalDateTime(0L).ToOADate(), chart.ChartAreas[0].AxisX.Minimum);
+                Assert.AreEqual(new TimestampRangeService().UnixMsToLocalDateTime(2000L).ToOADate(), chart.ChartAreas[0].AxisX.Maximum);
+
+                harness.SetRange(0.1, 0.2);
+
+                Assert.IsFalse(harness.GetRangeTrackBar().Enabled);
+                Assert.AreEqual(new TimestampRangeService().UnixMsToLocalDateTime(0L).ToOADate(), chart.ChartAreas[0].AxisX.Minimum);
+                Assert.AreEqual(new TimestampRangeService().UnixMsToLocalDateTime(2000L).ToOADate(), chart.ChartAreas[0].AxisX.Maximum);
+            }
+        }
+
+        [TestMethod]
+        public void InvalidManualXAxisInput_RevertsManualModeOff()
+        {
+            using (TestMainFormHarness harness = TestMainFormHarness.Create())
+            {
+                harness.LoadSession();
+                harness.SelectChartChannel();
+                harness.InvokeShowChartButtonOnClick();
+
+                harness.SetManualXAxis("10", "1", "bad");
+
+                Assert.IsFalse(harness.GetManualXAxisCheckBox().Checked);
+                Assert.IsTrue(harness.GetRangeTrackBar().Enabled);
             }
         }
     }
@@ -131,7 +261,75 @@ namespace JSQViewer.Tests
 
         public void LoadSession()
         {
-            _viewerSession.SetData("C:\\tests\\run-01", SessionAndChartingTestData.CreateData(new long[] { 0L, 1000L, 2000L }));
+            LoadSession(SessionAndChartingTestData.CreateData(new long[] { 0L, 1000L, 2000L }));
+        }
+
+        public void LoadMultiSourceSession()
+        {
+            var data = SessionAndChartingTestData.CreateData(new long[] { 0L, 1000L, 2000L });
+            data.SourceColumns["C:\\tests\\source-a\\"] = new[] { "A-01" };
+            data.SourceColumns["C:\\tests\\source-b\\"] = new[] { "B-01" };
+            data.CodeSources["A-01"] = "C:\\tests\\source-a\\";
+            data.CodeSources["B-01"] = "C:\\tests\\source-b\\";
+            data.SourceStartMs["C:\\tests\\source-a\\"] = 0L;
+            data.SourceEndMs["C:\\tests\\source-a\\"] = 2000L;
+            data.SourceStartMs["C:\\tests\\source-b\\"] = 0L;
+            data.SourceEndMs["C:\\tests\\source-b\\"] = 2000L;
+            data.Columns["B-01"] = new double?[] { 2d, 3d, 4d };
+            data.Channels["B-01"] = new ChannelInfo { Code = "B-01", Name = "B-01", Unit = "u" };
+            data.ColumnNames = new[] { "A-01", "B-01" };
+            LoadSession(data);
+        }
+
+        public void SetManualXAxis(string minimum, string maximum, string step)
+        {
+            GetXAxisMinimumBox().Text = minimum;
+            GetXAxisMaximumBox().Text = maximum;
+            GetXAxisStepBox().Text = step;
+            CheckBox checkBox = GetManualXAxisCheckBox();
+            checkBox.Checked = true;
+            InvokePrivate(_form, "AxisValueInputOnLeave", GetXAxisStepBox(), EventArgs.Empty);
+            System.Windows.Forms.Application.DoEvents();
+        }
+
+        public void SetCompareOverlayChecked(bool value)
+        {
+            GetPrivateField<CheckBox>(_form, "_compareOverlayCheck").Checked = value;
+            System.Windows.Forms.Application.DoEvents();
+        }
+
+        public void SetRange(double lowerValue, double upperValue)
+        {
+            RangeTrackBar trackBar = GetRangeTrackBar();
+            trackBar.LowerValue = lowerValue;
+            trackBar.UpperValue = upperValue;
+            InvokePrivate(_form, "RangeTrackBarOnRangeChanged", trackBar, EventArgs.Empty);
+            System.Windows.Forms.Application.DoEvents();
+        }
+
+        public RangeTrackBar GetRangeTrackBar()
+        {
+            return GetPrivateField<RangeTrackBar>(_form, "_rangeTrackBar");
+        }
+
+        public CheckBox GetManualXAxisCheckBox()
+        {
+            return GetPrivateField<CheckBox>(_form, "_manualAxisXCheck");
+        }
+
+        public TextBox GetXAxisMinimumBox()
+        {
+            return GetPrivateField<TextBox>(_form, "_axisXMinimumBox");
+        }
+
+        public TextBox GetXAxisMaximumBox()
+        {
+            return GetPrivateField<TextBox>(_form, "_axisXMaximumBox");
+        }
+
+        public TextBox GetXAxisStepBox()
+        {
+            return GetPrivateField<TextBox>(_form, "_axisXStepBox");
         }
 
         public void SelectChartChannel()
@@ -166,6 +364,11 @@ namespace JSQViewer.Tests
             onFormClosing.Invoke(host, new object[] { args });
         }
 
+        public Chart GetChart()
+        {
+            return GetPrivateField<Chart>(_form, "_chart");
+        }
+
         public void Dispose()
         {
             if (_form != null)
@@ -179,6 +382,12 @@ namespace JSQViewer.Tests
             MethodInfo method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.IsNotNull(method, "Missing method: " + methodName);
             return method.Invoke(target, args);
+        }
+
+        private void LoadSession(TestData data)
+        {
+            _viewerSession.SetData("C:\\tests\\run-01", data);
+            InvokePrivate(_form, "BindLoadedData", data, false);
         }
 
         private static T GetPrivateField<T>(object target, string fieldName) where T : class

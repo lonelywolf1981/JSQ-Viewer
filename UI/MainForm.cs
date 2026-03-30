@@ -46,6 +46,14 @@ namespace JSQViewer.UI
         private readonly CheckBox _autoStepCheck;
         private readonly ComboBox _targetPointsBox;
         private readonly NumericUpDown _manualStepUpDown;
+        private readonly CheckBox _manualAxisXCheck;
+        private readonly TextBox _axisXMinimumBox;
+        private readonly TextBox _axisXMaximumBox;
+        private readonly TextBox _axisXStepBox;
+        private readonly CheckBox _manualAxisYCheck;
+        private readonly TextBox _axisYMinimumBox;
+        private readonly TextBox _axisYMaximumBox;
+        private readonly TextBox _axisYStepBox;
         private readonly CheckBox _includeExtraCheck;
         private readonly ComboBox _refrigerantBox;
         private readonly Button _exportTemplateButton;
@@ -87,6 +95,7 @@ namespace JSQViewer.UI
         private double _rangeEndOa = double.NaN;
         private readonly List<RangeTrackBar> _detachedRangeBars = new List<RangeTrackBar>();
         private bool _syncingRange;
+        private bool _suppressAxisControlEvents;
 
         private int _dragIndex = -1;
         private Point _dragStartPoint = Point.Empty;
@@ -230,8 +239,8 @@ namespace JSQViewer.UI
             var left = new TableLayoutPanel();
             left.Dock = DockStyle.Fill;
             left.ColumnCount = 1;
-            left.RowCount = 14;
-            for (int i = 0; i < 14; i++) left.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            left.RowCount = 15;
+            for (int i = 0; i < 15; i++) left.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             left.RowStyles[7] = new RowStyle(SizeType.Percent, 100);
             _splitMain.Panel1.Controls.Add(left);
 
@@ -284,23 +293,34 @@ namespace JSQViewer.UI
             _showChartButton = new Button(); _showChartButton.Text = Loc.Get("ShowChart"); _showChartButton.AutoSize = true; _showChartButton.Enabled = false; _showChartButton.Click += ShowChartButtonOnClick; exportButtonsRow.Controls.Add(_showChartButton);
             _settingsButton = new Button(); _settingsButton.Text = Loc.Get("Styles"); _settingsButton.AutoSize = true; _settingsButton.Click += SettingsButtonOnClick; exportButtonsRow.Controls.Add(_settingsButton);
 
-            var presetSaveRow = NewRow(); left.Controls.Add(presetSaveRow, 0, 10);
+            var axisRow = NewRow(); left.Controls.Add(axisRow, 0, 10);
+            _manualAxisXCheck = new CheckBox(); _manualAxisXCheck.Text = "X"; _manualAxisXCheck.AutoSize = true; _manualAxisXCheck.CheckedChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualAxisXCheck);
+            _axisXMinimumBox = BuildAxisTextBox(); _axisXMinimumBox.Leave += AxisValueInputOnLeave; _axisXMinimumBox.KeyDown += AxisValueInputOnKeyDown; axisRow.Controls.Add(_axisXMinimumBox);
+            _axisXMaximumBox = BuildAxisTextBox(); _axisXMaximumBox.Leave += AxisValueInputOnLeave; _axisXMaximumBox.KeyDown += AxisValueInputOnKeyDown; axisRow.Controls.Add(_axisXMaximumBox);
+            _axisXStepBox = BuildAxisTextBox(); _axisXStepBox.Leave += AxisValueInputOnLeave; _axisXStepBox.KeyDown += AxisValueInputOnKeyDown; axisRow.Controls.Add(_axisXStepBox);
+            _manualAxisYCheck = new CheckBox(); _manualAxisYCheck.Text = "Y"; _manualAxisYCheck.AutoSize = true; _manualAxisYCheck.Padding = new Padding(12, 0, 0, 0); _manualAxisYCheck.CheckedChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualAxisYCheck);
+            _axisYMinimumBox = BuildAxisTextBox(); _axisYMinimumBox.Leave += AxisValueInputOnLeave; _axisYMinimumBox.KeyDown += AxisValueInputOnKeyDown; axisRow.Controls.Add(_axisYMinimumBox);
+            _axisYMaximumBox = BuildAxisTextBox(); _axisYMaximumBox.Leave += AxisValueInputOnLeave; _axisYMaximumBox.KeyDown += AxisValueInputOnKeyDown; axisRow.Controls.Add(_axisYMaximumBox);
+            _axisYStepBox = BuildAxisTextBox(); _axisYStepBox.Leave += AxisValueInputOnLeave; _axisYStepBox.KeyDown += AxisValueInputOnKeyDown; axisRow.Controls.Add(_axisYStepBox);
+            ApplyAxisInputEnabledState();
+
+            var presetSaveRow = NewRow(); left.Controls.Add(presetSaveRow, 0, 11);
             _presetNameBox = new TextBox(); _presetNameBox.Width = 200; _presetNameBox.Text = Loc.Get("PresetName"); presetSaveRow.Controls.Add(_presetNameBox);
             _savePresetButton = new Button(); _savePresetButton.Text = Loc.Get("SavePreset"); _savePresetButton.AutoSize = true; _savePresetButton.Enabled = false; _savePresetButton.Click += SavePresetButtonOnClick; presetSaveRow.Controls.Add(_savePresetButton);
 
-            var presetLoadRow = NewRow(); left.Controls.Add(presetLoadRow, 0, 11);
+            var presetLoadRow = NewRow(); left.Controls.Add(presetLoadRow, 0, 12);
             _presetsBox = new ComboBox(); _presetsBox.Width = 240; _presetsBox.DropDownStyle = ComboBoxStyle.DropDownList; presetLoadRow.Controls.Add(_presetsBox);
             _loadPresetButton = new Button(); _loadPresetButton.Text = Loc.Get("Load"); _loadPresetButton.AutoSize = true; _loadPresetButton.Enabled = false; _loadPresetButton.Click += LoadPresetButtonOnClick; presetLoadRow.Controls.Add(_loadPresetButton);
             _deletePresetButton = new Button(); _deletePresetButton.Text = Loc.Get("Delete"); _deletePresetButton.AutoSize = true; _deletePresetButton.Enabled = false; _deletePresetButton.Click += DeletePresetButtonOnClick; presetLoadRow.Controls.Add(_deletePresetButton);
 
-            var orderRow = NewRow(); left.Controls.Add(orderRow, 0, 12);
+            var orderRow = NewRow(); left.Controls.Add(orderRow, 0, 13);
             _orderNameBox = new TextBox(); _orderNameBox.Width = 150; _orderNameBox.Text = Loc.Get("OrderName"); orderRow.Controls.Add(_orderNameBox);
             _saveOrderButton = new Button(); _saveOrderButton.Text = Loc.Get("SaveOrder"); _saveOrderButton.AutoSize = true; _saveOrderButton.Enabled = false; _saveOrderButton.Click += SaveOrderButtonOnClick; orderRow.Controls.Add(_saveOrderButton);
             _ordersBox = new ComboBox(); _ordersBox.Width = 200; _ordersBox.DropDownStyle = ComboBoxStyle.DropDownList; orderRow.Controls.Add(_ordersBox);
             _loadOrderButton = new Button(); _loadOrderButton.Text = Loc.Get("Load"); _loadOrderButton.AutoSize = true; _loadOrderButton.Enabled = false; _loadOrderButton.Click += LoadOrderButtonOnClick; orderRow.Controls.Add(_loadOrderButton);
             _deleteOrderButton = new Button(); _deleteOrderButton.Text = Loc.Get("Delete"); _deleteOrderButton.AutoSize = true; _deleteOrderButton.Enabled = false; _deleteOrderButton.Click += DeleteOrderButtonOnClick; orderRow.Controls.Add(_deleteOrderButton);
 
-            _statusLabel = new Label(); _statusLabel.Font = smallFont; _statusLabel.AutoSize = true; _statusLabel.Padding = new Padding(4, 6, 4, 8); _statusLabel.Text = Loc.Get("Ready"); left.Controls.Add(_statusLabel, 0, 13);
+            _statusLabel = new Label(); _statusLabel.Font = smallFont; _statusLabel.AutoSize = true; _statusLabel.Padding = new Padding(4, 6, 4, 8); _statusLabel.Text = Loc.Get("Ready"); left.Controls.Add(_statusLabel, 0, 14);
 
             _chart = BuildChart();
             _chart.MouseMove += ChartOnMouseMove;
@@ -881,6 +901,7 @@ namespace JSQViewer.UI
         private void RangeTrackBarOnRangeChanged(object sender, EventArgs e)
         {
             if (_syncingRange) return;
+            if (IsManualXAxisEnabled()) return;
             var trackBar = sender as RangeTrackBar;
             if (trackBar == null) return;
 
@@ -895,11 +916,6 @@ namespace JSQViewer.UI
                 _rangeEndOa = double.NaN;
                 _rangeLabel.Text = BuildRangeLabelText(_rangeStartOa, _rangeEndOa);
                 _resetRangeButton.Visible = false;
-                if (_chart.ChartAreas.Count > 0)
-                {
-                    _chart.ChartAreas[0].AxisX.Minimum = double.NaN;
-                    _chart.ChartAreas[0].AxisX.Maximum = double.NaN;
-                }
             }
             else
             {
@@ -907,15 +923,11 @@ namespace JSQViewer.UI
                 _rangeEndOa = hi;
                 _rangeLabel.Text = BuildRangeLabelText(lo, hi);
                 _resetRangeButton.Visible = true;
-                if (_chart.ChartAreas.Count > 0)
-                {
-                    _chart.ChartAreas[0].AxisX.Minimum = lo;
-                    _chart.ChartAreas[0].AxisX.Maximum = hi;
-                }
             }
 
             // Sync all range bars (main + detached)
             SyncAllRangeBars(trackBar, lo, hi);
+            RedrawChart();
         }
 
         private void SyncAllRangeBars(RangeTrackBar source, double lo, double hi)
@@ -1148,26 +1160,13 @@ namespace JSQViewer.UI
             var area = _chart.ChartAreas[0];
             area.AxisX.ScaleView.ZoomReset(0);
             area.AxisY.ScaleView.ZoomReset(0);
-            area.AxisX.Minimum = double.NaN;
-            area.AxisX.Maximum = double.NaN;
-            area.AxisY.Minimum = double.NaN;
-            area.AxisY.Maximum = double.NaN;
             ResetRangeButtonOnClick(null, EventArgs.Empty);
         }
 
         private void ResetRangeButtonOnClick(object sender, EventArgs e)
         {
-            _rangeStartOa = double.NaN;
-            _rangeEndOa = double.NaN;
-            _rangeTrackBar.LowerValue = _rangeTrackBar.Minimum;
-            _rangeTrackBar.UpperValue = _rangeTrackBar.Maximum;
-            _rangeLabel.Text = BuildRangeLabelText(_rangeStartOa, _rangeEndOa);
-            _resetRangeButton.Visible = false;
-            if (_chart.ChartAreas.Count > 0)
-            {
-                _chart.ChartAreas[0].AxisX.Minimum = double.NaN;
-                _chart.ChartAreas[0].AxisX.Maximum = double.NaN;
-            }
+            ClearRangeSelection();
+            RedrawChart();
         }
 
         private void SaveImageMenuItemOnClick(object sender, EventArgs e)
@@ -1744,6 +1743,14 @@ namespace JSQViewer.UI
             {
                 _compareOverlayCheck.Checked = false;
             }
+            if (IsOverlayCompareModeActive())
+            {
+                ClearManualXAxisState();
+            }
+            else
+            {
+                ApplyAxisInputEnabledState();
+            }
             if (data.SourceColumns != null && data.SourceColumns.Count > 0)
             {
                 _folderBox.Text = JoinFolderSpec(data.SourceColumns.Keys.ToList());
@@ -2047,6 +2054,39 @@ namespace JSQViewer.UI
             RedrawChart();
         }
 
+        private void AxisControlsOnChanged(object sender, EventArgs e)
+        {
+            if (_suppressAxisControlEvents)
+            {
+                return;
+            }
+
+            if (ReferenceEquals(sender, _manualAxisXCheck) && _manualAxisXCheck.Checked)
+            {
+                ClearRangeSelection();
+            }
+
+            ApplyAxisInputEnabledState();
+            UpdateRangeControlState();
+            RedrawChart();
+        }
+
+        private void AxisValueInputOnLeave(object sender, EventArgs e)
+        {
+            RedrawChart();
+        }
+
+        private void AxisValueInputOnKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode != Keys.Enter)
+            {
+                return;
+            }
+
+            e.SuppressKeyPress = true;
+            RedrawChart();
+        }
+
         private void CompareOverlayCheckOnCheckedChanged(object sender, EventArgs e)
         {
             TestData data = _viewerSession.Data;
@@ -2077,6 +2117,7 @@ namespace JSQViewer.UI
                 _rangeEndOa = double.NaN;
                 _rangeLabel.Text = BuildRangeLabelText(_rangeStartOa, _rangeEndOa);
                 _resetRangeButton.Visible = false;
+                ClearManualXAxisState();
                 List<string> previousSelection = GetSelectedCodes();
                 if (previousSelection.Count == 0 && _lastSelectedCodes.Count > 0)
                 {
@@ -2086,19 +2127,8 @@ namespace JSQViewer.UI
                 {
                     _chart.ChartAreas[0].AxisX.ScaleView.ZoomReset(0);
                     _chart.ChartAreas[0].AxisY.ScaleView.ZoomReset(0);
-                    _chart.ChartAreas[0].AxisX.Minimum = double.NaN;
-                    _chart.ChartAreas[0].AxisX.Maximum = double.NaN;
-                    _chart.ChartAreas[0].AxisY.Minimum = double.NaN;
-                    _chart.ChartAreas[0].AxisY.Maximum = double.NaN;
                 }
-                RunWithoutRangeSync(delegate
-                {
-                    if (!double.IsNaN(_rangeTrackBar.Minimum) && !double.IsNaN(_rangeTrackBar.Maximum) && _rangeTrackBar.Minimum < _rangeTrackBar.Maximum)
-                    {
-                        _rangeTrackBar.LowerValue = _rangeTrackBar.Minimum;
-                        _rangeTrackBar.UpperValue = _rangeTrackBar.Maximum;
-                    }
-                });
+                ClearRangeSelection();
                 ApplyChannelChecks(previousSelection);
                 _chart.Invalidate();
                 _logger.LogInfo(string.Format(
@@ -2254,6 +2284,8 @@ namespace JSQViewer.UI
                 return;
             }
 
+            NormalizeManualAxisState();
+
             bool overlayMode = IsOverlayCompareModeActive();
             List<string> selectedCodes = GetSelectedCodes();
             if (selectedCodes.Count == 0 && _lastSelectedCodes.Count > 0)
@@ -2288,12 +2320,15 @@ namespace JSQViewer.UI
                 (int)_manualStepUpDown.Value,
                 ParseTargetPoints(),
                 _channelWorkspacePresenter.SelectedChannelCount,
+                BuildAxisSettings(_manualAxisXCheck, _axisXMinimumBox, _axisXMaximumBox, _axisXStepBox),
+                BuildAxisSettings(_manualAxisYCheck, _axisYMinimumBox, _axisYMaximumBox, _axisYStepBox),
                 ConvertTrackRangeToChartSpaceStart(overlayMode),
                 ConvertTrackRangeToChartSpaceEnd(overlayMode));
             ChartPipelineResult chartState = _buildChartViewUseCase.Execute(request);
             ChartViewModel viewModel = _chartViewModelFactory.Create(chartState, Loc.Get("OverlayXAxisTitle"));
             _chartRenderer.Render(_chart, viewModel);
             ApplyChartViewToRangeControls(viewModel);
+            UpdateRangeControlState();
 
             if (overlayMode)
             {
@@ -2668,6 +2703,171 @@ namespace JSQViewer.UI
             }
 
             return target;
+        }
+
+        private static TextBox BuildAxisTextBox()
+        {
+            return new TextBox
+            {
+                Width = 52,
+                Enabled = false
+            };
+        }
+
+        private void ApplyAxisInputEnabledState()
+        {
+            bool overlayMode = IsOverlayCompareModeActive();
+            _manualAxisXCheck.Enabled = !overlayMode;
+            _axisXMinimumBox.Enabled = _manualAxisXCheck.Checked && !overlayMode;
+            _axisXMaximumBox.Enabled = _manualAxisXCheck.Checked && !overlayMode;
+            _axisXStepBox.Enabled = _manualAxisXCheck.Checked && !overlayMode;
+            _axisYMinimumBox.Enabled = _manualAxisYCheck.Checked;
+            _axisYMaximumBox.Enabled = _manualAxisYCheck.Checked;
+            _axisYStepBox.Enabled = _manualAxisYCheck.Checked;
+        }
+
+        private static ChartAxisSettings BuildAxisSettings(CheckBox manualCheckBox, TextBox minimumBox, TextBox maximumBox, TextBox stepBox)
+        {
+            if (manualCheckBox == null || !manualCheckBox.Checked)
+            {
+                return ChartAxisSettings.Automatic();
+            }
+
+            double minimum;
+            double maximum;
+            double step;
+            if (!TryReadAxisSettings(minimumBox, maximumBox, stepBox, out minimum, out maximum, out step))
+            {
+                return ChartAxisSettings.Automatic();
+            }
+
+            return ChartAxisSettings.ForManual(minimum, maximum, step);
+        }
+
+        private void NormalizeManualAxisState()
+        {
+            bool changed = false;
+            changed |= DisableInvalidManualAxis(_manualAxisXCheck, _axisXMinimumBox, _axisXMaximumBox, _axisXStepBox);
+            changed |= DisableInvalidManualAxis(_manualAxisYCheck, _axisYMinimumBox, _axisYMaximumBox, _axisYStepBox);
+            if (changed)
+            {
+                ApplyAxisInputEnabledState();
+            }
+        }
+
+        private bool DisableInvalidManualAxis(CheckBox manualCheckBox, TextBox minimumBox, TextBox maximumBox, TextBox stepBox)
+        {
+            if (manualCheckBox == null || !manualCheckBox.Checked)
+            {
+                return false;
+            }
+
+            double minimum;
+            double maximum;
+            double step;
+            if (TryReadAxisSettings(minimumBox, maximumBox, stepBox, out minimum, out maximum, out step))
+            {
+                return false;
+            }
+
+            SetManualAxisChecked(manualCheckBox, false);
+            return true;
+        }
+
+        private static bool TryParseAxisValue(TextBox box, out double value)
+        {
+            value = 0d;
+            string text = box == null ? string.Empty : (box.Text ?? string.Empty).Trim();
+            if (text.Length == 0)
+            {
+                return false;
+            }
+
+            return double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value)
+                || double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        }
+
+        private static bool TryReadAxisSettings(TextBox minimumBox, TextBox maximumBox, TextBox stepBox, out double minimum, out double maximum, out double step)
+        {
+            minimum = 0d;
+            maximum = 0d;
+            step = 0d;
+            if (!TryParseAxisValue(minimumBox, out minimum)
+                || !TryParseAxisValue(maximumBox, out maximum)
+                || !TryParseAxisValue(stepBox, out step))
+            {
+                return false;
+            }
+
+            return minimum < maximum && step > 0d;
+        }
+
+        private void SetManualAxisChecked(CheckBox checkBox, bool isChecked)
+        {
+            if (checkBox == null)
+            {
+                return;
+            }
+
+            bool previous = _suppressAxisControlEvents;
+            _suppressAxisControlEvents = true;
+            try
+            {
+                checkBox.Checked = isChecked;
+            }
+            finally
+            {
+                _suppressAxisControlEvents = previous;
+            }
+        }
+
+        private bool IsManualXAxisEnabled()
+        {
+            return _manualAxisXCheck.Checked;
+        }
+
+        private void ClearManualXAxisState()
+        {
+            SetManualAxisChecked(_manualAxisXCheck, false);
+            _axisXMinimumBox.Text = string.Empty;
+            _axisXMaximumBox.Text = string.Empty;
+            _axisXStepBox.Text = string.Empty;
+            ApplyAxisInputEnabledState();
+            UpdateRangeControlState();
+        }
+
+        private void ClearRangeSelection()
+        {
+            _rangeStartOa = double.NaN;
+            _rangeEndOa = double.NaN;
+            _rangeLabel.Text = BuildRangeLabelText(_rangeStartOa, _rangeEndOa);
+            _resetRangeButton.Visible = false;
+            RunWithoutRangeSync(delegate
+            {
+                if (!double.IsNaN(_rangeTrackBar.Minimum) && !double.IsNaN(_rangeTrackBar.Maximum) && _rangeTrackBar.Minimum < _rangeTrackBar.Maximum)
+                {
+                    _rangeTrackBar.LowerValue = _rangeTrackBar.Minimum;
+                    _rangeTrackBar.UpperValue = _rangeTrackBar.Maximum;
+                }
+            });
+        }
+
+        private void UpdateRangeControlState()
+        {
+            bool enabled = !IsManualXAxisEnabled();
+            _rangeTrackBar.Enabled = enabled;
+            _rangePanel.Enabled = enabled;
+            for (int i = _detachedRangeBars.Count - 1; i >= 0; i--)
+            {
+                RangeTrackBar bar = _detachedRangeBars[i];
+                if (bar == null || bar.IsDisposed)
+                {
+                    _detachedRangeBars.RemoveAt(i);
+                    continue;
+                }
+
+                bar.Enabled = enabled;
+            }
         }
 
         private void SavePresetFromSource(SourceWindowState state)

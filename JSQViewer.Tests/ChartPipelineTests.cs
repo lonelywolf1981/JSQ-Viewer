@@ -23,7 +23,9 @@ namespace JSQViewer.Tests
                 autoStepEnabled: false,
                 manualStep: 3,
                 targetPoints: 5000,
-                selectedChannelCount: 1);
+                selectedChannelCount: 1,
+                xAxisSettings: ChartAxisSettings.Automatic(),
+                yAxisSettings: ChartAxisSettings.Automatic());
 
             ChartPipelineResult result = service.Execute(request);
 
@@ -42,7 +44,9 @@ namespace JSQViewer.Tests
                 autoStepEnabled: true,
                 manualStep: 1,
                 targetPoints: 5000,
-                selectedChannelCount: 12);
+                selectedChannelCount: 12,
+                xAxisSettings: ChartAxisSettings.Automatic(),
+                yAxisSettings: ChartAxisSettings.Automatic());
 
             ChartPipelineResult result = service.Execute(request);
 
@@ -71,7 +75,9 @@ namespace JSQViewer.Tests
                 autoStepEnabled: true,
                 manualStep: 5,
                 targetPoints: 5000,
-                selectedChannelCount: 2);
+                selectedChannelCount: 2,
+                xAxisSettings: ChartAxisSettings.Automatic(),
+                yAxisSettings: ChartAxisSettings.Automatic());
 
             ChartPipelineResult result = service.Execute(request);
 
@@ -95,7 +101,9 @@ namespace JSQViewer.Tests
                 autoStepEnabled: false,
                 manualStep: 1,
                 targetPoints: 5000,
-                selectedChannelCount: 1);
+                selectedChannelCount: 1,
+                xAxisSettings: ChartAxisSettings.Automatic(),
+                yAxisSettings: ChartAxisSettings.Automatic());
 
             ChartPipelineResult result = service.Execute(request);
 
@@ -122,7 +130,9 @@ namespace JSQViewer.Tests
                 autoStepEnabled: false,
                 manualStep: 1,
                 targetPoints: 5000,
-                selectedChannelCount: 1);
+                selectedChannelCount: 1,
+                xAxisSettings: ChartAxisSettings.Automatic(),
+                yAxisSettings: ChartAxisSettings.Automatic());
 
             ChartPipelineResult first = service.Execute(request);
             ChartPipelineResult second = service.Execute(request);

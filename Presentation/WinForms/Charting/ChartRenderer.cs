@@ -17,15 +17,6 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 chart.Legends[0].Enabled = viewModel.ShowLegend;
             }
 
-            if (chart.ChartAreas.Count > 0)
-            {
-                ChartArea area = chart.ChartAreas[0];
-                area.AxisX.LabelStyle.Format = viewModel.XAxisLabelFormat ?? string.Empty;
-                area.AxisX.Title = viewModel.XAxisTitle ?? string.Empty;
-                area.AxisX.Minimum = viewModel.Range != null && viewModel.Range.IsActive ? viewModel.Range.Start : double.NaN;
-                area.AxisX.Maximum = viewModel.Range != null && viewModel.Range.IsActive ? viewModel.Range.End : double.NaN;
-            }
-
             chart.BeginInit();
             chart.SuspendLayout();
             chart.AntiAliasing = viewModel.Series.Count > 10 ? AntiAliasingStyles.None : AntiAliasingStyles.All;
@@ -47,7 +38,17 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 chart.ResetAutoValues();
                 if (chart.ChartAreas.Count > 0)
                 {
-                    chart.ChartAreas[0].RecalculateAxesScale();
+                    ChartArea area = chart.ChartAreas[0];
+                    area.RecalculateAxesScale();
+                    area.AxisX.LabelStyle.Format = viewModel.XAxisLabelFormat ?? string.Empty;
+                    area.AxisX.Title = viewModel.XAxisTitle ?? string.Empty;
+                    ApplyAxisSettings(area.AxisX, viewModel.XAxisSettings);
+                    ApplyAxisSettings(area.AxisY, viewModel.YAxisSettings);
+                    if (!IsManualEnabled(viewModel.XAxisSettings) && viewModel.Range != null && viewModel.Range.IsActive)
+                    {
+                        area.AxisX.Minimum = viewModel.Range.Start;
+                        area.AxisX.Maximum = viewModel.Range.End;
+                    }
                 }
             }
             finally
@@ -57,6 +58,35 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 chart.Invalidate();
                 chart.Update();
             }
+        }
+
+        private static void ApplyAxisSettings(Axis axis, ChartAxisSettingsViewModel settings)
+        {
+            if (axis == null)
+            {
+                return;
+            }
+
+            if (settings == null || !IsManualEnabled(settings))
+            {
+                axis.Minimum = double.NaN;
+                axis.Maximum = double.NaN;
+                axis.Interval = 0d;
+                return;
+            }
+
+            axis.Minimum = settings.Minimum.Value;
+            axis.Maximum = settings.Maximum.Value;
+            axis.Interval = settings.Step.Value;
+        }
+
+        private static bool IsManualEnabled(ChartAxisSettingsViewModel settings)
+        {
+            return settings != null
+                && settings.IsManualEnabled
+                && settings.Minimum.HasValue
+                && settings.Maximum.HasValue
+                && settings.Step.HasValue;
         }
     }
 }

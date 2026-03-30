@@ -28,6 +28,8 @@ namespace JSQViewer.Application.Charting
                     OverlayMode = request.OverlayMode,
                     ShowLegend = false,
                     Step = 1,
+                    XAxisSettings = request.XAxisSettings ?? ChartAxisSettings.Automatic(),
+                    YAxisSettings = request.YAxisSettings ?? ChartAxisSettings.Automatic(),
                     Series = new ChartPipelineSeries[0]
                 };
             }
@@ -41,6 +43,8 @@ namespace JSQViewer.Application.Charting
                     OverlayMode = request.OverlayMode,
                     ShowLegend = false,
                     Step = 1,
+                    XAxisSettings = request.XAxisSettings ?? ChartAxisSettings.Automatic(),
+                    YAxisSettings = request.YAxisSettings ?? ChartAxisSettings.Automatic(),
                     Series = new ChartPipelineSeries[0]
                 };
             }
@@ -155,6 +159,8 @@ namespace JSQViewer.Application.Charting
                 SelectedRangeStart = request.SelectedRangeStart,
                 SelectedRangeEnd = request.SelectedRangeEnd,
                 MaxOverlayDurationMs = maxOverlayDurationMs,
+                XAxisSettings = request.XAxisSettings ?? ChartAxisSettings.Automatic(),
+                YAxisSettings = request.YAxisSettings ?? ChartAxisSettings.Automatic(),
                 Series = series
             };
         }

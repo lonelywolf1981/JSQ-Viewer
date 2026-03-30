@@ -9,6 +9,8 @@ namespace JSQViewer.Application.Charting
         private ChartPipelineRequest()
         {
             SelectedCodes = new string[0];
+            XAxisSettings = ChartAxisSettings.Automatic();
+            YAxisSettings = ChartAxisSettings.Automatic();
         }
 
         public TestData Data { get; private set; }
@@ -31,6 +33,10 @@ namespace JSQViewer.Application.Charting
 
         public double SelectedRangeEnd { get; private set; }
 
+        public ChartAxisSettings XAxisSettings { get; private set; }
+
+        public ChartAxisSettings YAxisSettings { get; private set; }
+
         public static ChartPipelineRequest ForChart(
             TestData data,
             IEnumerable<string> selectedCodes,
@@ -40,6 +46,8 @@ namespace JSQViewer.Application.Charting
             int manualStep,
             int targetPoints,
             int selectedChannelCount,
+            ChartAxisSettings xAxisSettings,
+            ChartAxisSettings yAxisSettings,
             double selectedRangeStart = double.NaN,
             double selectedRangeEnd = double.NaN)
         {
@@ -63,6 +71,8 @@ namespace JSQViewer.Application.Charting
                 ManualStep = manualStep,
                 TargetPoints = targetPoints,
                 SelectedChannelCount = selectedChannelCount,
+                XAxisSettings = xAxisSettings ?? ChartAxisSettings.Automatic(),
+                YAxisSettings = yAxisSettings ?? ChartAxisSettings.Automatic(),
                 SelectedRangeStart = selectedRangeStart,
                 SelectedRangeEnd = selectedRangeEnd
             };

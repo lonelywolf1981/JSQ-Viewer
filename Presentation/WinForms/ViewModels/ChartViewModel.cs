@@ -8,6 +8,8 @@ namespace JSQViewer.Presentation.WinForms.ViewModels
         {
             Series = new ChartSeriesViewModel[0];
             Range = new ChartRangeViewModel();
+            XAxisSettings = new ChartAxisSettingsViewModel();
+            YAxisSettings = new ChartAxisSettingsViewModel();
         }
 
         public bool HasData { get; set; }
@@ -29,6 +31,10 @@ namespace JSQViewer.Presentation.WinForms.ViewModels
         public string XAxisTitle { get; set; }
 
         public ChartRangeViewModel Range { get; set; }
+
+        public ChartAxisSettingsViewModel XAxisSettings { get; set; }
+
+        public ChartAxisSettingsViewModel YAxisSettings { get; set; }
 
         public IReadOnlyList<ChartSeriesViewModel> Series { get; set; }
     }

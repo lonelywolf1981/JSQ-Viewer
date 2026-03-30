@@ -7,6 +7,8 @@ namespace JSQViewer.Application.Charting
         public ChartPipelineResult()
         {
             Series = new ChartPipelineSeries[0];
+            XAxisSettings = ChartAxisSettings.Automatic();
+            YAxisSettings = ChartAxisSettings.Automatic();
         }
 
         public bool HasData { get; set; }
@@ -28,5 +30,9 @@ namespace JSQViewer.Application.Charting
         public long MaxOverlayDurationMs { get; set; }
 
         public IReadOnlyList<ChartPipelineSeries> Series { get; set; }
+
+        public ChartAxisSettings XAxisSettings { get; set; }
+
+        public ChartAxisSettings YAxisSettings { get; set; }
     }
 }
