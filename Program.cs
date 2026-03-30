@@ -2,6 +2,8 @@ using System;
 using System.Threading;
 using System.Windows.Forms;
 using JSQViewer.Application.Abstractions;
+using JSQViewer.Application.Workspace;
+using JSQViewer.Infrastructure.Composition;
 using JSQViewer.Infrastructure.Persistence;
 using JSQViewer.Infrastructure.Platform;
 using JSQViewer.Presentation.WinForms.Composition;
@@ -32,6 +34,8 @@ namespace JSQViewer
             IPresetRepository presetRepository = new FilePresetRepository(appPaths);
             IOrderRepository orderRepository = new FileOrderRepository(appPaths);
             IViewerSettingsRepository viewerSettingsRepository = new FileViewerSettingsRepository(appPaths);
+            WorkspaceFolderSpecParser workspaceFolderSpecParser = WorkspaceLoadingComposition.CreateFolderSpecParser();
+            var loadWorkspaceDataUseCase = WorkspaceLoadingComposition.CreateLoadWorkspaceDataUseCase(workspaceFolderSpecParser);
             Loc.Initialize(localizationService);
 
             WinFormsApplication.ThreadException += OnThreadException;
@@ -49,7 +53,9 @@ namespace JSQViewer
                 uiStateRepository,
                 presetRepository,
                 orderRepository,
-                viewerSettingsRepository));
+                viewerSettingsRepository,
+                workspaceFolderSpecParser,
+                loadWorkspaceDataUseCase));
         }
 
         private static void OnThreadException(object sender, ThreadExceptionEventArgs e)

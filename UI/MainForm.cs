@@ -10,6 +10,8 @@ using System.Windows.Forms.DataVisualization.Charting;
 using System.Drawing.Imaging;
 using System.Threading.Tasks;
 using JSQViewer.Application.Abstractions;
+using JSQViewer.Application.Workspace;
+using JSQViewer.Application.Workspace.UseCases;
 using JSQViewer.Core;
 using JSQViewer.Export;
 using JSQViewer.Presentation.WinForms.Composition;
@@ -101,6 +103,8 @@ namespace JSQViewer.UI
         private readonly IPresetRepository _presetRepository;
         private readonly IOrderRepository _orderRepository;
         private readonly IViewerSettingsRepository _viewerSettingsRepository;
+        private readonly WorkspaceFolderSpecParser _workspaceFolderSpecParser;
+        private readonly LoadWorkspaceDataUseCase _loadWorkspaceDataUseCase;
         private ViewerSettingsModel _viewerSettings;
         private static readonly Regex NaturalSplitRegex = new Regex("(\\d+)", RegexOptions.Compiled);
 
@@ -113,7 +117,9 @@ namespace JSQViewer.UI
             IUiStateRepository uiStateRepository,
             IPresetRepository presetRepository,
             IOrderRepository orderRepository,
-            IViewerSettingsRepository viewerSettingsRepository)
+            IViewerSettingsRepository viewerSettingsRepository,
+            WorkspaceFolderSpecParser workspaceFolderSpecParser,
+            LoadWorkspaceDataUseCase loadWorkspaceDataUseCase)
         {
             if (appPaths == null) throw new ArgumentNullException(nameof(appPaths));
             if (logger == null) throw new ArgumentNullException(nameof(logger));
@@ -124,6 +130,8 @@ namespace JSQViewer.UI
             if (presetRepository == null) throw new ArgumentNullException(nameof(presetRepository));
             if (orderRepository == null) throw new ArgumentNullException(nameof(orderRepository));
             if (viewerSettingsRepository == null) throw new ArgumentNullException(nameof(viewerSettingsRepository));
+            if (workspaceFolderSpecParser == null) throw new ArgumentNullException(nameof(workspaceFolderSpecParser));
+            if (loadWorkspaceDataUseCase == null) throw new ArgumentNullException(nameof(loadWorkspaceDataUseCase));
 
             _projectRoot = appPaths.ProjectRoot;
             _logger = logger;
@@ -134,6 +142,8 @@ namespace JSQViewer.UI
             _presetRepository = presetRepository;
             _orderRepository = orderRepository;
             _viewerSettingsRepository = viewerSettingsRepository;
+            _workspaceFolderSpecParser = workspaceFolderSpecParser;
+            _loadWorkspaceDataUseCase = loadWorkspaceDataUseCase;
             _viewerSettings = _viewerSettingsRepository.Load();
 
             Font = new Font("Microsoft Sans Serif", 10f);
@@ -1445,16 +1455,13 @@ namespace JSQViewer.UI
                 }
                 SetBusy(true, Loc.Get("LoadingData"));
                 Cursor = Cursors.WaitCursor;
-                TestData data;
-                if (folders.Count == 1)
+                WorkspaceLoadResult result = await Task.Run(() =>
                 {
-                    data = await Task.Run(() => TestLoader.LoadTest(folders[0]));
-                }
-                else
-                {
-                    List<TestData> loaded = await Task.Run(() => TestLoader.LoadTests(folders));
-                    data = TestLoader.MergeLoadedTests(loaded, true);
-                }
+                    return _loadWorkspaceDataUseCase.Execute(new WorkspaceLoadRequest(spec, true));
+                });
+                spec = result.NormalizedFolderSpec;
+                TestData data = result.Data;
+                _folderBox.Text = spec;
                 AppState.SetData(spec, data);
                 BindLoadedData(data, preserveSourceWindowsLayout);
                 if (preferredOverlayMode.HasValue)
@@ -1478,29 +1485,17 @@ namespace JSQViewer.UI
             finally { Cursor = Cursors.Default; SetBusy(false, null); }
         }
 
-        private static List<string> ParseFolderSpec(string spec)
+        private List<string> ParseFolderSpec(string spec)
         {
-            var list = new List<string>();
-            string raw = spec ?? string.Empty;
-            string[] parts = raw.Split(new[] { ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-            for (int i = 0; i < parts.Length; i++)
-            {
-                string p = parts[i].Trim().Trim('"');
-                if (p.Length == 0) continue;
-                if (!list.Any(x => string.Equals(x, p, StringComparison.OrdinalIgnoreCase)))
-                {
-                    list.Add(p);
-                }
-            }
-            return list;
+            return _workspaceFolderSpecParser.Parse(spec).ToList();
         }
 
-        private static string JoinFolderSpec(List<string> folders)
+        private string JoinFolderSpec(List<string> folders)
         {
-            return string.Join(" ; ", folders ?? new List<string>());
+            return _workspaceFolderSpecParser.Join(folders);
         }
 
-        private static bool IsValidFolderSpec(string spec)
+        private bool IsValidFolderSpec(string spec)
         {
             List<string> folders = ParseFolderSpec(spec);
             if (folders.Count == 0 || folders.Count > 3) return false;
