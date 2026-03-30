@@ -14,9 +14,11 @@ using JSQViewer.Application.Charting;
 using JSQViewer.Application.Session;
 using JSQViewer.Application.Workspace;
 using JSQViewer.Application.Workspace.UseCases;
+using JSQViewer.Presentation.WinForms.Presenters;
 using JSQViewer.Core;
 using JSQViewer.Export;
 using JSQViewer.Presentation.WinForms.Composition;
+using JSQViewer.Presentation.WinForms.ViewModels;
 using JSQViewer.Settings;
 
 namespace JSQViewer.UI
@@ -85,6 +87,7 @@ namespace JSQViewer.UI
         private int _dragIndex = -1;
         private Point _dragStartPoint = Point.Empty;
         private bool _dragInitiated;
+        private readonly ChannelWorkspacePresenter _channelWorkspacePresenter;
         private readonly List<ChannelItem> _allChannels = new List<ChannelItem>();
         private readonly HashSet<string> _checkedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> _lastSelectedCodes = new List<string>();
@@ -94,6 +97,7 @@ namespace JSQViewer.UI
         private readonly Dictionary<string, SourceWindowState> _sourceWindows = new Dictionary<string, SourceWindowState>(StringComparer.OrdinalIgnoreCase);
         private Form _chartHostForm;
         private bool _syncingSourceChannelSelection;
+        private bool _syncingChannelWorkspaceOptions;
         private bool _closingSourceChannelWindows;
         private int _fixedControlPanelHeight = 430;
         private readonly string _projectRoot;
@@ -163,6 +167,7 @@ namespace JSQViewer.UI
             _workspaceFolderSpecParser = workspaceFolderSpecParser;
             _loadWorkspaceDataUseCase = loadWorkspaceDataUseCase;
             _viewerSettings = _viewerSettingsRepository.Load();
+            _channelWorkspacePresenter = new ChannelWorkspacePresenter();
 
             Font = new Font("Microsoft Sans Serif", 10f);
             Text = Loc.Get("AppTitle");
@@ -372,11 +377,146 @@ namespace JSQViewer.UI
             KeyDown += MainFormOnKeyDown;
             Loc.LanguageChanged += ApplyLocalization;
             LoadUiState();
+            SyncPresenterFromMainControls();
             StepControlsOnChanged(this, EventArgs.Empty);
             ConfigureMainAsControlPanel();
             EnsureChartHostForm();
             _chartHostForm.Hide();
             Resize += MainFormOnResizeFixHeight;
+        }
+
+        private void SyncPresenterFromMainControls()
+        {
+            _channelWorkspacePresenter.Initialize(_channelFilterBox.Text, GetSelectedSortKey(), _selectedOnlyCheck.Checked);
+            _channelWorkspacePresenter.ApplyCheckedCodes(_checkedCodes);
+        }
+
+        private void SyncMainChannelMirrorsFromPresenter(TestData data)
+        {
+            _checkedCodes.Clear();
+            foreach (string code in _channelWorkspacePresenter.GetSelectedCodes())
+            {
+                _checkedCodes.Add(code);
+            }
+
+            _allChannels.Clear();
+            IReadOnlyList<string> orderedCodes = _channelWorkspacePresenter.GetCurrentOrder();
+            for (int i = 0; i < orderedCodes.Count; i++)
+            {
+                string code = orderedCodes[i];
+                ChannelInfo channel;
+                string label = data != null && data.Channels.TryGetValue(code, out channel) ? channel.Label : code;
+                string unit = data != null && data.Channels.TryGetValue(code, out channel) ? (channel.Unit ?? string.Empty) : string.Empty;
+                _allChannels.Add(new ChannelItem(code, label, unit));
+            }
+        }
+
+        private void ApplySourceWindowViewModelToControls(SourceWindowState state)
+        {
+            if (state == null || state.ViewModel == null)
+            {
+                return;
+            }
+
+            _syncingChannelWorkspaceOptions = true;
+            try
+            {
+                if (state.Form != null && !state.Form.IsDisposed)
+                {
+                    state.Form.Text = string.Format(Loc.Get("ChannelsForSource"), state.ViewModel.Title);
+                }
+
+                if (state.FilterBox != null)
+                {
+                    state.FilterBox.Text = state.ViewModel.FilterText;
+                }
+
+                if (state.SortModeBox != null)
+                {
+                    SelectSortModeByKey(state.SortModeBox, state.ViewModel.SortMode);
+                }
+
+                if (state.SelectedOnlyCheck != null)
+                {
+                    state.SelectedOnlyCheck.Checked = state.ViewModel.SelectedOnly;
+                }
+
+                state.Items = state.ViewModel.Items
+                    .Select(item => new ChannelItem(item.Code, item.Label, item.Unit))
+                    .ToList();
+            }
+            finally
+            {
+                _syncingChannelWorkspaceOptions = false;
+            }
+        }
+
+        private void RefreshSourceWindowLists()
+        {
+            foreach (var kv in _sourceWindows)
+            {
+                SourceWindowState state = kv.Value;
+                state.ViewModel = _channelWorkspacePresenter.GetSourceWindow(state.SourceRoot);
+                ApplySourceWindowViewModelToControls(state);
+                RebuildSourceWindowList(state);
+            }
+        }
+
+        private void ApplyPresenterOptionsToControls()
+        {
+            _syncingChannelWorkspaceOptions = true;
+            try
+            {
+                _channelFilterBox.Text = _channelWorkspacePresenter.FilterText;
+                SelectSortModeByKey(_sortModeBox, _channelWorkspacePresenter.MainSortMode);
+                _selectedOnlyCheck.Checked = _channelWorkspacePresenter.SelectedOnly;
+            }
+            finally
+            {
+                _syncingChannelWorkspaceOptions = false;
+            }
+        }
+
+        private void RefreshChannelViews()
+        {
+            ChannelListViewModel mainList = _channelWorkspacePresenter.GetMainChannelList();
+            ApplyPresenterOptionsToControls();
+
+            _checkedCodes.Clear();
+            foreach (string code in _channelWorkspacePresenter.GetSelectedCodes())
+            {
+                _checkedCodes.Add(code);
+            }
+
+            _allChannels.Clear();
+            IReadOnlyList<string> currentOrder = _channelWorkspacePresenter.GetCurrentOrder();
+            for (int i = 0; i < currentOrder.Count; i++)
+            {
+                string code = currentOrder[i];
+                string label = code;
+                string unit = string.Empty;
+                for (int j = 0; j < mainList.Items.Count; j++)
+                {
+                    ChannelListItemViewModel item = mainList.Items[j];
+                    if (string.Equals(item.Code, code, StringComparison.OrdinalIgnoreCase))
+                    {
+                        label = item.Label;
+                        unit = item.Unit ?? string.Empty;
+                        break;
+                    }
+                }
+
+                _allChannels.Add(new ChannelItem(code, label, unit));
+            }
+
+            _channelsList.Items.Clear();
+            for (int i = 0; i < mainList.Items.Count; i++)
+            {
+                ChannelListItemViewModel item = mainList.Items[i];
+                _channelsList.Items.Add(item, item.IsSelected);
+            }
+
+            RefreshSourceWindowLists();
         }
 
         private void LangButtonOnClick(object sender, EventArgs e)
@@ -641,6 +781,7 @@ namespace JSQViewer.UI
         private void CloseAllButtonOnClick(object sender, EventArgs e)
         {
             _folderBox.Text = string.Empty;
+            _channelWorkspacePresenter.ApplyCheckedCodes(null);
             _checkedCodes.Clear();
             _lastSelectedCodes.Clear();
             _allChannels.Clear();
@@ -1546,25 +1687,16 @@ namespace JSQViewer.UI
 
         private void BindLoadedData(TestData data, bool preserveSourceWindowsLayout)
         {
-            _allChannels.Clear();
-            _checkedCodes.Clear();
-            if (_pendingCheckedCodes.Count > 0)
-            {
-                foreach (string code in _pendingCheckedCodes)
-                {
-                    _checkedCodes.Add(code);
-                }
-                _pendingCheckedCodes.Clear();
-            }
-            string[] orderedColumns = ApplySavedOrder(data.ColumnNames);
-            for (int i = 0; i < orderedColumns.Length; i++)
-            {
-                string code = orderedColumns[i];
-                ChannelInfo ch;
-                string label = data.Channels.TryGetValue(code, out ch) ? ch.Label : code;
-                string unit = data.Channels.TryGetValue(code, out ch) ? (ch.Unit ?? string.Empty) : string.Empty;
-                _allChannels.Add(new ChannelItem(code, label, unit));
-            }
+            SyncPresenterFromMainControls();
+            string[] preferredCheckedCodes = _pendingCheckedCodes.Count == 0 ? null : _pendingCheckedCodes.ToArray();
+            _pendingCheckedCodes.Clear();
+
+            SourceWindowRefreshPlan refreshPlan = _channelWorkspacePresenter.BindData(
+                data,
+                LoadSavedOrder(),
+                preferredCheckedCodes,
+                preserveSourceWindowsLayout);
+
             RebuildChannelList();
             bool canOverlay = IsOverlayCompareModeAvailable(data);
             _compareOverlayCheck.Enabled = canOverlay;
@@ -1576,14 +1708,14 @@ namespace JSQViewer.UI
             {
                 _folderBox.Text = JoinFolderSpec(data.SourceColumns.Keys.ToList());
             }
-            bool refreshedInPlace = false;
-            if (preserveSourceWindowsLayout)
-            {
-                refreshedInPlace = TryRefreshSourceChannelWindows(data);
-            }
+
+            bool refreshedInPlace = preserveSourceWindowsLayout
+                && refreshPlan.CanRefreshInPlace
+                && TryRefreshSourceChannelWindows(refreshPlan.Windows);
+
             if (!refreshedInPlace)
             {
-                RebuildSourceChannelWindows(data);
+                RebuildSourceChannelWindows(refreshPlan.Windows);
             }
             DataSummary summary = _dataSummaryService.BuildSummary(data);
             _summaryLabel.Text = string.Format(Loc.Get("Points"), summary.Points, summary.Start, summary.End);
@@ -1600,10 +1732,10 @@ namespace JSQViewer.UI
             RedrawChart();
         }
 
-        private void RebuildSourceChannelWindows(TestData data)
+        private void RebuildSourceChannelWindows(IReadOnlyList<SourceChannelWindowViewModel> windows)
         {
             CloseSourceChannelWindows();
-            if (data == null || data.SourceColumns == null || data.SourceColumns.Count == 0)
+            if (windows == null || windows.Count == 0)
             {
                 return;
             }
@@ -1612,17 +1744,13 @@ namespace JSQViewer.UI
             int baseX = wa.Left + 12;
             int baseY = Bottom + 10;
             int col = 0;
-            string[] globalOrdered = ApplySavedOrder(data.ColumnNames);
 
-            foreach (var kv in data.SourceColumns)
+            foreach (SourceChannelWindowViewModel window in windows)
             {
-                string sourceRoot = kv.Key;
-                string[] sourceCols = kv.Value ?? new string[0];
-                var set = new HashSet<string>(sourceCols, StringComparer.OrdinalIgnoreCase);
-                string[] ordered = globalOrdered.Where(set.Contains).ToArray();
+                string sourceRoot = window.SourceRoot;
 
                 var form = new Form();
-                form.Text = string.Format(Loc.Get("ChannelsForSource"), Path.GetFileName(sourceRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
+                form.Text = string.Format(Loc.Get("ChannelsForSource"), window.Title);
                 form.Width = 560;
                 form.Height = 640;
                 form.StartPosition = FormStartPosition.Manual;
@@ -1637,20 +1765,20 @@ namespace JSQViewer.UI
 
                 var filterBox = new TextBox();
                 filterBox.Width = 130;
-                filterBox.Text = _channelFilterBox.Text;
+                filterBox.Text = window.FilterText;
                 top.Controls.Add(filterBox);
 
                 var sortBox = new ComboBox();
                 sortBox.DropDownStyle = ComboBoxStyle.DropDownList;
                 sortBox.Width = 150;
                 PopulateSortModeBox(sortBox);
-                SelectSortModeByKey(sortBox, GetSelectedSortKey());
+                SelectSortModeByKey(sortBox, window.SortMode);
                 top.Controls.Add(sortBox);
 
                 var selectedOnly = new CheckBox();
                 selectedOnly.Text = Loc.Get("SelectedOnly");
                 selectedOnly.AutoSize = true;
-                selectedOnly.Checked = _selectedOnlyCheck.Checked;
+                selectedOnly.Checked = window.SelectedOnly;
                 top.Controls.Add(selectedOnly);
 
                 var selectAll = new Button();
@@ -1712,16 +1840,7 @@ namespace JSQViewer.UI
                     DeleteOrderButton = deleteOrderButton,
                     StatusLabel = status,
                     List = list,
-                    Items = ordered.Select(code =>
-                    {
-                        ChannelInfo ch;
-                        string displayCode = NormalizeChannelCodeForDisplay(code);
-                        string label = data.Channels.TryGetValue(code, out ch)
-                            ? BuildDisplayLabel(displayCode, ch)
-                            : displayCode;
-                        string unit = data.Channels.TryGetValue(code, out ch) ? (ch.Unit ?? string.Empty) : string.Empty;
-                        return new ChannelItem(code, label, unit);
-                    }).ToList()
+                    ViewModel = window
                 };
 
                 filterBox.TextChanged += delegate { SourceWindowOptionsChanged(state); };
@@ -1744,14 +1863,6 @@ namespace JSQViewer.UI
                 {
                     if (!_closingSourceChannelWindows)
                     {
-                        SourceWindowState closedState;
-                        if (_sourceWindows.TryGetValue(sourceRoot, out closedState) && closedState != null && closedState.Items != null)
-                        {
-                            for (int i = 0; i < closedState.Items.Count; i++)
-                            {
-                                _checkedCodes.Remove(closedState.Items[i].Code);
-                            }
-                        }
                         var folders = ParseFolderSpec(_folderBox.Text);
                         folders = folders.Where(f => !string.Equals(f, sourceRoot, StringComparison.OrdinalIgnoreCase)).ToList();
                         _folderBox.Text = JoinFolderSpec(folders);
@@ -1783,9 +1894,9 @@ namespace JSQViewer.UI
             }
         }
 
-        private bool TryRefreshSourceChannelWindows(TestData data)
+        private bool TryRefreshSourceChannelWindows(IReadOnlyList<SourceChannelWindowViewModel> windows)
         {
-            if (data == null || data.SourceColumns == null || data.SourceColumns.Count == 0)
+            if (windows == null || windows.Count == 0)
             {
                 return false;
             }
@@ -1795,16 +1906,15 @@ namespace JSQViewer.UI
             }
 
             var existingRoots = new HashSet<string>(_sourceWindows.Keys, StringComparer.OrdinalIgnoreCase);
-            var incomingRoots = new HashSet<string>(data.SourceColumns.Keys, StringComparer.OrdinalIgnoreCase);
+            var incomingRoots = new HashSet<string>(windows.Select(window => window.SourceRoot), StringComparer.OrdinalIgnoreCase);
             if (!existingRoots.SetEquals(incomingRoots))
             {
                 return false;
             }
 
-            string[] globalOrdered = ApplySavedOrder(data.ColumnNames);
-            foreach (var kv in data.SourceColumns)
+            foreach (SourceChannelWindowViewModel window in windows)
             {
-                string sourceRoot = kv.Key;
+                string sourceRoot = window.SourceRoot;
                 SourceWindowState state;
                 if (!_sourceWindows.TryGetValue(sourceRoot, out state) || state == null)
                 {
@@ -1815,21 +1925,8 @@ namespace JSQViewer.UI
                     return false;
                 }
 
-                string[] sourceCols = kv.Value ?? new string[0];
-                var set = new HashSet<string>(sourceCols, StringComparer.OrdinalIgnoreCase);
-                string[] ordered = globalOrdered.Where(set.Contains).ToArray();
-                state.Items = ordered.Select(code =>
-                {
-                    ChannelInfo ch;
-                    string displayCode = NormalizeChannelCodeForDisplay(code);
-                    string label = data.Channels.TryGetValue(code, out ch)
-                        ? BuildDisplayLabel(displayCode, ch)
-                        : displayCode;
-                    string unit = data.Channels.TryGetValue(code, out ch) ? (ch.Unit ?? string.Empty) : string.Empty;
-                    return new ChannelItem(code, label, unit);
-                }).ToList();
-
-                state.Form.Text = string.Format(Loc.Get("ChannelsForSource"), Path.GetFileName(sourceRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
+                state.ViewModel = window;
+                ApplySourceWindowViewModelToControls(state);
                 RebuildSourceWindowList(state);
             }
 
@@ -1864,30 +1961,7 @@ namespace JSQViewer.UI
 
         private void SyncSourceWindowsChecksFromSelectedCodes()
         {
-            if (_syncingSourceChannelSelection) return;
-            _syncingSourceChannelSelection = true;
-            try
-            {
-                foreach (var kv in _sourceWindows)
-                {
-                    CheckedListBox list = kv.Value.List;
-                    if (list == null || list.IsDisposed) continue;
-                    for (int i = 0; i < list.Items.Count; i++)
-                    {
-                        ChannelItem item = list.Items[i] as ChannelItem;
-                        if (item == null) continue;
-                        bool shouldCheck = _checkedCodes.Contains(item.Code);
-                        if (list.GetItemChecked(i) != shouldCheck)
-                        {
-                            list.SetItemChecked(i, shouldCheck);
-                        }
-                    }
-                }
-            }
-            finally
-            {
-                _syncingSourceChannelSelection = false;
-            }
+            RefreshSourceWindowLists();
         }
 
         private void SourceListOnItemCheck(object sender, ItemCheckEventArgs e)
@@ -1902,13 +1976,13 @@ namespace JSQViewer.UI
                 _syncingSourceChannelSelection = true;
                 try
                 {
-                    for (int i = 0; i < list.Items.Count; i++)
+                    if (e.Index >= 0 && e.Index < list.Items.Count)
                     {
-                        ChannelItem item = list.Items[i] as ChannelItem;
-                        if (item == null) continue;
-                        bool checkedNow = list.GetItemChecked(i);
-                        if (checkedNow) _checkedCodes.Add(item.Code);
-                        else _checkedCodes.Remove(item.Code);
+                        var item = list.Items[e.Index] as ChannelListItemViewModel;
+                        if (item != null)
+                        {
+                            _channelWorkspacePresenter.SetChannelSelected(item.Code, list.GetItemChecked(e.Index));
+                        }
                     }
                 }
                 finally
@@ -1916,9 +1990,9 @@ namespace JSQViewer.UI
                     _syncingSourceChannelSelection = false;
                 }
 
-                RebuildChannelList();
-                SyncSourceWindowsChecksFromSelectedCodes();
+                RefreshChannelViews();
                 UpdateSelectionInfo();
+                RedrawChart();
             }));
         }
 
@@ -1954,27 +2028,16 @@ namespace JSQViewer.UI
                     _compareOverlayCheck.Checked ? "1" : "0",
                     data.RowCount,
                     _sourceWindows.Count,
-                    string.Join(",", _checkedCodes.Take(20).ToArray())));
+                    string.Join(",", GetSelectedCodes().Take(20).ToArray())));
 
                 _rangeStartOa = double.NaN;
                 _rangeEndOa = double.NaN;
                 _rangeLabel.Text = BuildRangeLabelText(_rangeStartOa, _rangeEndOa);
                 _resetRangeButton.Visible = false;
-                List<string> previousSelection = _checkedCodes.ToList();
-                RefreshCheckedCodesFromSourceWindows();
-                if (_checkedCodes.Count == 0 && previousSelection.Count > 0)
+                List<string> previousSelection = GetSelectedCodes();
+                if (previousSelection.Count == 0 && _lastSelectedCodes.Count > 0)
                 {
-                    for (int i = 0; i < previousSelection.Count; i++)
-                    {
-                        _checkedCodes.Add(previousSelection[i]);
-                    }
-                }
-                if (_checkedCodes.Count == 0 && _lastSelectedCodes.Count > 0)
-                {
-                    for (int i = 0; i < _lastSelectedCodes.Count; i++)
-                    {
-                        _checkedCodes.Add(_lastSelectedCodes[i]);
-                    }
+                    previousSelection = _lastSelectedCodes.ToList();
                 }
                 if (_chart.ChartAreas.Count > 0)
                 {
@@ -1993,12 +2056,12 @@ namespace JSQViewer.UI
                         _rangeTrackBar.UpperValue = _rangeTrackBar.Maximum;
                     }
                 });
-                ApplyChannelChecks(_checkedCodes.ToList());
+                ApplyChannelChecks(previousSelection);
                 _chart.Invalidate();
                 _logger.LogInfo(string.Format(
                     "COMPARE_TOGGLE end checked={0} checkedCodes={1} axisX=[{2};{3}] range=[{4};{5}] series={6}",
                     _compareOverlayCheck.Checked ? "1" : "0",
-                    string.Join(",", _checkedCodes.Take(20).ToArray()),
+                    string.Join(",", GetSelectedCodes().Take(20).ToArray()),
                     _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Minimum.ToString(CultureInfo.InvariantCulture) : "na",
                     _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Maximum.ToString(CultureInfo.InvariantCulture) : "na",
                     _rangeTrackBar.LowerValue.ToString(CultureInfo.InvariantCulture),
@@ -2009,11 +2072,14 @@ namespace JSQViewer.UI
 
         private void ChannelViewOptionsChanged(object sender, EventArgs e)
         {
-            RebuildChannelList();
-            foreach (var kv in _sourceWindows)
+            if (_syncingChannelWorkspaceOptions)
             {
-                RebuildSourceWindowList(kv.Value);
+                return;
             }
+
+            _channelWorkspacePresenter.UpdateMainViewOptions(_channelFilterBox.Text, GetSelectedSortKey(), _selectedOnlyCheck.Checked);
+            ApplyPresenterOptionsToControls();
+            RefreshChannelViews();
             UpdateSelectionInfo();
             RedrawChart();
         }
@@ -2022,35 +2088,33 @@ namespace JSQViewer.UI
         {
             BeginInvoke((Action)(delegate
             {
-                SyncCheckedFromVisibleList();
-                SyncSourceWindowsChecksFromSelectedCodes();
+                if (e.Index >= 0 && e.Index < _channelsList.Items.Count)
+                {
+                    var item = _channelsList.Items[e.Index] as ChannelListItemViewModel;
+                    if (item != null)
+                    {
+                        _channelWorkspacePresenter.SetChannelSelected(item.Code, _channelsList.GetItemChecked(e.Index));
+                    }
+                }
+
+                RefreshChannelViews();
                 UpdateSelectionInfo();
+                RedrawChart();
             }));
         }
 
         private void SelectAllChannelsButtonOnClick(object sender, EventArgs e)
         {
-            for (int i = 0; i < _allChannels.Count; i++)
-            {
-                _checkedCodes.Add(_allChannels[i].Code);
-            }
-            for (int i = 0; i < _channelsList.Items.Count; i++)
-            {
-                _channelsList.SetItemChecked(i, true);
-            }
-            SyncSourceWindowsChecksFromSelectedCodes();
+            _channelWorkspacePresenter.SelectAllChannels();
+            RefreshChannelViews();
             UpdateSelectionInfo();
             RedrawChart();
         }
 
         private void ClearChannelsButtonOnClick(object sender, EventArgs e)
         {
-            _checkedCodes.Clear();
-            for (int i = 0; i < _channelsList.Items.Count; i++)
-            {
-                _channelsList.SetItemChecked(i, false);
-            }
-            SyncSourceWindowsChecksFromSelectedCodes();
+            _channelWorkspacePresenter.ClearAllChannels();
+            RefreshChannelViews();
             UpdateSelectionInfo();
             RedrawChart();
         }
@@ -2076,7 +2140,7 @@ namespace JSQViewer.UI
 
         private void SourceListDragDrop(SourceWindowState state, DragEventArgs e)
         {
-            if (_dragIndex < 0 || !e.Data.GetDataPresent(typeof(ChannelItem))) return;
+            if (_dragIndex < 0 || !e.Data.GetDataPresent(typeof(ChannelListItemViewModel))) return;
             if ((state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked) ||
                 (state.FilterBox != null && !string.IsNullOrWhiteSpace(state.FilterBox.Text)) ||
                 GetSelectedSortKey(state.SortModeBox) != "User") return;
@@ -2084,11 +2148,11 @@ namespace JSQViewer.UI
             int targetIndex = state.List.IndexFromPoint(p);
             if (targetIndex < 0) targetIndex = state.List.Items.Count - 1;
             if (targetIndex == _dragIndex || targetIndex < 0) return;
-            ChannelItem dragged = state.Items[_dragIndex];
-            state.Items.RemoveAt(_dragIndex);
-            state.Items.Insert(targetIndex, dragged);
-            RebuildSourceWindowList(state);
-            state.List.SelectedIndex = targetIndex;
+            if (_channelWorkspacePresenter.MoveSourceChannel(state.SourceRoot, _dragIndex, targetIndex))
+            {
+                RebuildSourceWindowList(state);
+                state.List.SelectedIndex = targetIndex;
+            }
         }
 
         private void ChannelsListOnMouseDown(object sender, MouseEventArgs e)
@@ -2112,27 +2176,24 @@ namespace JSQViewer.UI
 
         private void ChannelsListOnDragOver(object sender, DragEventArgs e)
         {
-            e.Effect = e.Data.GetDataPresent(typeof(ChannelItem)) ? DragDropEffects.Move : DragDropEffects.None;
+            e.Effect = e.Data.GetDataPresent(typeof(ChannelListItemViewModel)) ? DragDropEffects.Move : DragDropEffects.None;
         }
 
         private void ChannelsListOnDragDrop(object sender, DragEventArgs e)
         {
-            if (_dragIndex < 0 || !e.Data.GetDataPresent(typeof(ChannelItem))) return;
+            if (_dragIndex < 0 || !e.Data.GetDataPresent(typeof(ChannelListItemViewModel))) return;
             if (_selectedOnlyCheck.Checked || !string.IsNullOrWhiteSpace(_channelFilterBox.Text) || GetSelectedSortKey() != "User") return;
             Point p = _channelsList.PointToClient(new Point(e.X, e.Y));
             int targetIndex = _channelsList.IndexFromPoint(p);
             if (targetIndex < 0) targetIndex = _channelsList.Items.Count - 1;
             if (targetIndex == _dragIndex) return;
-            object dragged = _channelsList.Items[_dragIndex];
-            bool draggedChecked = _channelsList.GetItemChecked(_dragIndex);
-            _channelsList.Items.RemoveAt(_dragIndex);
-            _channelsList.Items.Insert(targetIndex, dragged);
-            _channelsList.SetItemChecked(targetIndex, draggedChecked);
-            _channelsList.SelectedIndex = targetIndex;
-            RebuildAllChannelsFromVisibleList();
-            SyncCheckedFromVisibleList();
-            UpdateSelectionInfo();
-            RedrawChart();
+            if (_channelWorkspacePresenter.MoveMainChannel(_dragIndex, targetIndex))
+            {
+                RebuildChannelList();
+                _channelsList.SelectedIndex = targetIndex;
+                UpdateSelectionInfo();
+                RedrawChart();
+            }
         }
 
         private void RedrawChart()
@@ -2452,28 +2513,6 @@ namespace JSQViewer.UI
 
         private void RefreshCheckedCodesFromSourceWindows()
         {
-            if (_sourceWindows == null || _sourceWindows.Count == 0) return;
-            var fresh = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var kv in _sourceWindows)
-            {
-                SourceWindowState state = kv.Value;
-                if (state == null || state.List == null || state.List.IsDisposed) continue;
-                CheckedListBox list = state.List;
-                for (int i = 0; i < list.Items.Count; i++)
-                {
-                    ChannelItem item = list.Items[i] as ChannelItem;
-                    if (item == null) continue;
-                    if (list.GetItemChecked(i))
-                    {
-                        fresh.Add(item.Code);
-                    }
-                }
-            }
-            if (fresh.Count > 0)
-            {
-                _checkedCodes.Clear();
-                foreach (string code in fresh) _checkedCodes.Add(code);
-            }
         }
 
         private int ResolveStep(int totalPoints)
@@ -2485,7 +2524,7 @@ namespace JSQViewer.UI
                 int parsed; if (int.TryParse(_targetPointsBox.SelectedItem.ToString(), out parsed)) target = Math.Max(1, parsed);
             }
             // Scale down target when many channels are selected to keep total point count reasonable
-            int channelCount = _checkedCodes.Count;
+            int channelCount = _channelWorkspacePresenter.SelectedChannelCount;
             if (channelCount > 10)
             {
                 // Cap total points across all series at ~50k for responsiveness
@@ -2796,16 +2835,9 @@ namespace JSQViewer.UI
 
         private void EnsureUserSortModeForOrderApply()
         {
-            SelectSortModeByKey("User");
-            foreach (var kv in _sourceWindows)
-            {
-                SourceWindowState state = kv.Value;
-                if (state == null || state.SortModeBox == null || state.SortModeBox.IsDisposed)
-                {
-                    continue;
-                }
-                SelectSortModeByKey(state.SortModeBox, "User");
-            }
+            _channelWorkspacePresenter.SetAllSortModes("User");
+            ApplyPresenterOptionsToControls();
+            RefreshChannelViews();
         }
 
         private void LoadOrderFromSource(SourceWindowState state)
@@ -2837,75 +2869,24 @@ namespace JSQViewer.UI
 
         private void ApplyChannelChecks(IList<string> checkedCodes)
         {
-            _checkedCodes.Clear();
-            if (checkedCodes != null) for (int i = 0; i < checkedCodes.Count; i++) _checkedCodes.Add(checkedCodes[i]);
-            RebuildChannelList();
-            SyncSourceWindowsChecksFromSelectedCodes();
+            _channelWorkspacePresenter.ApplyCheckedCodes(checkedCodes);
+            RefreshChannelViews();
             UpdateSelectionInfo();
             RedrawChart();
         }
 
         private List<string> GetSelectedCodes()
         {
-            var result = new List<string>();
-            for (int i = 0; i < _allChannels.Count; i++)
-            {
-                ChannelItem item = _allChannels[i];
-                if (_checkedCodes.Contains(item.Code)) result.Add(item.Code);
-            }
-            return result;
+            return _channelWorkspacePresenter.GetSelectedCodes().ToList();
         }
 
         private void RebuildChannelList()
         {
-            IEnumerable<ChannelItem> items = _allChannels;
-
-            string filter = (_channelFilterBox.Text ?? string.Empty).Trim();
-            if (filter.Length > 0)
-            {
-                string f = filter.ToLowerInvariant();
-                items = items.Where(delegate(ChannelItem c)
-                {
-                    return (c.Code ?? string.Empty).ToLowerInvariant().Contains(f)
-                        || (c.Label ?? string.Empty).ToLowerInvariant().Contains(f);
-                });
-            }
-
-            if (_selectedOnlyCheck.Checked)
-            {
-                items = items.Where(c => _checkedCodes.Contains(c.Code));
-            }
-
-            string mode = GetSelectedSortKey();
-            if (mode == "Code")
-            {
-                items = items.OrderBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
-            }
-            else if (mode == "Natural code")
-            {
-                items = items.OrderBy(c => c.Code, new NaturalStringComparer());
-            }
-            else if (mode == "Label")
-            {
-                items = items.OrderBy(c => c.Label, StringComparer.OrdinalIgnoreCase);
-            }
-            else if (mode == "Unit")
-            {
-                items = items.OrderBy(c => c.Unit, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
-            }
-            else if (mode == "Priority A/C")
-            {
-                items = items.OrderBy(c => PrefixPriority(c.Code)).ThenBy(c => c.Code, new NaturalStringComparer());
-            }
-            else if (mode == "Selected first")
-            {
-                items = items.OrderByDescending(c => _checkedCodes.Contains(c.Code)).ThenBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
-            }
-
+            ChannelListViewModel viewModel = _channelWorkspacePresenter.GetMainChannelList();
             _channelsList.Items.Clear();
-            foreach (ChannelItem c in items)
+            foreach (ChannelListItemViewModel item in viewModel.Items)
             {
-                int idx = _channelsList.Items.Add(c, _checkedCodes.Contains(c.Code));
+                int idx = _channelsList.Items.Add(item, item.IsSelected);
                 if (idx >= 0) { }
             }
         }
@@ -2917,74 +2898,41 @@ namespace JSQViewer.UI
 
         private void RebuildAllChannelsFromVisibleList()
         {
-            if (GetSelectedSortKey() != "User")
-            {
-                return;
-            }
-            if (_selectedOnlyCheck.Checked || !string.IsNullOrWhiteSpace(_channelFilterBox.Text))
-            {
-                return;
-            }
-            _allChannels.Clear();
-            for (int i = 0; i < _channelsList.Items.Count; i++)
-            {
-                ChannelItem item = _channelsList.Items[i] as ChannelItem;
-                if (item != null) _allChannels.Add(item);
-            }
         }
 
         private void SourceWindowOptionsChanged(SourceWindowState origin)
         {
             if (origin == null) return;
-            if (_syncingSourceChannelSelection) return;
-            _syncingSourceChannelSelection = true;
+            if (_syncingChannelWorkspaceOptions) return;
+            _syncingChannelWorkspaceOptions = true;
             try
             {
                 string filter = origin.FilterBox == null ? string.Empty : origin.FilterBox.Text;
                 bool selectedOnly = origin.SelectedOnlyCheck != null && origin.SelectedOnlyCheck.Checked;
-
-                _channelFilterBox.Text = filter;
-                _selectedOnlyCheck.Checked = selectedOnly;
-
-                foreach (var kv in _sourceWindows)
-                {
-                    SourceWindowState state = kv.Value;
-                    if (state == null || state == origin) continue;
-                    if (state.FilterBox != null && state.FilterBox.Text != filter) state.FilterBox.Text = filter;
-                    if (state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked != selectedOnly) state.SelectedOnlyCheck.Checked = selectedOnly;
-                }
-
-                foreach (var kv in _sourceWindows)
-                {
-                    RebuildSourceWindowList(kv.Value);
-                }
+                _channelWorkspacePresenter.UpdateSourceWindowOptions(origin.SourceRoot, filter, GetSelectedSortKey(origin.SortModeBox), selectedOnly);
+                ApplyPresenterOptionsToControls();
+                RefreshChannelViews();
             }
             finally
             {
-                _syncingSourceChannelSelection = false;
+                _syncingChannelWorkspaceOptions = false;
             }
         }
 
         private void SelectAllInSource(SourceWindowState state)
         {
-            if (state == null || state.Items == null) return;
-            for (int i = 0; i < state.Items.Count; i++)
-            {
-                _checkedCodes.Add(state.Items[i].Code);
-            }
-            SyncSourceWindowsChecksFromSelectedCodes();
+            if (state == null) return;
+            _channelWorkspacePresenter.SelectAllSourceChannels(state.SourceRoot);
+            RefreshChannelViews();
             UpdateSelectionInfo();
             RedrawChart();
         }
 
         private void ClearAllInSource(SourceWindowState state)
         {
-            if (state == null || state.Items == null) return;
-            for (int i = 0; i < state.Items.Count; i++)
-            {
-                _checkedCodes.Remove(state.Items[i].Code);
-            }
-            SyncSourceWindowsChecksFromSelectedCodes();
+            if (state == null) return;
+            _channelWorkspacePresenter.ClearSourceChannels(state.SourceRoot);
+            RefreshChannelViews();
             UpdateSelectionInfo();
             RedrawChart();
         }
@@ -2992,30 +2940,11 @@ namespace JSQViewer.UI
         private void RebuildSourceWindowList(SourceWindowState state)
         {
             if (state == null || state.List == null || state.List.IsDisposed) return;
-            IEnumerable<ChannelItem> items = state.Items ?? Enumerable.Empty<ChannelItem>();
-            string filter = state.FilterBox == null ? string.Empty : (state.FilterBox.Text ?? string.Empty).Trim();
-            if (filter.Length > 0)
-            {
-                string f = filter.ToLowerInvariant();
-                items = items.Where(c => (c.Code ?? string.Empty).ToLowerInvariant().Contains(f) || (c.Label ?? string.Empty).ToLowerInvariant().Contains(f));
-            }
-            if (state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked)
-            {
-                items = items.Where(c => _checkedCodes.Contains(c.Code));
-            }
-
-            string mode = GetSelectedSortKey(state.SortModeBox);
-            if (mode == "Code") items = items.OrderBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
-            else if (mode == "Natural code") items = items.OrderBy(c => c.Code, new NaturalStringComparer());
-            else if (mode == "Label") items = items.OrderBy(c => c.Label, StringComparer.OrdinalIgnoreCase);
-            else if (mode == "Unit") items = items.OrderBy(c => c.Unit, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
-            else if (mode == "Priority A/C") items = items.OrderBy(c => PrefixPriority(c.Code)).ThenBy(c => c.Code, new NaturalStringComparer());
-            else if (mode == "Selected first") items = items.OrderByDescending(c => _checkedCodes.Contains(c.Code)).ThenBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
-
+            state.ViewModel = _channelWorkspacePresenter.GetSourceWindow(state.SourceRoot);
             state.List.Items.Clear();
-            foreach (ChannelItem c in items)
+            foreach (ChannelListItemViewModel item in state.ViewModel.Items)
             {
-                state.List.Items.Add(c, _checkedCodes.Contains(c.Code));
+                state.List.Items.Add(item, item.IsSelected);
             }
         }
 
@@ -3158,8 +3087,8 @@ namespace JSQViewer.UI
 
         private void UpdateSelectionInfo()
         {
-            int selected = _checkedCodes.Count;
-            int total = _allChannels.Count;
+            int selected = _channelWorkspacePresenter.SelectedChannelCount;
+            int total = _channelWorkspacePresenter.TotalChannelCount;
             string stepInfo = string.Empty;
             TestData data = _viewerSession.Data;
             if (data != null && data.TimestampsMs != null && data.TimestampsMs.Length > 0)
@@ -3223,136 +3152,30 @@ namespace JSQViewer.UI
             Update();
         }
 
-        private string[] ApplySavedOrder(string[] columns)
-        {
-            var source = new List<string>(columns ?? new string[0]);
-            var saved = LoadSavedOrder();
-            if (saved.Count == 0) return source.ToArray();
-            var result = new List<string>(source.Count);
-            var inSource = new HashSet<string>(source, StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < saved.Count; i++) if (inSource.Contains(saved[i]) && !result.Contains(saved[i], StringComparer.OrdinalIgnoreCase)) result.Add(saved[i]);
-            for (int i = 0; i < source.Count; i++) if (!result.Contains(source[i], StringComparer.OrdinalIgnoreCase)) result.Add(source[i]);
-            return result.ToArray();
-        }
-
         private List<string> BuildCurrentOrder()
         {
-            RebuildAllChannelsFromVisibleList();
-            var order = new List<string>();
-            for (int i = 0; i < _allChannels.Count; i++)
-            {
-                order.Add(_allChannels[i].Code);
-            }
-            return order;
+            return _channelWorkspacePresenter.GetCurrentOrder().ToList();
         }
 
         private List<string> BuildCurrentOrderFromSourceWindow(SourceWindowState state)
         {
-            var order = new List<string>();
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            if (state != null && state.List != null && !state.List.IsDisposed)
+            if (state == null)
             {
-                for (int i = 0; i < state.List.Items.Count; i++)
-                {
-                    ChannelItem item = state.List.Items[i] as ChannelItem;
-                    if (item == null || string.IsNullOrWhiteSpace(item.Code))
-                    {
-                        continue;
-                    }
-                    if (seen.Add(item.Code))
-                    {
-                        order.Add(item.Code);
-                    }
-                }
+                return new List<string>();
             }
 
-            if (state != null && state.Items != null)
-            {
-                for (int i = 0; i < state.Items.Count; i++)
-                {
-                    ChannelItem item = state.Items[i];
-                    if (item == null || string.IsNullOrWhiteSpace(item.Code))
-                    {
-                        continue;
-                    }
-                    if (seen.Add(item.Code))
-                    {
-                        order.Add(item.Code);
-                    }
-                }
-            }
-
-            for (int i = 0; i < _allChannels.Count; i++)
-            {
-                ChannelItem item = _allChannels[i];
-                if (item == null || string.IsNullOrWhiteSpace(item.Code))
-                {
-                    continue;
-                }
-                if (seen.Add(item.Code))
-                {
-                    order.Add(item.Code);
-                }
-            }
-
-            return order;
+            return _channelWorkspacePresenter.GetCurrentOrderForSource(state.SourceRoot).ToList();
         }
 
         private void ApplyOrder(IList<string> order)
         {
-            if (order == null || order.Count == 0)
-            {
-                return;
-            }
-            var map = new Dictionary<string, ChannelItem>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < _allChannels.Count; i++)
-            {
-                ChannelItem c = _allChannels[i];
-                map[c.Code] = c;
-            }
-
-            var reordered = new List<ChannelItem>(_allChannels.Count);
-            for (int i = 0; i < order.Count; i++)
-            {
-                ChannelItem c;
-                if (map.TryGetValue(order[i], out c))
-                {
-                    reordered.Add(c);
-                    map.Remove(order[i]);
-                }
-            }
-            foreach (ChannelItem rest in _allChannels)
-            {
-                if (map.ContainsKey(rest.Code))
-                {
-                    reordered.Add(rest);
-                    map.Remove(rest.Code);
-                }
-            }
-            _allChannels.Clear();
-            _allChannels.AddRange(reordered);
+            _channelWorkspacePresenter.ApplyOrder(order);
             _logger.LogInfo(string.Format(
                 "ORDER apply requested={0} reordered={1} mode='{2}'",
-                order.Count,
-                reordered.Count,
+                order == null ? 0 : order.Count,
+                _channelWorkspacePresenter.TotalChannelCount,
                 GetSelectedSortKey()));
-            RebuildChannelList();
-            foreach (var kv in _sourceWindows)
-            {
-                SourceWindowState sw = kv.Value;
-                if (sw == null || sw.Items == null) continue;
-                var itemMap = new Dictionary<string, ChannelItem>(StringComparer.OrdinalIgnoreCase);
-                foreach (ChannelItem ci in sw.Items) itemMap[ci.Code] = ci;
-                var reorderedItems = new List<ChannelItem>();
-                for (int i = 0; i < _allChannels.Count; i++)
-                {
-                    ChannelItem ci;
-                    if (itemMap.TryGetValue(_allChannels[i].Code, out ci)) reorderedItems.Add(ci);
-                }
-                sw.Items = reorderedItems;
-                RebuildSourceWindowList(sw);
-            }
+            RefreshChannelViews();
         }
 
         private List<string> LoadSavedOrder()
@@ -3416,13 +3239,7 @@ namespace JSQViewer.UI
         {
             try
             {
-                var order = new List<string>();
-                RebuildAllChannelsFromVisibleList();
-                for (int i = 0; i < _allChannels.Count; i++)
-                {
-                    order.Add(_allChannels[i].Code);
-                }
-                _orderRepository.SaveLegacyOrder(order);
+                _orderRepository.SaveLegacyOrder(BuildCurrentOrder());
             }
             catch { }
         }
@@ -3444,7 +3261,7 @@ namespace JSQViewer.UI
                 state.include_extra = _includeExtraCheck.Checked;
                 state.refrigerant = _refrigerantBox.SelectedItem == null ? "R290" : _refrigerantBox.SelectedItem.ToString();
                 state.splitter_distance = _splitMain.SplitterDistance;
-                state.checked_channels = _checkedCodes.ToList();
+                state.checked_channels = GetSelectedCodes();
                 _uiStateRepository.Save(state);
             }
             catch { }
@@ -3545,6 +3362,7 @@ namespace JSQViewer.UI
         private sealed class SourceWindowState
         {
             public string SourceRoot { get; set; }
+            public SourceChannelWindowViewModel ViewModel { get; set; }
             public Form Form { get; set; }
             public TextBox FilterBox { get; set; }
             public ComboBox SortModeBox { get; set; }
