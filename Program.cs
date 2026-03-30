@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Windows.Forms;
 using JSQViewer.Application.Abstractions;
+using JSQViewer.Infrastructure.Persistence;
 using JSQViewer.Infrastructure.Platform;
 using JSQViewer.Presentation.WinForms.Composition;
 using JSQViewer.UI;
@@ -26,6 +27,11 @@ namespace JSQViewer
             _notificationService = new MessageBoxNotificationService();
             _externalProcessLauncher = new ShellExternalProcessLauncher();
             _mainFormNotificationService = new WinFormsMainFormNotificationService();
+            IRecentFoldersRepository recentFoldersRepository = new FileRecentFoldersRepository(appPaths);
+            IUiStateRepository uiStateRepository = new FileUiStateRepository(appPaths);
+            IPresetRepository presetRepository = new FilePresetRepository(appPaths);
+            IOrderRepository orderRepository = new FileOrderRepository(appPaths);
+            IViewerSettingsRepository viewerSettingsRepository = new FileViewerSettingsRepository(appPaths);
             Loc.Initialize(localizationService);
 
             WinFormsApplication.ThreadException += OnThreadException;
@@ -34,7 +40,16 @@ namespace JSQViewer
 
             WinFormsApplication.EnableVisualStyles();
             WinFormsApplication.SetCompatibleTextRenderingDefault(false);
-            WinFormsApplication.Run(new MainForm(appPaths, _logger, _mainFormNotificationService, _externalProcessLauncher));
+            WinFormsApplication.Run(new MainForm(
+                appPaths,
+                _logger,
+                _mainFormNotificationService,
+                _externalProcessLauncher,
+                recentFoldersRepository,
+                uiStateRepository,
+                presetRepository,
+                orderRepository,
+                viewerSettingsRepository));
         }
 
         private static void OnThreadException(object sender, ThreadExceptionEventArgs e)

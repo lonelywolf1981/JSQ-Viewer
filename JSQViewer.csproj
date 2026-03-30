@@ -48,6 +48,7 @@
     <Compile Include="Program.cs" />
     <Compile Include="Domain\*.cs" />
     <Compile Include="Application\Abstractions\*.cs" />
+    <Compile Include="Infrastructure\Persistence\*.cs" />
     <Compile Include="Infrastructure\Platform\*.cs" />
     <Compile Include="Presentation\WinForms\Composition\*.cs" />
     <Compile Include="Core\*.cs" />

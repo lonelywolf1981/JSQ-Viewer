@@ -93,32 +93,48 @@ namespace JSQViewer.UI
         private bool _closingSourceChannelWindows;
         private int _fixedControlPanelHeight = 430;
         private readonly string _projectRoot;
-        private readonly string _orderFilePath;
-        private readonly string _recentFoldersFilePath;
-        private readonly string _viewerSettingsFilePath;
-        private readonly string _uiStateFilePath;
         private readonly ILogger _logger;
         private readonly IMainFormNotificationService _notificationService;
         private readonly IExternalProcessLauncher _externalProcessLauncher;
+        private readonly IRecentFoldersRepository _recentFoldersRepository;
+        private readonly IUiStateRepository _uiStateRepository;
+        private readonly IPresetRepository _presetRepository;
+        private readonly IOrderRepository _orderRepository;
+        private readonly IViewerSettingsRepository _viewerSettingsRepository;
         private ViewerSettingsModel _viewerSettings;
         private static readonly Regex NaturalSplitRegex = new Regex("(\\d+)", RegexOptions.Compiled);
 
-        public MainForm(IAppPaths appPaths, ILogger logger, IMainFormNotificationService notificationService, IExternalProcessLauncher externalProcessLauncher)
+        public MainForm(
+            IAppPaths appPaths,
+            ILogger logger,
+            IMainFormNotificationService notificationService,
+            IExternalProcessLauncher externalProcessLauncher,
+            IRecentFoldersRepository recentFoldersRepository,
+            IUiStateRepository uiStateRepository,
+            IPresetRepository presetRepository,
+            IOrderRepository orderRepository,
+            IViewerSettingsRepository viewerSettingsRepository)
         {
             if (appPaths == null) throw new ArgumentNullException(nameof(appPaths));
             if (logger == null) throw new ArgumentNullException(nameof(logger));
             if (notificationService == null) throw new ArgumentNullException(nameof(notificationService));
             if (externalProcessLauncher == null) throw new ArgumentNullException(nameof(externalProcessLauncher));
+            if (recentFoldersRepository == null) throw new ArgumentNullException(nameof(recentFoldersRepository));
+            if (uiStateRepository == null) throw new ArgumentNullException(nameof(uiStateRepository));
+            if (presetRepository == null) throw new ArgumentNullException(nameof(presetRepository));
+            if (orderRepository == null) throw new ArgumentNullException(nameof(orderRepository));
+            if (viewerSettingsRepository == null) throw new ArgumentNullException(nameof(viewerSettingsRepository));
 
             _projectRoot = appPaths.ProjectRoot;
-            _orderFilePath = Path.Combine(_projectRoot, "channel_order.json");
-            _recentFoldersFilePath = Path.Combine(_projectRoot, "recent_folders.json");
-            _viewerSettingsFilePath = Path.Combine(_projectRoot, "viewer_settings.json");
-            _uiStateFilePath = Path.Combine(_projectRoot, "ui_state.json");
             _logger = logger;
             _notificationService = notificationService;
             _externalProcessLauncher = externalProcessLauncher;
-            _viewerSettings = ViewerSettingsStore.Load(_viewerSettingsFilePath);
+            _recentFoldersRepository = recentFoldersRepository;
+            _uiStateRepository = uiStateRepository;
+            _presetRepository = presetRepository;
+            _orderRepository = orderRepository;
+            _viewerSettingsRepository = viewerSettingsRepository;
+            _viewerSettings = _viewerSettingsRepository.Load();
 
             Font = new Font("Microsoft Sans Serif", 10f);
             Text = Loc.Get("AppTitle");
@@ -2561,7 +2577,7 @@ namespace JSQViewer.UI
 
                 _viewerSettings = dlg.Result ?? ViewerSettingsModel.CreateDefault();
                 SetBusy(true, Loc.Get("SavingStyles"));
-                bool ok = ViewerSettingsStore.Save(_viewerSettingsFilePath, _viewerSettings);
+                bool ok = _viewerSettingsRepository.Save(_viewerSettings);
                 if (ok) NotifySuccess(Loc.Get("StylesSaved"));
                 else NotifyError(Loc.Get("StylesSaveFailed"));
                 if (!ok) _logger.LogError("Style settings save failed.", null);
@@ -2603,8 +2619,8 @@ namespace JSQViewer.UI
             payload.include_extra = _includeExtraCheck.Checked;
             payload.refrigerant = _refrigerantBox.SelectedItem == null ? "R290" : _refrigerantBox.SelectedItem.ToString();
 
-            bool existed = PresetStore.Exists(_projectRoot, payload.name);
-            ViewerPreset preset = PresetStore.Save(_projectRoot, payload);
+            bool existed = _presetRepository.Exists(payload.name);
+            ViewerPreset preset = _presetRepository.Save(payload);
             ReloadPresets(); SelectPresetByKey(preset.key); NotifySuccess(string.Format(existed ? Loc.Get("PresetUpdated") : Loc.Get("PresetSaved"), preset.name));
         }
 
@@ -2620,7 +2636,7 @@ namespace JSQViewer.UI
         private void LoadPresetButtonOnClick(object sender, EventArgs e)
         {
             var item = _presetsBox.SelectedItem as PresetItem; if (item == null) return;
-            ViewerPreset preset = PresetStore.Load(_projectRoot, item.Key);
+            ViewerPreset preset = _presetRepository.Load(item.Key);
             if (preset == null || preset.channels == null) { NotifyError(Loc.Get("PresetInvalid")); return; }
             if (!string.IsNullOrWhiteSpace(preset.sort_mode))
             {
@@ -2662,7 +2678,7 @@ namespace JSQViewer.UI
         {
             var item = _presetsBox.SelectedItem as PresetItem; if (item == null) return;
             if (MessageBox.Show(this, string.Format(Loc.Get("DeletePresetQ"), item.Name), Loc.Get("DeletePresetTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-            bool ok = PresetStore.Delete(_projectRoot, item.Key);
+            bool ok = _presetRepository.Delete(item.Key);
             ReloadPresets();
             if (ok) NotifySuccess(string.Format(Loc.Get("PresetDeleted"), item.Name));
             else NotifyError(Loc.Get("PresetDeleteFailed"));
@@ -2690,8 +2706,8 @@ namespace JSQViewer.UI
                 NotifyError(Loc.Get("NoChannelsToSave"));
                 return;
             }
-            bool existed = OrderStore.Exists(_projectRoot, name);
-            ChannelOrderModel saved = OrderStore.Save(_projectRoot, name, order);
+            bool existed = _orderRepository.Exists(name);
+            ChannelOrderModel saved = _orderRepository.Save(name, order);
             _logger.LogInfo(string.Format(
                 "ORDER save name='{0}' key='{1}' count={2} mode='{3}'",
                 saved == null ? name : saved.name,
@@ -2722,8 +2738,8 @@ namespace JSQViewer.UI
                 return;
             }
 
-            bool existed = OrderStore.Exists(_projectRoot, name);
-            ChannelOrderModel saved = OrderStore.Save(_projectRoot, name, order);
+            bool existed = _orderRepository.Exists(name);
+            ChannelOrderModel saved = _orderRepository.Save(name, order);
             _logger.LogInfo(string.Format(
                 "ORDER save source name='{0}' key='{1}' count={2} source='{3}' source_mode='{4}'",
                 saved == null ? name : saved.name,
@@ -2744,7 +2760,7 @@ namespace JSQViewer.UI
         {
             var item = _ordersBox.SelectedItem as OrderItem;
             if (item == null) return;
-            ChannelOrderModel order = OrderStore.Load(_projectRoot, item.Key);
+            ChannelOrderModel order = _orderRepository.Load(item.Key);
             if (order == null || order.order == null)
             {
                 NotifyError(Loc.Get("OrderInvalid"));
@@ -2792,7 +2808,7 @@ namespace JSQViewer.UI
             var item = _ordersBox.SelectedItem as OrderItem;
             if (item == null) return;
             if (MessageBox.Show(this, string.Format(Loc.Get("DeleteOrderQ"), item.Name), Loc.Get("DeleteOrderTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-            bool ok = OrderStore.Delete(_projectRoot, item.Key);
+            bool ok = _orderRepository.Delete(item.Key);
             ReloadOrders();
             if (ok) NotifySuccess(string.Format(Loc.Get("OrderDeleted"), item.Name));
             else NotifyError(Loc.Get("OrderDeleteFailed"));
@@ -3007,7 +3023,7 @@ namespace JSQViewer.UI
         private void ReloadPresets()
         {
             _presetsBox.Items.Clear();
-            List<ViewerPreset> presets = PresetStore.List(_projectRoot);
+            List<ViewerPreset> presets = _presetRepository.List();
             for (int i = 0; i < presets.Count; i++)
             {
                 ViewerPreset p = presets[i];
@@ -3024,7 +3040,7 @@ namespace JSQViewer.UI
         private void ReloadOrders()
         {
             _ordersBox.Items.Clear();
-            List<ChannelOrderModel> orders = OrderStore.List(_projectRoot);
+            List<ChannelOrderModel> orders = _orderRepository.List();
             for (int i = 0; i < orders.Count; i++)
             {
                 ChannelOrderModel o = orders[i];
@@ -3330,9 +3346,7 @@ namespace JSQViewer.UI
         {
             try
             {
-                if (!File.Exists(_orderFilePath)) return new List<string>();
-                var payload = JsonHelper.LoadFromFile(_orderFilePath, new OrderPayload());
-                return payload != null && payload.order != null ? payload.order : new List<string>();
+                return _orderRepository.LoadLegacyOrder();
             }
             catch { return new List<string>(); }
         }
@@ -3340,9 +3354,8 @@ namespace JSQViewer.UI
         private void LoadRecentFolders()
         {
             _recentFoldersBox.Items.Clear();
-            var payload = JsonHelper.LoadFromFile(_recentFoldersFilePath, new RecentFoldersPayload());
-            if (payload == null || payload.folders == null) return;
-            for (int i = 0; i < payload.folders.Count; i++) if (!string.IsNullOrWhiteSpace(payload.folders[i])) _recentFoldersBox.Items.Add(payload.folders[i]);
+            List<string> folders = _recentFoldersRepository.Load();
+            for (int i = 0; i < folders.Count; i++) if (!string.IsNullOrWhiteSpace(folders[i])) _recentFoldersBox.Items.Add(folders[i]);
             UpdateRecentDropDownWidth();
             if (_recentFoldersBox.Items.Count > 0) _recentFoldersBox.SelectedIndex = 0;
         }
@@ -3362,7 +3375,7 @@ namespace JSQViewer.UI
             for (int i = 0; i < folders.Count; i++) _recentFoldersBox.Items.Add(folders[i]);
             UpdateRecentDropDownWidth();
             if (_recentFoldersBox.Items.Count > 0) _recentFoldersBox.SelectedIndex = 0;
-            JsonHelper.SaveToFile(_recentFoldersFilePath, new RecentFoldersPayload { folders = folders });
+            _recentFoldersRepository.Save(folders);
         }
 
         private void UpdateRecentDropDownWidth()
@@ -3396,7 +3409,7 @@ namespace JSQViewer.UI
                 {
                     order.Add(_allChannels[i].Code);
                 }
-                JsonHelper.SaveToFile(_orderFilePath, new OrderPayload { order = order });
+                _orderRepository.SaveLegacyOrder(order);
             }
             catch { }
         }
@@ -3406,7 +3419,7 @@ namespace JSQViewer.UI
             try
             {
                 SyncCheckedFromVisibleList();
-                var state = new UiStatePayload();
+                var state = new UiStateModel();
                 state.folder = _folderBox.Text;
                 state.auto_step = _autoStepCheck.Checked;
                 state.target_points = _targetPointsBox.SelectedItem == null ? "5000" : _targetPointsBox.SelectedItem.ToString();
@@ -3419,7 +3432,7 @@ namespace JSQViewer.UI
                 state.refrigerant = _refrigerantBox.SelectedItem == null ? "R290" : _refrigerantBox.SelectedItem.ToString();
                 state.splitter_distance = _splitMain.SplitterDistance;
                 state.checked_channels = _checkedCodes.ToList();
-                JsonHelper.SaveToFile(_uiStateFilePath, state);
+                _uiStateRepository.Save(state);
             }
             catch { }
         }
@@ -3428,7 +3441,7 @@ namespace JSQViewer.UI
         {
             try
             {
-                UiStatePayload state = JsonHelper.LoadFromFile(_uiStateFilePath, new UiStatePayload());
+                UiStateModel state = _uiStateRepository.Load();
                 if (state == null)
                 {
                     return;
@@ -3514,24 +3527,6 @@ namespace JSQViewer.UI
             private readonly string _label;
             public OrderItem(string key, string name, int count) { Key = key; Name = name; _label = string.Format("{0} ({1})", name, count); }
             public override string ToString() { return _label; }
-        }
-
-        private sealed class OrderPayload { public List<string> order { get; set; } }
-        private sealed class RecentFoldersPayload { public List<string> folders { get; set; } }
-        private sealed class UiStatePayload
-        {
-            public string folder { get; set; }
-            public bool? auto_step { get; set; }
-            public string target_points { get; set; }
-            public int? manual_step { get; set; }
-            public bool? compare_overlay { get; set; }
-            public string sort_mode { get; set; }
-            public bool? selected_only { get; set; }
-            public string channel_filter { get; set; }
-            public bool? include_extra { get; set; }
-            public string refrigerant { get; set; }
-            public int? splitter_distance { get; set; }
-            public List<string> checked_channels { get; set; }
         }
 
         private sealed class SourceWindowState
