@@ -12,13 +12,13 @@ using System.Threading.Tasks;
 using JSQViewer.Application.Abstractions;
 using JSQViewer.Application.Charting;
 using JSQViewer.Application.Charting.UseCases;
+using JSQViewer.Application.Exporting;
 using JSQViewer.Application.Session;
 using JSQViewer.Application.Workspace;
 using JSQViewer.Application.Workspace.UseCases;
 using JSQViewer.Presentation.WinForms.Presenters;
 using JSQViewer.Presentation.WinForms.Charting;
 using JSQViewer.Core;
-using JSQViewer.Export;
 using JSQViewer.Presentation.WinForms.Composition;
 using JSQViewer.Presentation.WinForms.ViewModels;
 using JSQViewer.Settings;
@@ -117,6 +117,9 @@ namespace JSQViewer.UI
         private readonly BuildWorkspaceSummaryUseCase _buildWorkspaceSummaryUseCase;
         private readonly ChartViewModelFactory _chartViewModelFactory;
         private readonly ChartRenderer _chartRenderer;
+        private readonly ExportTemplateUseCase _exportTemplateUseCase;
+        private readonly ExportSettingsPresenter _exportSettingsPresenter;
+        private readonly ViewerSettingsSanitizer _viewerSettingsSanitizer;
         private readonly WorkspaceFolderSpecParser _workspaceFolderSpecParser;
         private readonly LoadWorkspaceDataUseCase _loadWorkspaceDataUseCase;
         private ViewerSettingsModel _viewerSettings;
@@ -138,6 +141,9 @@ namespace JSQViewer.UI
             BuildWorkspaceSummaryUseCase buildWorkspaceSummaryUseCase,
             ChartViewModelFactory chartViewModelFactory,
             ChartRenderer chartRenderer,
+            ExportTemplateUseCase exportTemplateUseCase,
+            ExportSettingsPresenter exportSettingsPresenter,
+            ViewerSettingsSanitizer viewerSettingsSanitizer,
             WorkspaceFolderSpecParser workspaceFolderSpecParser,
             LoadWorkspaceDataUseCase loadWorkspaceDataUseCase)
         {
@@ -156,6 +162,9 @@ namespace JSQViewer.UI
             if (buildWorkspaceSummaryUseCase == null) throw new ArgumentNullException(nameof(buildWorkspaceSummaryUseCase));
             if (chartViewModelFactory == null) throw new ArgumentNullException(nameof(chartViewModelFactory));
             if (chartRenderer == null) throw new ArgumentNullException(nameof(chartRenderer));
+            if (exportTemplateUseCase == null) throw new ArgumentNullException(nameof(exportTemplateUseCase));
+            if (exportSettingsPresenter == null) throw new ArgumentNullException(nameof(exportSettingsPresenter));
+            if (viewerSettingsSanitizer == null) throw new ArgumentNullException(nameof(viewerSettingsSanitizer));
             if (workspaceFolderSpecParser == null) throw new ArgumentNullException(nameof(workspaceFolderSpecParser));
             if (loadWorkspaceDataUseCase == null) throw new ArgumentNullException(nameof(loadWorkspaceDataUseCase));
 
@@ -174,6 +183,9 @@ namespace JSQViewer.UI
             _buildWorkspaceSummaryUseCase = buildWorkspaceSummaryUseCase;
             _chartViewModelFactory = chartViewModelFactory;
             _chartRenderer = chartRenderer;
+            _exportTemplateUseCase = exportTemplateUseCase;
+            _exportSettingsPresenter = exportSettingsPresenter;
+            _viewerSettingsSanitizer = viewerSettingsSanitizer;
             _workspaceFolderSpecParser = workspaceFolderSpecParser;
             _loadWorkspaceDataUseCase = loadWorkspaceDataUseCase;
             _viewerSettings = _viewerSettingsRepository.Load();
@@ -2518,18 +2530,6 @@ namespace JSQViewer.UI
             bool includeExtra = _includeExtraCheck.Checked;
             ViewerSettingsModel settings = _viewerSettings;
 
-            // Read selected range from stored values
-            long? rangeStartMs = null;
-            long? rangeEndMs = null;
-            if (!IsOverlayCompareModeActive() && !double.IsNaN(_rangeStartOa) && !double.IsNaN(_rangeEndOa))
-            {
-                DateTime dtStart = DateTime.FromOADate(_rangeStartOa);
-                DateTime dtEnd = DateTime.FromOADate(_rangeEndOa);
-                DateTime epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-                rangeStartMs = (long)(dtStart.ToUniversalTime() - epoch).TotalMilliseconds;
-                rangeEndMs = (long)(dtEnd.ToUniversalTime() - epoch).TotalMilliseconds;
-            }
-
             using (var dialog = new SaveFileDialog())
             {
                 dialog.Filter = "Excel files (*.xlsx)|*.xlsx"; dialog.FileName = "template_filled_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".xlsx";
@@ -2538,10 +2538,20 @@ namespace JSQViewer.UI
                 try
                 {
                     SetBusy(true, Loc.Get("ExportingTemplate"));
-                    string loadedFolder = _viewerSession.Folder;
-                    byte[] payload = await Task.Run(() => TemplateExporter.Export(templatePath, loadedFolder, data, selectedCodes, includeExtra, refrig, settings, rangeStartMs, rangeEndMs));
-                    File.WriteAllBytes(savePath, payload);
-                    TemplateValidationResult vr = TemplateExportValidator.Validate(payload);
+                    ExportTemplateRequest request = _exportSettingsPresenter.BuildRequest(
+                        templatePath,
+                        _viewerSession.Folder,
+                        data,
+                        selectedCodes,
+                        includeExtra,
+                        refrig,
+                        settings,
+                        IsOverlayCompareModeActive(),
+                        _rangeStartOa,
+                        _rangeEndOa);
+                    ExportTemplateResult exportResult = await Task.Run(() => _exportTemplateUseCase.Execute(request));
+                    File.WriteAllBytes(savePath, exportResult.Payload);
+                    TemplateValidationResult vr = exportResult.Validation;
                     if (vr.Ok)
                     {
                         NotifySuccess(Loc.Get("TemplateExported"));
@@ -2561,7 +2571,7 @@ namespace JSQViewer.UI
 
         private void SettingsButtonOnClick(object sender, EventArgs e)
         {
-            using (var dlg = new SettingsDialog(_viewerSettings))
+            using (var dlg = new SettingsDialog(_viewerSettings, _viewerSettingsSanitizer))
             {
                 if (dlg.ShowDialog(this) != DialogResult.OK)
                 {

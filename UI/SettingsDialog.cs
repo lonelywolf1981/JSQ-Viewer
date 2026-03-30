@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.Windows.Forms;
+using JSQViewer.Application.Exporting;
 using JSQViewer.Settings;
 
 namespace JSQViewer.UI
@@ -27,12 +28,14 @@ namespace JSQViewer.UI
         private readonly TextBox _dischargeHexBox;
         private readonly TextBox _suctionHexBox;
         private readonly Button _okButton;
+        private readonly ViewerSettingsSanitizer _viewerSettingsSanitizer;
         private readonly Dictionary<string, ScaleEditors> _scaleEditors = new Dictionary<string, ScaleEditors>(StringComparer.OrdinalIgnoreCase);
 
         public ViewerSettingsModel Result { get; private set; }
 
-        public SettingsDialog(ViewerSettingsModel source)
+        public SettingsDialog(ViewerSettingsModel source, ViewerSettingsSanitizer viewerSettingsSanitizer)
         {
+            _viewerSettingsSanitizer = viewerSettingsSanitizer ?? throw new ArgumentNullException(nameof(viewerSettingsSanitizer));
             Result = Clone(source ?? ViewerSettingsModel.CreateDefault());
 
             Text = Loc.Get("StylesTitle");
@@ -368,7 +371,7 @@ namespace JSQViewer.UI
                 updated.scales[key] = ss;
             }
 
-            Result = updated;
+            Result = _viewerSettingsSanitizer.Sanitize(updated);
             DialogResult = DialogResult.OK;
             Close();
         }

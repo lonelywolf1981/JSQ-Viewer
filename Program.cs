@@ -4,15 +4,18 @@ using System.Windows.Forms;
 using JSQViewer.Application.Abstractions;
 using JSQViewer.Application.Charting;
 using JSQViewer.Application.Charting.UseCases;
+using JSQViewer.Application.Exporting;
 using JSQViewer.Application.Session;
 using JSQViewer.Application.Workspace;
 using JSQViewer.Core;
 using JSQViewer.Infrastructure.Composition;
 using JSQViewer.Infrastructure.Cache;
+using JSQViewer.Infrastructure.Exporting;
 using JSQViewer.Infrastructure.Persistence;
 using JSQViewer.Infrastructure.Platform;
 using JSQViewer.Presentation.WinForms.Charting;
 using JSQViewer.Presentation.WinForms.Composition;
+using JSQViewer.Presentation.WinForms.Presenters;
 using JSQViewer.UI;
 using WinFormsApplication = System.Windows.Forms.Application;
 
@@ -49,6 +52,9 @@ namespace JSQViewer
             var buildWorkspaceSummaryUseCase = new BuildWorkspaceSummaryUseCase(dataSummaryService);
             var chartViewModelFactory = new ChartViewModelFactory(timestampRangeService);
             var chartRenderer = new ChartRenderer();
+            var exportTemplateUseCase = new ExportTemplateUseCase(new OpenXmlTemplateExporter(), new OpenXmlTemplateExportValidator());
+            var exportSettingsPresenter = new ExportSettingsPresenter();
+            var viewerSettingsSanitizer = new ViewerSettingsSanitizer();
             IViewerSession viewerSession = new ViewerSession(seriesSliceCache);
             AppState.Configure(viewerSession, timestampRangeService, dataSummaryService);
             SeriesCache.Configure(seriesSliceService);
@@ -78,6 +84,9 @@ namespace JSQViewer
                 buildWorkspaceSummaryUseCase,
                 chartViewModelFactory,
                 chartRenderer,
+                exportTemplateUseCase,
+                exportSettingsPresenter,
+                viewerSettingsSanitizer,
                 workspaceFolderSpecParser,
                 loadWorkspaceDataUseCase));
         }
