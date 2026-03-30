@@ -23,6 +23,8 @@ using JSQViewer.Presentation.WinForms.Composition;
 using JSQViewer.Presentation.WinForms.ViewModels;
 using JSQViewer.Settings;
 
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("JSQViewer.Tests")]
+
 namespace JSQViewer.UI
 {
     public sealed class MainForm : Form
@@ -98,6 +100,7 @@ namespace JSQViewer.UI
         private readonly Dictionary<string, CheckedListBox> _sourceChannelLists = new Dictionary<string, CheckedListBox>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, SourceWindowState> _sourceWindows = new Dictionary<string, SourceWindowState>(StringComparer.OrdinalIgnoreCase);
         private Form _chartHostForm;
+        private readonly ChartDisplayPresenter _chartDisplayPresenter;
         private bool _syncingSourceChannelSelection;
         private bool _syncingChannelWorkspaceOptions;
         private bool _closingSourceChannelWindows;
@@ -125,6 +128,11 @@ namespace JSQViewer.UI
         private readonly LoadWorkspaceDataUseCase _loadWorkspaceDataUseCase;
         private ViewerSettingsModel _viewerSettings;
         private static readonly Regex NaturalSplitRegex = new Regex("(\\d+)", RegexOptions.Compiled);
+
+        internal bool IsChartRequestedForTests
+        {
+            get { return _chartDisplayPresenter.IsChartRequested; }
+        }
 
         public MainForm(
             IAppPaths appPaths,
@@ -194,6 +202,7 @@ namespace JSQViewer.UI
             _loadWorkspaceDataUseCase = loadWorkspaceDataUseCase;
             _viewerSettings = _viewerSettingsRepository.Load();
             _channelWorkspacePresenter = new ChannelWorkspacePresenter();
+            _chartDisplayPresenter = new ChartDisplayPresenter();
 
             Font = new Font("Microsoft Sans Serif", 10f);
             Text = Loc.Get("AppTitle");
@@ -767,9 +776,11 @@ namespace JSQViewer.UI
                 if (e.CloseReason == CloseReason.UserClosing)
                 {
                     e.Cancel = true;
+                    _chartDisplayPresenter.Close();
                     _chartHostForm.Hide();
                 }
             };
+            _chartHostForm.FormClosed += delegate { _chartDisplayPresenter.Close(); };
             try { _chartHostForm.Icon = Icon; } catch { }
 
             if (_chart.Parent != null) _chart.Parent.Controls.Remove(_chart);
@@ -807,6 +818,7 @@ namespace JSQViewer.UI
 
         private void CloseAllButtonOnClick(object sender, EventArgs e)
         {
+            _chartDisplayPresenter.Close();
             _folderBox.Text = string.Empty;
             _channelWorkspacePresenter.ApplyCheckedCodes(null);
             _checkedCodes.Clear();
@@ -1757,7 +1769,10 @@ namespace JSQViewer.UI
             _saveOrderButton.Enabled = true;
             _loadOrderButton.Enabled = _deleteOrderButton.Enabled = _ordersBox.Items.Count > 0;
             UpdateSelectionInfo();
-            RedrawChart();
+            if (_chartDisplayPresenter.ShouldRenderAfterWorkspaceReload())
+            {
+                RedrawChart();
+            }
         }
 
         private void RebuildSourceChannelWindows(IReadOnlyList<SourceChannelWindowViewModel> windows)
@@ -2226,6 +2241,11 @@ namespace JSQViewer.UI
 
         private void RedrawChart()
         {
+            if (!_chartDisplayPresenter.ShouldRenderAfterSelectionChange())
+            {
+                return;
+            }
+
             TestData data = _viewerSession.Data;
             if (data == null || data.RowCount == 0)
             {
@@ -2255,7 +2275,10 @@ namespace JSQViewer.UI
             }
             _lastSelectedCodes.Clear();
             _lastSelectedCodes.AddRange(selectedCodes);
-            ShowChartHost();
+            if (_chartDisplayPresenter.ShouldOpenHostForCurrentRedraw())
+            {
+                ShowChartHost();
+            }
             var request = ChartPipelineRequest.ForChart(
                 data,
                 selectedCodes,
@@ -2600,6 +2623,7 @@ namespace JSQViewer.UI
                 return;
             }
 
+            _chartDisplayPresenter.RequestOpen();
             UpdateSelectionInfo();
             RedrawChart();
         }
