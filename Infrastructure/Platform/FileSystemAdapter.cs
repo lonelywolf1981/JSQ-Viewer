@@ -6,6 +6,21 @@ namespace JSQViewer.Infrastructure.Platform
 {
     public sealed class FileSystemAdapter : IFileSystem
     {
+        public bool FileExists(string path)
+        {
+            return File.Exists(path);
+        }
+
+        public bool DirectoryExists(string path)
+        {
+            return Directory.Exists(path);
+        }
+
+        public void WriteAllBytes(string path, byte[] contents)
+        {
+            File.WriteAllBytes(path, contents);
+        }
+
         public void CreateDirectory(string path)
         {
             Directory.CreateDirectory(path);

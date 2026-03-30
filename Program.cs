@@ -70,6 +70,7 @@ namespace JSQViewer
             WinFormsApplication.SetCompatibleTextRenderingDefault(false);
             WinFormsApplication.Run(new MainForm(
                 appPaths,
+                fileSystem,
                 _logger,
                 _mainFormNotificationService,
                 _externalProcessLauncher,

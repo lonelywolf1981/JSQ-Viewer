@@ -103,6 +103,7 @@ namespace JSQViewer.UI
         private bool _closingSourceChannelWindows;
         private int _fixedControlPanelHeight = 430;
         private readonly string _projectRoot;
+        private readonly IFileSystem _fileSystem;
         private readonly ILogger _logger;
         private readonly IMainFormNotificationService _notificationService;
         private readonly IExternalProcessLauncher _externalProcessLauncher;
@@ -127,6 +128,7 @@ namespace JSQViewer.UI
 
         public MainForm(
             IAppPaths appPaths,
+            IFileSystem fileSystem,
             ILogger logger,
             IMainFormNotificationService notificationService,
             IExternalProcessLauncher externalProcessLauncher,
@@ -148,6 +150,7 @@ namespace JSQViewer.UI
             LoadWorkspaceDataUseCase loadWorkspaceDataUseCase)
         {
             if (appPaths == null) throw new ArgumentNullException(nameof(appPaths));
+            if (fileSystem == null) throw new ArgumentNullException(nameof(fileSystem));
             if (logger == null) throw new ArgumentNullException(nameof(logger));
             if (notificationService == null) throw new ArgumentNullException(nameof(notificationService));
             if (externalProcessLauncher == null) throw new ArgumentNullException(nameof(externalProcessLauncher));
@@ -169,6 +172,7 @@ namespace JSQViewer.UI
             if (loadWorkspaceDataUseCase == null) throw new ArgumentNullException(nameof(loadWorkspaceDataUseCase));
 
             _projectRoot = appPaths.ProjectRoot;
+            _fileSystem = fileSystem;
             _logger = logger;
             _notificationService = notificationService;
             _externalProcessLauncher = externalProcessLauncher;
@@ -1471,7 +1475,7 @@ namespace JSQViewer.UI
         private void BrowseButtonOnClick(object sender, EventArgs e)
         {
             List<string> current = ParseFolderSpec(_folderBox.Text);
-            string initial = current.Count > 0 && Directory.Exists(current[0]) ? current[0] : string.Empty;
+            string initial = current.Count > 0 && _fileSystem.DirectoryExists(current[0]) ? current[0] : string.Empty;
             string picked = SelectSingleFolder(initial);
             if (!string.IsNullOrWhiteSpace(picked))
             {
@@ -1496,7 +1500,7 @@ namespace JSQViewer.UI
                     NotifyError(Loc.Get("TooManyFolders"));
                     return;
                 }
-                string initial = Directory.Exists(current[current.Count - 1]) ? current[current.Count - 1] : string.Empty;
+                string initial = _fileSystem.DirectoryExists(current[current.Count - 1]) ? current[current.Count - 1] : string.Empty;
                 string picked = SelectSingleFolder(initial);
                 if (string.IsNullOrWhiteSpace(picked)) return;
                 if (current.Any(f => string.Equals(f, picked, StringComparison.OrdinalIgnoreCase)))
@@ -1619,7 +1623,7 @@ namespace JSQViewer.UI
                 }
                 for (int i = 0; i < folders.Count; i++)
                 {
-                    if (!Directory.Exists(folders[i]))
+                    if (!_fileSystem.DirectoryExists(folders[i]))
                     {
                         throw new DirectoryNotFoundException("Folder not found: " + folders[i]);
                     }
@@ -1684,7 +1688,7 @@ namespace JSQViewer.UI
             if (folders.Count == 0 || folders.Count > 3) return false;
             for (int i = 0; i < folders.Count; i++)
             {
-                if (!Directory.Exists(folders[i])) return false;
+                if (!_fileSystem.DirectoryExists(folders[i])) return false;
             }
             return true;
         }
@@ -2524,7 +2528,7 @@ namespace JSQViewer.UI
         {
             TestData data = _viewerSession.Data; if (data == null) return;
             string templatePath = Path.Combine(_projectRoot, "template.xlsx");
-            if (!File.Exists(templatePath)) { NotifyError(Loc.Get("TemplateNotFound")); return; }
+            if (!_fileSystem.FileExists(templatePath)) { NotifyError(Loc.Get("TemplateNotFound")); return; }
             List<string> selectedCodes = GetSelectedCodes();
             string refrig = _refrigerantBox.SelectedItem == null ? "R290" : _refrigerantBox.SelectedItem.ToString();
             bool includeExtra = _includeExtraCheck.Checked;
@@ -2550,7 +2554,7 @@ namespace JSQViewer.UI
                         _rangeStartOa,
                         _rangeEndOa);
                     ExportTemplateResult exportResult = await Task.Run(() => _exportTemplateUseCase.Execute(request));
-                    File.WriteAllBytes(savePath, exportResult.Payload);
+                    _fileSystem.WriteAllBytes(savePath, exportResult.Payload);
                     TemplateValidationResult vr = exportResult.Validation;
                     if (vr.Ok)
                     {
