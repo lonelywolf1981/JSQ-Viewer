@@ -10,6 +10,8 @@ using System.Windows.Forms.DataVisualization.Charting;
 using System.Drawing.Imaging;
 using System.Threading.Tasks;
 using JSQViewer.Application.Abstractions;
+using JSQViewer.Application.Charting;
+using JSQViewer.Application.Session;
 using JSQViewer.Application.Workspace;
 using JSQViewer.Application.Workspace.UseCases;
 using JSQViewer.Core;
@@ -103,6 +105,10 @@ namespace JSQViewer.UI
         private readonly IPresetRepository _presetRepository;
         private readonly IOrderRepository _orderRepository;
         private readonly IViewerSettingsRepository _viewerSettingsRepository;
+        private readonly IViewerSession _viewerSession;
+        private readonly DataSummaryService _dataSummaryService;
+        private readonly SeriesSliceService _seriesSliceService;
+        private readonly TimestampRangeService _timestampRangeService;
         private readonly WorkspaceFolderSpecParser _workspaceFolderSpecParser;
         private readonly LoadWorkspaceDataUseCase _loadWorkspaceDataUseCase;
         private ViewerSettingsModel _viewerSettings;
@@ -118,6 +124,10 @@ namespace JSQViewer.UI
             IPresetRepository presetRepository,
             IOrderRepository orderRepository,
             IViewerSettingsRepository viewerSettingsRepository,
+            IViewerSession viewerSession,
+            DataSummaryService dataSummaryService,
+            SeriesSliceService seriesSliceService,
+            TimestampRangeService timestampRangeService,
             WorkspaceFolderSpecParser workspaceFolderSpecParser,
             LoadWorkspaceDataUseCase loadWorkspaceDataUseCase)
         {
@@ -130,6 +140,10 @@ namespace JSQViewer.UI
             if (presetRepository == null) throw new ArgumentNullException(nameof(presetRepository));
             if (orderRepository == null) throw new ArgumentNullException(nameof(orderRepository));
             if (viewerSettingsRepository == null) throw new ArgumentNullException(nameof(viewerSettingsRepository));
+            if (viewerSession == null) throw new ArgumentNullException(nameof(viewerSession));
+            if (dataSummaryService == null) throw new ArgumentNullException(nameof(dataSummaryService));
+            if (seriesSliceService == null) throw new ArgumentNullException(nameof(seriesSliceService));
+            if (timestampRangeService == null) throw new ArgumentNullException(nameof(timestampRangeService));
             if (workspaceFolderSpecParser == null) throw new ArgumentNullException(nameof(workspaceFolderSpecParser));
             if (loadWorkspaceDataUseCase == null) throw new ArgumentNullException(nameof(loadWorkspaceDataUseCase));
 
@@ -142,6 +156,10 @@ namespace JSQViewer.UI
             _presetRepository = presetRepository;
             _orderRepository = orderRepository;
             _viewerSettingsRepository = viewerSettingsRepository;
+            _viewerSession = viewerSession;
+            _dataSummaryService = dataSummaryService;
+            _seriesSliceService = seriesSliceService;
+            _timestampRangeService = timestampRangeService;
             _workspaceFolderSpecParser = workspaceFolderSpecParser;
             _loadWorkspaceDataUseCase = loadWorkspaceDataUseCase;
             _viewerSettings = _viewerSettingsRepository.Load();
@@ -406,7 +424,7 @@ namespace JSQViewer.UI
             _resetRangeButton.Text = Loc.Get("ResetRange");
             if (_chartHostForm != null && !_chartHostForm.IsDisposed)
             {
-                _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), AppState.Folder ?? Loc.Get("AppTitle"));
+                _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), _viewerSession.Folder ?? Loc.Get("AppTitle"));
             }
             foreach (var kv in _sourceWindows)
             {
@@ -627,7 +645,7 @@ namespace JSQViewer.UI
             _lastSelectedCodes.Clear();
             _allChannels.Clear();
             _pendingCheckedCodes.Clear();
-            AppState.SetData(string.Empty, null);
+            _viewerSession.SetData(string.Empty, null);
             _chart.Series.Clear();
             _summaryLabel.Text = Loc.Get("NoTestLoaded");
             _selectionInfoLabel.Text = Loc.Get("Selected");
@@ -1016,7 +1034,7 @@ namespace JSQViewer.UI
             bool overlayMode = IsOverlayCompareModeActive();
 
             var form = new Form();
-            form.Text = string.Format(Loc.Get("ChartWindowTitle"), AppState.Folder ?? Loc.Get("AppTitle"));
+            form.Text = string.Format(Loc.Get("ChartWindowTitle"), _viewerSession.Folder ?? Loc.Get("AppTitle"));
             form.Width = 1200;
             form.Height = 700;
             form.StartPosition = FormStartPosition.CenterScreen;
@@ -1462,7 +1480,7 @@ namespace JSQViewer.UI
                 spec = result.NormalizedFolderSpec;
                 TestData data = result.Data;
                 _folderBox.Text = spec;
-                AppState.SetData(spec, data);
+                _viewerSession.SetData(spec, data);
                 BindLoadedData(data, preserveSourceWindowsLayout);
                 if (preferredOverlayMode.HasValue)
                 {
@@ -1567,11 +1585,11 @@ namespace JSQViewer.UI
             {
                 RebuildSourceChannelWindows(data);
             }
-            DataSummary summary = AppState.BuildSummary(data);
+            DataSummary summary = _dataSummaryService.BuildSummary(data);
             _summaryLabel.Text = string.Format(Loc.Get("Points"), summary.Points, summary.Start, summary.End);
             if (_chartHostForm != null && !_chartHostForm.IsDisposed)
             {
-                _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), AppState.Folder ?? Loc.Get("AppTitle"));
+                _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), _viewerSession.Folder ?? Loc.Get("AppTitle"));
             }
             _exportTemplateButton.Enabled = _savePresetButton.Enabled = true;
             _showChartButton.Enabled = true;
@@ -1914,7 +1932,7 @@ namespace JSQViewer.UI
 
         private void CompareOverlayCheckOnCheckedChanged(object sender, EventArgs e)
         {
-            TestData data = AppState.Data;
+            TestData data = _viewerSession.Data;
             if (data == null)
             {
                 return;
@@ -2120,7 +2138,7 @@ namespace JSQViewer.UI
         private void RedrawChart()
         {
             _chart.Series.Clear();
-            TestData data = AppState.Data;
+            TestData data = _viewerSession.Data;
             if (data == null || data.RowCount == 0)
             {
                 HideChartHost();
@@ -2157,7 +2175,7 @@ namespace JSQViewer.UI
                     step));
                 step = 1;
             }
-            SeriesSlice slice = SeriesCache.GetOrBuild(AppState.DataVersion, data, selectedCodes, data.TimestampsMs[0], data.TimestampsMs[data.TimestampsMs.Length - 1], step);
+            SeriesSlice slice = _seriesSliceService.GetOrBuild(_viewerSession.DataVersion, data, selectedCodes, data.TimestampsMs[0], data.TimestampsMs[data.TimestampsMs.Length - 1], step);
 
             // Pre-convert timestamps to OADate once for all channels in normal mode
             long[] ts = slice.Timestamps;
@@ -2166,7 +2184,7 @@ namespace JSQViewer.UI
             {
                 oaDates = new double[ts.Length];
                 for (int i = 0; i < ts.Length; i++)
-                    oaDates[i] = AppState.UnixMsToLocalDateTime(ts[i]).ToOADate();
+                    oaDates[i] = _timestampRangeService.UnixMsToLocalDateTime(ts[i]).ToOADate();
             }
 
             // Hide legend when too many series (major perf killer)
@@ -2330,7 +2348,7 @@ namespace JSQViewer.UI
 
         private bool IsOverlayCompareModeActive()
         {
-            return _compareOverlayCheck.Checked && IsOverlayCompareModeAvailable(AppState.Data);
+            return _compareOverlayCheck.Checked && IsOverlayCompareModeAvailable(_viewerSession.Data);
         }
 
         private static long ResolveOverlayMaxDurationMs(TestData data, List<string> selectedCodes)
@@ -2512,7 +2530,7 @@ namespace JSQViewer.UI
 
         private async void ExportTemplateButtonOnClick(object sender, EventArgs e)
         {
-            TestData data = AppState.Data; if (data == null) return;
+            TestData data = _viewerSession.Data; if (data == null) return;
             string templatePath = Path.Combine(_projectRoot, "template.xlsx");
             if (!File.Exists(templatePath)) { NotifyError(Loc.Get("TemplateNotFound")); return; }
             List<string> selectedCodes = GetSelectedCodes();
@@ -2540,7 +2558,7 @@ namespace JSQViewer.UI
                 try
                 {
                     SetBusy(true, Loc.Get("ExportingTemplate"));
-                    string loadedFolder = AppState.Folder;
+                    string loadedFolder = _viewerSession.Folder;
                     byte[] payload = await Task.Run(() => TemplateExporter.Export(templatePath, loadedFolder, data, selectedCodes, includeExtra, refrig, settings, rangeStartMs, rangeEndMs));
                     File.WriteAllBytes(savePath, payload);
                     TemplateValidationResult vr = TemplateExportValidator.Validate(payload);
@@ -2582,7 +2600,7 @@ namespace JSQViewer.UI
 
         private void ShowChartButtonOnClick(object sender, EventArgs e)
         {
-            if (AppState.Data == null || !AppState.IsLoaded)
+            if (_viewerSession.Data == null || !_viewerSession.IsLoaded)
             {
                 NotifyError(Loc.Get("NoTestLoaded"));
                 return;
@@ -3143,7 +3161,7 @@ namespace JSQViewer.UI
             int selected = _checkedCodes.Count;
             int total = _allChannels.Count;
             string stepInfo = string.Empty;
-            TestData data = AppState.Data;
+            TestData data = _viewerSession.Data;
             if (data != null && data.TimestampsMs != null && data.TimestampsMs.Length > 0)
             {
                 int step = ResolveStep(data.TimestampsMs.Length);
@@ -3196,10 +3214,10 @@ namespace JSQViewer.UI
             _addDataButton.Enabled = !busy;
             _refreshButton.Enabled = !busy;
             _closeAllButton.Enabled = !busy;
-            _exportTemplateButton.Enabled = !busy && AppState.IsLoaded;
-            _showChartButton.Enabled = !busy && AppState.IsLoaded;
-            _savePresetButton.Enabled = !busy && AppState.IsLoaded;
-            _saveOrderButton.Enabled = !busy && AppState.IsLoaded;
+            _exportTemplateButton.Enabled = !busy && _viewerSession.IsLoaded;
+            _showChartButton.Enabled = !busy && _viewerSession.IsLoaded;
+            _savePresetButton.Enabled = !busy && _viewerSession.IsLoaded;
+            _saveOrderButton.Enabled = !busy && _viewerSession.IsLoaded;
             _settingsButton.Enabled = !busy;
 
             Update();

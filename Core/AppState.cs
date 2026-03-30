@@ -1,178 +1,104 @@
 using System;
-using System.Threading;
+using JSQViewer.Application.Charting;
+using JSQViewer.Application.Session;
 
 namespace JSQViewer.Core
 {
     public static class AppState
     {
-        private static readonly object Sync = new object();
-        private static int _dataVersion;
-        private static bool _loaded;
-        private static string _folder = string.Empty;
-        private static TestData _data;
+        private static IViewerSession _viewerSession;
+        private static TimestampRangeService _timestampRangeService;
+        private static DataSummaryService _dataSummaryService;
+
+        public static void Configure(IViewerSession viewerSession, TimestampRangeService timestampRangeService, DataSummaryService dataSummaryService)
+        {
+            _viewerSession = viewerSession ?? throw new ArgumentNullException(nameof(viewerSession));
+            _timestampRangeService = timestampRangeService ?? throw new ArgumentNullException(nameof(timestampRangeService));
+            _dataSummaryService = dataSummaryService ?? throw new ArgumentNullException(nameof(dataSummaryService));
+        }
 
         public static int DataVersion
         {
-            get { return Volatile.Read(ref _dataVersion); }
+            get { return ViewerSession.DataVersion; }
         }
 
         public static bool IsLoaded
         {
-            get
-            {
-                lock (Sync)
-                {
-                    return _loaded;
-                }
-            }
+            get { return ViewerSession.IsLoaded; }
         }
 
         public static string Folder
         {
-            get
-            {
-                lock (Sync)
-                {
-                    return _folder;
-                }
-            }
+            get { return ViewerSession.Folder; }
         }
 
         public static TestData Data
         {
-            get
-            {
-                lock (Sync)
-                {
-                    return _data;
-                }
-            }
+            get { return ViewerSession.Data; }
         }
 
         public static void SetData(string folder, TestData data)
         {
-            lock (Sync)
-            {
-                _folder = folder ?? string.Empty;
-                _data = data;
-                _loaded = data != null;
-                _dataVersion++;
-            }
-
-            SeriesCache.Clear();
+            ViewerSession.SetData(folder, data);
         }
 
         public static DataSummary BuildSummary(TestData data)
         {
-            if (data == null || data.TimestampsMs == null || data.TimestampsMs.Length == 0)
-            {
-                return new DataSummary { Points = 0 };
-            }
-
-            long t0 = data.TimestampsMs[0];
-            long t1 = data.TimestampsMs[data.TimestampsMs.Length - 1];
-            return new DataSummary
-            {
-                Points = data.TimestampsMs.Length,
-                StartMs = t0,
-                EndMs = t1,
-                Start = UnixMsToLocalDateTime(t0),
-                End = UnixMsToLocalDateTime(t1)
-            };
+            return DataSummaryService.BuildSummary(data);
         }
 
         public static int NearestIndex(long[] timestamps, long targetMs)
         {
-            if (timestamps == null || timestamps.Length == 0)
-            {
-                return -1;
-            }
-
-            int idx = Array.BinarySearch(timestamps, targetMs);
-            if (idx >= 0)
-            {
-                return idx;
-            }
-
-            idx = ~idx;
-            if (idx <= 0)
-            {
-                return 0;
-            }
-
-            if (idx >= timestamps.Length)
-            {
-                return timestamps.Length - 1;
-            }
-
-            long left = timestamps[idx - 1];
-            long right = timestamps[idx];
-            return Math.Abs(targetMs - left) <= Math.Abs(right - targetMs) ? idx - 1 : idx;
+            return TimestampRangeService.NearestIndex(timestamps, targetMs);
         }
 
         public static Tuple<int, int> SliceByTime(long[] timestamps, long startMs, long endMs)
         {
-            if (timestamps == null || timestamps.Length == 0)
-            {
-                return Tuple.Create(0, 0);
-            }
-
-            if (startMs > endMs)
-            {
-                long tmp = startMs;
-                startMs = endMs;
-                endMs = tmp;
-            }
-
-            int i0 = LowerBound(timestamps, startMs);
-            int i1 = UpperBound(timestamps, endMs);
-            return Tuple.Create(i0, i1);
+            return TimestampRangeService.SliceByTime(timestamps, startMs, endMs);
         }
 
         public static DateTime UnixMsToLocalDateTime(long unixMs)
         {
-            DateTime epochUtc = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-            return epochUtc.AddMilliseconds(unixMs).ToLocalTime();
+            return TimestampRangeService.UnixMsToLocalDateTime(unixMs);
         }
 
-        private static int LowerBound(long[] arr, long value)
+        private static IViewerSession ViewerSession
         {
-            int l = 0;
-            int r = arr.Length;
-            while (l < r)
+            get
             {
-                int m = l + ((r - l) / 2);
-                if (arr[m] < value)
+                if (_viewerSession == null)
                 {
-                    l = m + 1;
+                    throw new InvalidOperationException("AppState compatibility facade is not configured.");
                 }
-                else
-                {
-                    r = m;
-                }
-            }
 
-            return l;
+                return _viewerSession;
+            }
         }
 
-        private static int UpperBound(long[] arr, long value)
+        private static TimestampRangeService TimestampRangeService
         {
-            int l = 0;
-            int r = arr.Length;
-            while (l < r)
+            get
             {
-                int m = l + ((r - l) / 2);
-                if (arr[m] <= value)
+                if (_timestampRangeService == null)
                 {
-                    l = m + 1;
+                    throw new InvalidOperationException("AppState compatibility facade is not configured.");
                 }
-                else
-                {
-                    r = m;
-                }
-            }
 
-            return l;
+                return _timestampRangeService;
+            }
+        }
+
+        private static DataSummaryService DataSummaryService
+        {
+            get
+            {
+                if (_dataSummaryService == null)
+                {
+                    throw new InvalidOperationException("AppState compatibility facade is not configured.");
+                }
+
+                return _dataSummaryService;
+            }
         }
     }
 }

@@ -2,8 +2,12 @@ using System;
 using System.Threading;
 using System.Windows.Forms;
 using JSQViewer.Application.Abstractions;
+using JSQViewer.Application.Charting;
+using JSQViewer.Application.Session;
 using JSQViewer.Application.Workspace;
+using JSQViewer.Core;
 using JSQViewer.Infrastructure.Composition;
+using JSQViewer.Infrastructure.Cache;
 using JSQViewer.Infrastructure.Persistence;
 using JSQViewer.Infrastructure.Platform;
 using JSQViewer.Presentation.WinForms.Composition;
@@ -34,6 +38,13 @@ namespace JSQViewer
             IPresetRepository presetRepository = new FilePresetRepository(appPaths);
             IOrderRepository orderRepository = new FileOrderRepository(appPaths);
             IViewerSettingsRepository viewerSettingsRepository = new FileViewerSettingsRepository(appPaths);
+            ISeriesSliceCache seriesSliceCache = new MemorySeriesSliceCache();
+            var timestampRangeService = new TimestampRangeService();
+            var dataSummaryService = new DataSummaryService(timestampRangeService);
+            var seriesSliceService = new SeriesSliceService(seriesSliceCache, timestampRangeService);
+            IViewerSession viewerSession = new ViewerSession(seriesSliceCache);
+            AppState.Configure(viewerSession, timestampRangeService, dataSummaryService);
+            SeriesCache.Configure(seriesSliceService);
             WorkspaceFolderSpecParser workspaceFolderSpecParser = WorkspaceLoadingComposition.CreateFolderSpecParser();
             var loadWorkspaceDataUseCase = WorkspaceLoadingComposition.CreateLoadWorkspaceDataUseCase(workspaceFolderSpecParser);
             Loc.Initialize(localizationService);
@@ -54,6 +65,10 @@ namespace JSQViewer
                 presetRepository,
                 orderRepository,
                 viewerSettingsRepository,
+                viewerSession,
+                dataSummaryService,
+                seriesSliceService,
+                timestampRangeService,
                 workspaceFolderSpecParser,
                 loadWorkspaceDataUseCase));
         }
