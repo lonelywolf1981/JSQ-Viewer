@@ -8,10 +8,19 @@ using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using System.Windows.Forms.DataVisualization.Charting;
 using System.Drawing.Imaging;
-using System.Diagnostics;
 using System.Threading.Tasks;
+using JSQViewer.Application.Abstractions;
+using JSQViewer.Application.Charting;
+using JSQViewer.Application.Charting.UseCases;
+using JSQViewer.Application.Exporting;
+using JSQViewer.Application.Session;
+using JSQViewer.Application.Workspace;
+using JSQViewer.Application.Workspace.UseCases;
+using JSQViewer.Presentation.WinForms.Presenters;
+using JSQViewer.Presentation.WinForms.Charting;
 using JSQViewer.Core;
-using JSQViewer.Export;
+using JSQViewer.Presentation.WinForms.Composition;
+using JSQViewer.Presentation.WinForms.ViewModels;
 using JSQViewer.Settings;
 
 namespace JSQViewer.UI
@@ -80,6 +89,7 @@ namespace JSQViewer.UI
         private int _dragIndex = -1;
         private Point _dragStartPoint = Point.Empty;
         private bool _dragInitiated;
+        private readonly ChannelWorkspacePresenter _channelWorkspacePresenter;
         private readonly List<ChannelItem> _allChannels = new List<ChannelItem>();
         private readonly HashSet<string> _checkedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> _lastSelectedCodes = new List<string>();
@@ -89,24 +99,101 @@ namespace JSQViewer.UI
         private readonly Dictionary<string, SourceWindowState> _sourceWindows = new Dictionary<string, SourceWindowState>(StringComparer.OrdinalIgnoreCase);
         private Form _chartHostForm;
         private bool _syncingSourceChannelSelection;
+        private bool _syncingChannelWorkspaceOptions;
         private bool _closingSourceChannelWindows;
         private int _fixedControlPanelHeight = 430;
         private readonly string _projectRoot;
-        private readonly string _orderFilePath;
-        private readonly string _recentFoldersFilePath;
-        private readonly string _viewerSettingsFilePath;
-        private readonly string _uiStateFilePath;
+        private readonly IFileSystem _fileSystem;
+        private readonly ILogger _logger;
+        private readonly IMainFormNotificationService _notificationService;
+        private readonly IExternalProcessLauncher _externalProcessLauncher;
+        private readonly IRecentFoldersRepository _recentFoldersRepository;
+        private readonly IUiStateRepository _uiStateRepository;
+        private readonly IPresetRepository _presetRepository;
+        private readonly IOrderRepository _orderRepository;
+        private readonly IViewerSettingsRepository _viewerSettingsRepository;
+        private readonly IViewerSession _viewerSession;
+        private readonly TimestampRangeService _timestampRangeService;
+        private readonly BuildChartViewUseCase _buildChartViewUseCase;
+        private readonly BuildWorkspaceSummaryUseCase _buildWorkspaceSummaryUseCase;
+        private readonly ChartViewModelFactory _chartViewModelFactory;
+        private readonly ChartRenderer _chartRenderer;
+        private readonly ExportTemplateUseCase _exportTemplateUseCase;
+        private readonly ExportSettingsPresenter _exportSettingsPresenter;
+        private readonly ViewerSettingsSanitizer _viewerSettingsSanitizer;
+        private readonly WorkspaceFolderSpecParser _workspaceFolderSpecParser;
+        private readonly LoadWorkspaceDataUseCase _loadWorkspaceDataUseCase;
         private ViewerSettingsModel _viewerSettings;
         private static readonly Regex NaturalSplitRegex = new Regex("(\\d+)", RegexOptions.Compiled);
 
-        public MainForm()
+        public MainForm(
+            IAppPaths appPaths,
+            IFileSystem fileSystem,
+            ILogger logger,
+            IMainFormNotificationService notificationService,
+            IExternalProcessLauncher externalProcessLauncher,
+            IRecentFoldersRepository recentFoldersRepository,
+            IUiStateRepository uiStateRepository,
+            IPresetRepository presetRepository,
+            IOrderRepository orderRepository,
+            IViewerSettingsRepository viewerSettingsRepository,
+            IViewerSession viewerSession,
+            TimestampRangeService timestampRangeService,
+            BuildChartViewUseCase buildChartViewUseCase,
+            BuildWorkspaceSummaryUseCase buildWorkspaceSummaryUseCase,
+            ChartViewModelFactory chartViewModelFactory,
+            ChartRenderer chartRenderer,
+            ExportTemplateUseCase exportTemplateUseCase,
+            ExportSettingsPresenter exportSettingsPresenter,
+            ViewerSettingsSanitizer viewerSettingsSanitizer,
+            WorkspaceFolderSpecParser workspaceFolderSpecParser,
+            LoadWorkspaceDataUseCase loadWorkspaceDataUseCase)
         {
-            _projectRoot = ResolveProjectRoot();
-            _orderFilePath = Path.Combine(_projectRoot, "channel_order.json");
-            _recentFoldersFilePath = Path.Combine(_projectRoot, "recent_folders.json");
-            _viewerSettingsFilePath = Path.Combine(_projectRoot, "viewer_settings.json");
-            _uiStateFilePath = Path.Combine(_projectRoot, "ui_state.json");
-            _viewerSettings = ViewerSettingsStore.Load(_viewerSettingsFilePath);
+            if (appPaths == null) throw new ArgumentNullException(nameof(appPaths));
+            if (fileSystem == null) throw new ArgumentNullException(nameof(fileSystem));
+            if (logger == null) throw new ArgumentNullException(nameof(logger));
+            if (notificationService == null) throw new ArgumentNullException(nameof(notificationService));
+            if (externalProcessLauncher == null) throw new ArgumentNullException(nameof(externalProcessLauncher));
+            if (recentFoldersRepository == null) throw new ArgumentNullException(nameof(recentFoldersRepository));
+            if (uiStateRepository == null) throw new ArgumentNullException(nameof(uiStateRepository));
+            if (presetRepository == null) throw new ArgumentNullException(nameof(presetRepository));
+            if (orderRepository == null) throw new ArgumentNullException(nameof(orderRepository));
+            if (viewerSettingsRepository == null) throw new ArgumentNullException(nameof(viewerSettingsRepository));
+            if (viewerSession == null) throw new ArgumentNullException(nameof(viewerSession));
+            if (timestampRangeService == null) throw new ArgumentNullException(nameof(timestampRangeService));
+            if (buildChartViewUseCase == null) throw new ArgumentNullException(nameof(buildChartViewUseCase));
+            if (buildWorkspaceSummaryUseCase == null) throw new ArgumentNullException(nameof(buildWorkspaceSummaryUseCase));
+            if (chartViewModelFactory == null) throw new ArgumentNullException(nameof(chartViewModelFactory));
+            if (chartRenderer == null) throw new ArgumentNullException(nameof(chartRenderer));
+            if (exportTemplateUseCase == null) throw new ArgumentNullException(nameof(exportTemplateUseCase));
+            if (exportSettingsPresenter == null) throw new ArgumentNullException(nameof(exportSettingsPresenter));
+            if (viewerSettingsSanitizer == null) throw new ArgumentNullException(nameof(viewerSettingsSanitizer));
+            if (workspaceFolderSpecParser == null) throw new ArgumentNullException(nameof(workspaceFolderSpecParser));
+            if (loadWorkspaceDataUseCase == null) throw new ArgumentNullException(nameof(loadWorkspaceDataUseCase));
+
+            _projectRoot = appPaths.ProjectRoot;
+            _fileSystem = fileSystem;
+            _logger = logger;
+            _notificationService = notificationService;
+            _externalProcessLauncher = externalProcessLauncher;
+            _recentFoldersRepository = recentFoldersRepository;
+            _uiStateRepository = uiStateRepository;
+            _presetRepository = presetRepository;
+            _orderRepository = orderRepository;
+            _viewerSettingsRepository = viewerSettingsRepository;
+            _viewerSession = viewerSession;
+            _timestampRangeService = timestampRangeService;
+            _buildChartViewUseCase = buildChartViewUseCase;
+            _buildWorkspaceSummaryUseCase = buildWorkspaceSummaryUseCase;
+            _chartViewModelFactory = chartViewModelFactory;
+            _chartRenderer = chartRenderer;
+            _exportTemplateUseCase = exportTemplateUseCase;
+            _exportSettingsPresenter = exportSettingsPresenter;
+            _viewerSettingsSanitizer = viewerSettingsSanitizer;
+            _workspaceFolderSpecParser = workspaceFolderSpecParser;
+            _loadWorkspaceDataUseCase = loadWorkspaceDataUseCase;
+            _viewerSettings = _viewerSettingsRepository.Load();
+            _channelWorkspacePresenter = new ChannelWorkspacePresenter();
 
             Font = new Font("Microsoft Sans Serif", 10f);
             Text = Loc.Get("AppTitle");
@@ -260,6 +347,7 @@ namespace JSQViewer.UI
             _rangeTrackBar = new RangeTrackBar();
             _rangeTrackBar.Dock = DockStyle.Bottom;
             _rangeTrackBar.Height = 48;
+            _rangeTrackBar.ValueLabelFormatter = CreateRangeTrackBarLabelFormatter(false);
             _rangeTrackBar.RangeChanged += RangeTrackBarOnRangeChanged;
             _splitMain.Panel2.Controls.Add(_chart);
             _splitMain.Panel2.Controls.Add(_rangeTrackBar);
@@ -316,6 +404,7 @@ namespace JSQViewer.UI
             KeyDown += MainFormOnKeyDown;
             Loc.LanguageChanged += ApplyLocalization;
             LoadUiState();
+            SyncPresenterFromMainControls();
             StepControlsOnChanged(this, EventArgs.Empty);
             ConfigureMainAsControlPanel();
             EnsureChartHostForm();
@@ -323,9 +412,143 @@ namespace JSQViewer.UI
             Resize += MainFormOnResizeFixHeight;
         }
 
+        private void SyncPresenterFromMainControls()
+        {
+            _channelWorkspacePresenter.Initialize(_channelFilterBox.Text, GetSelectedSortKey(), _selectedOnlyCheck.Checked);
+            _channelWorkspacePresenter.ApplyCheckedCodes(_checkedCodes);
+        }
+
+        private void SyncMainChannelMirrorsFromPresenter(TestData data)
+        {
+            _checkedCodes.Clear();
+            foreach (string code in _channelWorkspacePresenter.GetSelectedCodes())
+            {
+                _checkedCodes.Add(code);
+            }
+
+            _allChannels.Clear();
+            IReadOnlyList<string> orderedCodes = _channelWorkspacePresenter.GetCurrentOrder();
+            for (int i = 0; i < orderedCodes.Count; i++)
+            {
+                string code = orderedCodes[i];
+                ChannelInfo channel;
+                string label = data != null && data.Channels.TryGetValue(code, out channel) ? channel.Label : code;
+                string unit = data != null && data.Channels.TryGetValue(code, out channel) ? (channel.Unit ?? string.Empty) : string.Empty;
+                _allChannels.Add(new ChannelItem(code, label, unit));
+            }
+        }
+
+        private void ApplySourceWindowViewModelToControls(SourceWindowState state)
+        {
+            if (state == null || state.ViewModel == null)
+            {
+                return;
+            }
+
+            _syncingChannelWorkspaceOptions = true;
+            try
+            {
+                if (state.Form != null && !state.Form.IsDisposed)
+                {
+                    state.Form.Text = string.Format(Loc.Get("ChannelsForSource"), state.ViewModel.Title);
+                }
+
+                if (state.FilterBox != null)
+                {
+                    state.FilterBox.Text = state.ViewModel.FilterText;
+                }
+
+                if (state.SortModeBox != null)
+                {
+                    SelectSortModeByKey(state.SortModeBox, state.ViewModel.SortMode);
+                }
+
+                if (state.SelectedOnlyCheck != null)
+                {
+                    state.SelectedOnlyCheck.Checked = state.ViewModel.SelectedOnly;
+                }
+
+                state.Items = state.ViewModel.Items
+                    .Select(item => new ChannelItem(item.Code, item.Label, item.Unit))
+                    .ToList();
+            }
+            finally
+            {
+                _syncingChannelWorkspaceOptions = false;
+            }
+        }
+
+        private void RefreshSourceWindowLists()
+        {
+            foreach (var kv in _sourceWindows)
+            {
+                SourceWindowState state = kv.Value;
+                state.ViewModel = _channelWorkspacePresenter.GetSourceWindow(state.SourceRoot);
+                ApplySourceWindowViewModelToControls(state);
+                RebuildSourceWindowList(state);
+            }
+        }
+
+        private void ApplyPresenterOptionsToControls()
+        {
+            _syncingChannelWorkspaceOptions = true;
+            try
+            {
+                _channelFilterBox.Text = _channelWorkspacePresenter.FilterText;
+                SelectSortModeByKey(_sortModeBox, _channelWorkspacePresenter.MainSortMode);
+                _selectedOnlyCheck.Checked = _channelWorkspacePresenter.SelectedOnly;
+            }
+            finally
+            {
+                _syncingChannelWorkspaceOptions = false;
+            }
+        }
+
+        private void RefreshChannelViews()
+        {
+            ChannelListViewModel mainList = _channelWorkspacePresenter.GetMainChannelList();
+            ApplyPresenterOptionsToControls();
+
+            _checkedCodes.Clear();
+            foreach (string code in _channelWorkspacePresenter.GetSelectedCodes())
+            {
+                _checkedCodes.Add(code);
+            }
+
+            _allChannels.Clear();
+            IReadOnlyList<string> currentOrder = _channelWorkspacePresenter.GetCurrentOrder();
+            for (int i = 0; i < currentOrder.Count; i++)
+            {
+                string code = currentOrder[i];
+                string label = code;
+                string unit = string.Empty;
+                for (int j = 0; j < mainList.Items.Count; j++)
+                {
+                    ChannelListItemViewModel item = mainList.Items[j];
+                    if (string.Equals(item.Code, code, StringComparison.OrdinalIgnoreCase))
+                    {
+                        label = item.Label;
+                        unit = item.Unit ?? string.Empty;
+                        break;
+                    }
+                }
+
+                _allChannels.Add(new ChannelItem(code, label, unit));
+            }
+
+            _channelsList.Items.Clear();
+            for (int i = 0; i < mainList.Items.Count; i++)
+            {
+                ChannelListItemViewModel item = mainList.Items[i];
+                _channelsList.Items.Add(item, item.IsSelected);
+            }
+
+            RefreshSourceWindowLists();
+        }
+
         private void LangButtonOnClick(object sender, EventArgs e)
         {
-            Loc.Current = Loc.Current == Lang.Ru ? Lang.En : Lang.Ru;
+            Loc.Current = Loc.Current == AppLanguage.Ru ? AppLanguage.En : AppLanguage.Ru;
         }
 
         private void ApplyLocalization()
@@ -368,7 +591,7 @@ namespace JSQViewer.UI
             _resetRangeButton.Text = Loc.Get("ResetRange");
             if (_chartHostForm != null && !_chartHostForm.IsDisposed)
             {
-                _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), AppState.Folder ?? Loc.Get("AppTitle"));
+                _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), _viewerSession.Folder ?? Loc.Get("AppTitle"));
             }
             foreach (var kv in _sourceWindows)
             {
@@ -585,11 +808,12 @@ namespace JSQViewer.UI
         private void CloseAllButtonOnClick(object sender, EventArgs e)
         {
             _folderBox.Text = string.Empty;
+            _channelWorkspacePresenter.ApplyCheckedCodes(null);
             _checkedCodes.Clear();
             _lastSelectedCodes.Clear();
             _allChannels.Clear();
             _pendingCheckedCodes.Clear();
-            AppState.SetData(string.Empty, null);
+            _viewerSession.SetData(string.Empty, null);
             _chart.Series.Clear();
             _summaryLabel.Text = Loc.Get("NoTestLoaded");
             _selectionInfoLabel.Text = Loc.Get("Selected");
@@ -950,7 +1174,7 @@ namespace JSQViewer.UI
                     _chart.SaveImage(dialog.FileName, format);
                     NotifySuccess(Loc.Get("ChartImageSaved"));
                 }
-                catch (Exception ex) { AppLogger.LogError(_projectRoot, "Save chart image failed.", ex); NotifyError(ex.Message); }
+                catch (Exception ex) { _logger.LogError("Save chart image failed.", ex); NotifyError(ex.Message); }
             }
         }
 
@@ -969,7 +1193,7 @@ namespace JSQViewer.UI
                 }
                 NotifySuccess(Loc.Get("ChartImageCopied"));
             }
-            catch (Exception ex) { AppLogger.LogError(_projectRoot, "Copy chart image failed.", ex); NotifyError(ex.Message); }
+            catch (Exception ex) { _logger.LogError("Copy chart image failed.", ex); NotifyError(ex.Message); }
         }
 
         private void DetachChartMenuItemOnClick(object sender, EventArgs e)
@@ -978,7 +1202,7 @@ namespace JSQViewer.UI
             bool overlayMode = IsOverlayCompareModeActive();
 
             var form = new Form();
-            form.Text = string.Format(Loc.Get("ChartWindowTitle"), AppState.Folder ?? Loc.Get("AppTitle"));
+            form.Text = string.Format(Loc.Get("ChartWindowTitle"), _viewerSession.Folder ?? Loc.Get("AppTitle"));
             form.Width = 1200;
             form.Height = 700;
             form.StartPosition = FormStartPosition.CenterScreen;
@@ -1023,6 +1247,7 @@ namespace JSQViewer.UI
             detachedRangeBar.Maximum = _rangeTrackBar.Maximum;
             detachedRangeBar.LowerValue = _rangeTrackBar.LowerValue;
             detachedRangeBar.UpperValue = _rangeTrackBar.UpperValue;
+            detachedRangeBar.ValueLabelFormatter = CreateRangeTrackBarLabelFormatter(overlayMode);
 
             // Use shared handler for sync; also update detached chart axis
             detachedRangeBar.RangeChanged += RangeTrackBarOnRangeChanged;
@@ -1250,7 +1475,7 @@ namespace JSQViewer.UI
         private void BrowseButtonOnClick(object sender, EventArgs e)
         {
             List<string> current = ParseFolderSpec(_folderBox.Text);
-            string initial = current.Count > 0 && Directory.Exists(current[0]) ? current[0] : string.Empty;
+            string initial = current.Count > 0 && _fileSystem.DirectoryExists(current[0]) ? current[0] : string.Empty;
             string picked = SelectSingleFolder(initial);
             if (!string.IsNullOrWhiteSpace(picked))
             {
@@ -1275,7 +1500,7 @@ namespace JSQViewer.UI
                     NotifyError(Loc.Get("TooManyFolders"));
                     return;
                 }
-                string initial = Directory.Exists(current[current.Count - 1]) ? current[current.Count - 1] : string.Empty;
+                string initial = _fileSystem.DirectoryExists(current[current.Count - 1]) ? current[current.Count - 1] : string.Empty;
                 string picked = SelectSingleFolder(initial);
                 if (string.IsNullOrWhiteSpace(picked)) return;
                 if (current.Any(f => string.Equals(f, picked, StringComparison.OrdinalIgnoreCase)))
@@ -1290,7 +1515,7 @@ namespace JSQViewer.UI
             }
             catch (Exception ex)
             {
-                AppLogger.LogError(_projectRoot, "Add data folder failed.", ex);
+                _logger.LogError("Add data folder failed.", ex);
                 NotifyError(Loc.Get("LoadFailed"));
             }
         }
@@ -1338,7 +1563,7 @@ namespace JSQViewer.UI
             }
             catch (Exception ex)
             {
-                AppLogger.LogError(_projectRoot, "Auto-load recent folder failed.", ex);
+                _logger.LogError("Auto-load recent folder failed.", ex);
             }
         }
 
@@ -1398,7 +1623,7 @@ namespace JSQViewer.UI
                 }
                 for (int i = 0; i < folders.Count; i++)
                 {
-                    if (!Directory.Exists(folders[i]))
+                    if (!_fileSystem.DirectoryExists(folders[i]))
                     {
                         throw new DirectoryNotFoundException("Folder not found: " + folders[i]);
                     }
@@ -1417,17 +1642,14 @@ namespace JSQViewer.UI
                 }
                 SetBusy(true, Loc.Get("LoadingData"));
                 Cursor = Cursors.WaitCursor;
-                TestData data;
-                if (folders.Count == 1)
+                WorkspaceLoadResult result = await Task.Run(() =>
                 {
-                    data = await Task.Run(() => TestLoader.LoadTest(folders[0]));
-                }
-                else
-                {
-                    List<TestData> loaded = await Task.Run(() => TestLoader.LoadTests(folders));
-                    data = TestLoader.MergeLoadedTests(loaded, true);
-                }
-                AppState.SetData(spec, data);
+                    return _loadWorkspaceDataUseCase.Execute(new WorkspaceLoadRequest(spec, true));
+                });
+                spec = result.NormalizedFolderSpec;
+                TestData data = result.Data;
+                _folderBox.Text = spec;
+                _viewerSession.SetData(spec, data);
                 BindLoadedData(data, preserveSourceWindowsLayout);
                 if (preferredOverlayMode.HasValue)
                 {
@@ -1446,39 +1668,27 @@ namespace JSQViewer.UI
                 }
                 NotifySuccess(string.Format(Loc.Get("LoadedTest"), data.RowCount));
             }
-            catch (Exception ex) { AppLogger.LogError(_projectRoot, "Load test failed.", ex); MessageBox.Show(this, ex.Message, Loc.Get("LoadFailed"), MessageBoxButtons.OK, MessageBoxIcon.Error); NotifyError(Loc.Get("LoadFailed")); }
+            catch (Exception ex) { _logger.LogError("Load test failed.", ex); _notificationService.ShowError(this, Loc.Get("LoadFailed"), ex.Message); NotifyError(Loc.Get("LoadFailed")); }
             finally { Cursor = Cursors.Default; SetBusy(false, null); }
         }
 
-        private static List<string> ParseFolderSpec(string spec)
+        private List<string> ParseFolderSpec(string spec)
         {
-            var list = new List<string>();
-            string raw = spec ?? string.Empty;
-            string[] parts = raw.Split(new[] { ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-            for (int i = 0; i < parts.Length; i++)
-            {
-                string p = parts[i].Trim().Trim('"');
-                if (p.Length == 0) continue;
-                if (!list.Any(x => string.Equals(x, p, StringComparison.OrdinalIgnoreCase)))
-                {
-                    list.Add(p);
-                }
-            }
-            return list;
+            return _workspaceFolderSpecParser.Parse(spec).ToList();
         }
 
-        private static string JoinFolderSpec(List<string> folders)
+        private string JoinFolderSpec(List<string> folders)
         {
-            return string.Join(" ; ", folders ?? new List<string>());
+            return _workspaceFolderSpecParser.Join(folders);
         }
 
-        private static bool IsValidFolderSpec(string spec)
+        private bool IsValidFolderSpec(string spec)
         {
             List<string> folders = ParseFolderSpec(spec);
             if (folders.Count == 0 || folders.Count > 3) return false;
             for (int i = 0; i < folders.Count; i++)
             {
-                if (!Directory.Exists(folders[i])) return false;
+                if (!_fileSystem.DirectoryExists(folders[i])) return false;
             }
             return true;
         }
@@ -1505,25 +1715,16 @@ namespace JSQViewer.UI
 
         private void BindLoadedData(TestData data, bool preserveSourceWindowsLayout)
         {
-            _allChannels.Clear();
-            _checkedCodes.Clear();
-            if (_pendingCheckedCodes.Count > 0)
-            {
-                foreach (string code in _pendingCheckedCodes)
-                {
-                    _checkedCodes.Add(code);
-                }
-                _pendingCheckedCodes.Clear();
-            }
-            string[] orderedColumns = ApplySavedOrder(data.ColumnNames);
-            for (int i = 0; i < orderedColumns.Length; i++)
-            {
-                string code = orderedColumns[i];
-                ChannelInfo ch;
-                string label = data.Channels.TryGetValue(code, out ch) ? ch.Label : code;
-                string unit = data.Channels.TryGetValue(code, out ch) ? (ch.Unit ?? string.Empty) : string.Empty;
-                _allChannels.Add(new ChannelItem(code, label, unit));
-            }
+            SyncPresenterFromMainControls();
+            string[] preferredCheckedCodes = _pendingCheckedCodes.Count == 0 ? null : _pendingCheckedCodes.ToArray();
+            _pendingCheckedCodes.Clear();
+
+            SourceWindowRefreshPlan refreshPlan = _channelWorkspacePresenter.BindData(
+                data,
+                LoadSavedOrder(),
+                preferredCheckedCodes,
+                preserveSourceWindowsLayout);
+
             RebuildChannelList();
             bool canOverlay = IsOverlayCompareModeAvailable(data);
             _compareOverlayCheck.Enabled = canOverlay;
@@ -1535,20 +1736,20 @@ namespace JSQViewer.UI
             {
                 _folderBox.Text = JoinFolderSpec(data.SourceColumns.Keys.ToList());
             }
-            bool refreshedInPlace = false;
-            if (preserveSourceWindowsLayout)
-            {
-                refreshedInPlace = TryRefreshSourceChannelWindows(data);
-            }
+
+            bool refreshedInPlace = preserveSourceWindowsLayout
+                && refreshPlan.CanRefreshInPlace
+                && TryRefreshSourceChannelWindows(refreshPlan.Windows);
+
             if (!refreshedInPlace)
             {
-                RebuildSourceChannelWindows(data);
+                RebuildSourceChannelWindows(refreshPlan.Windows);
             }
-            DataSummary summary = AppState.BuildSummary(data);
+            DataSummary summary = _buildWorkspaceSummaryUseCase.Execute(data);
             _summaryLabel.Text = string.Format(Loc.Get("Points"), summary.Points, summary.Start, summary.End);
             if (_chartHostForm != null && !_chartHostForm.IsDisposed)
             {
-                _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), AppState.Folder ?? Loc.Get("AppTitle"));
+                _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), _viewerSession.Folder ?? Loc.Get("AppTitle"));
             }
             _exportTemplateButton.Enabled = _savePresetButton.Enabled = true;
             _showChartButton.Enabled = true;
@@ -1559,10 +1760,10 @@ namespace JSQViewer.UI
             RedrawChart();
         }
 
-        private void RebuildSourceChannelWindows(TestData data)
+        private void RebuildSourceChannelWindows(IReadOnlyList<SourceChannelWindowViewModel> windows)
         {
             CloseSourceChannelWindows();
-            if (data == null || data.SourceColumns == null || data.SourceColumns.Count == 0)
+            if (windows == null || windows.Count == 0)
             {
                 return;
             }
@@ -1571,17 +1772,13 @@ namespace JSQViewer.UI
             int baseX = wa.Left + 12;
             int baseY = Bottom + 10;
             int col = 0;
-            string[] globalOrdered = ApplySavedOrder(data.ColumnNames);
 
-            foreach (var kv in data.SourceColumns)
+            foreach (SourceChannelWindowViewModel window in windows)
             {
-                string sourceRoot = kv.Key;
-                string[] sourceCols = kv.Value ?? new string[0];
-                var set = new HashSet<string>(sourceCols, StringComparer.OrdinalIgnoreCase);
-                string[] ordered = globalOrdered.Where(set.Contains).ToArray();
+                string sourceRoot = window.SourceRoot;
 
                 var form = new Form();
-                form.Text = string.Format(Loc.Get("ChannelsForSource"), Path.GetFileName(sourceRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
+                form.Text = string.Format(Loc.Get("ChannelsForSource"), window.Title);
                 form.Width = 560;
                 form.Height = 640;
                 form.StartPosition = FormStartPosition.Manual;
@@ -1596,20 +1793,20 @@ namespace JSQViewer.UI
 
                 var filterBox = new TextBox();
                 filterBox.Width = 130;
-                filterBox.Text = _channelFilterBox.Text;
+                filterBox.Text = window.FilterText;
                 top.Controls.Add(filterBox);
 
                 var sortBox = new ComboBox();
                 sortBox.DropDownStyle = ComboBoxStyle.DropDownList;
                 sortBox.Width = 150;
                 PopulateSortModeBox(sortBox);
-                SelectSortModeByKey(sortBox, GetSelectedSortKey());
+                SelectSortModeByKey(sortBox, window.SortMode);
                 top.Controls.Add(sortBox);
 
                 var selectedOnly = new CheckBox();
                 selectedOnly.Text = Loc.Get("SelectedOnly");
                 selectedOnly.AutoSize = true;
-                selectedOnly.Checked = _selectedOnlyCheck.Checked;
+                selectedOnly.Checked = window.SelectedOnly;
                 top.Controls.Add(selectedOnly);
 
                 var selectAll = new Button();
@@ -1671,16 +1868,7 @@ namespace JSQViewer.UI
                     DeleteOrderButton = deleteOrderButton,
                     StatusLabel = status,
                     List = list,
-                    Items = ordered.Select(code =>
-                    {
-                        ChannelInfo ch;
-                        string displayCode = NormalizeChannelCodeForDisplay(code);
-                        string label = data.Channels.TryGetValue(code, out ch)
-                            ? BuildDisplayLabel(displayCode, ch)
-                            : displayCode;
-                        string unit = data.Channels.TryGetValue(code, out ch) ? (ch.Unit ?? string.Empty) : string.Empty;
-                        return new ChannelItem(code, label, unit);
-                    }).ToList()
+                    ViewModel = window
                 };
 
                 filterBox.TextChanged += delegate { SourceWindowOptionsChanged(state); };
@@ -1703,14 +1891,6 @@ namespace JSQViewer.UI
                 {
                     if (!_closingSourceChannelWindows)
                     {
-                        SourceWindowState closedState;
-                        if (_sourceWindows.TryGetValue(sourceRoot, out closedState) && closedState != null && closedState.Items != null)
-                        {
-                            for (int i = 0; i < closedState.Items.Count; i++)
-                            {
-                                _checkedCodes.Remove(closedState.Items[i].Code);
-                            }
-                        }
                         var folders = ParseFolderSpec(_folderBox.Text);
                         folders = folders.Where(f => !string.Equals(f, sourceRoot, StringComparison.OrdinalIgnoreCase)).ToList();
                         _folderBox.Text = JoinFolderSpec(folders);
@@ -1742,9 +1922,9 @@ namespace JSQViewer.UI
             }
         }
 
-        private bool TryRefreshSourceChannelWindows(TestData data)
+        private bool TryRefreshSourceChannelWindows(IReadOnlyList<SourceChannelWindowViewModel> windows)
         {
-            if (data == null || data.SourceColumns == null || data.SourceColumns.Count == 0)
+            if (windows == null || windows.Count == 0)
             {
                 return false;
             }
@@ -1754,16 +1934,15 @@ namespace JSQViewer.UI
             }
 
             var existingRoots = new HashSet<string>(_sourceWindows.Keys, StringComparer.OrdinalIgnoreCase);
-            var incomingRoots = new HashSet<string>(data.SourceColumns.Keys, StringComparer.OrdinalIgnoreCase);
+            var incomingRoots = new HashSet<string>(windows.Select(window => window.SourceRoot), StringComparer.OrdinalIgnoreCase);
             if (!existingRoots.SetEquals(incomingRoots))
             {
                 return false;
             }
 
-            string[] globalOrdered = ApplySavedOrder(data.ColumnNames);
-            foreach (var kv in data.SourceColumns)
+            foreach (SourceChannelWindowViewModel window in windows)
             {
-                string sourceRoot = kv.Key;
+                string sourceRoot = window.SourceRoot;
                 SourceWindowState state;
                 if (!_sourceWindows.TryGetValue(sourceRoot, out state) || state == null)
                 {
@@ -1774,21 +1953,8 @@ namespace JSQViewer.UI
                     return false;
                 }
 
-                string[] sourceCols = kv.Value ?? new string[0];
-                var set = new HashSet<string>(sourceCols, StringComparer.OrdinalIgnoreCase);
-                string[] ordered = globalOrdered.Where(set.Contains).ToArray();
-                state.Items = ordered.Select(code =>
-                {
-                    ChannelInfo ch;
-                    string displayCode = NormalizeChannelCodeForDisplay(code);
-                    string label = data.Channels.TryGetValue(code, out ch)
-                        ? BuildDisplayLabel(displayCode, ch)
-                        : displayCode;
-                    string unit = data.Channels.TryGetValue(code, out ch) ? (ch.Unit ?? string.Empty) : string.Empty;
-                    return new ChannelItem(code, label, unit);
-                }).ToList();
-
-                state.Form.Text = string.Format(Loc.Get("ChannelsForSource"), Path.GetFileName(sourceRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
+                state.ViewModel = window;
+                ApplySourceWindowViewModelToControls(state);
                 RebuildSourceWindowList(state);
             }
 
@@ -1823,30 +1989,7 @@ namespace JSQViewer.UI
 
         private void SyncSourceWindowsChecksFromSelectedCodes()
         {
-            if (_syncingSourceChannelSelection) return;
-            _syncingSourceChannelSelection = true;
-            try
-            {
-                foreach (var kv in _sourceWindows)
-                {
-                    CheckedListBox list = kv.Value.List;
-                    if (list == null || list.IsDisposed) continue;
-                    for (int i = 0; i < list.Items.Count; i++)
-                    {
-                        ChannelItem item = list.Items[i] as ChannelItem;
-                        if (item == null) continue;
-                        bool shouldCheck = _checkedCodes.Contains(item.Code);
-                        if (list.GetItemChecked(i) != shouldCheck)
-                        {
-                            list.SetItemChecked(i, shouldCheck);
-                        }
-                    }
-                }
-            }
-            finally
-            {
-                _syncingSourceChannelSelection = false;
-            }
+            RefreshSourceWindowLists();
         }
 
         private void SourceListOnItemCheck(object sender, ItemCheckEventArgs e)
@@ -1861,13 +2004,13 @@ namespace JSQViewer.UI
                 _syncingSourceChannelSelection = true;
                 try
                 {
-                    for (int i = 0; i < list.Items.Count; i++)
+                    if (e.Index >= 0 && e.Index < list.Items.Count)
                     {
-                        ChannelItem item = list.Items[i] as ChannelItem;
-                        if (item == null) continue;
-                        bool checkedNow = list.GetItemChecked(i);
-                        if (checkedNow) _checkedCodes.Add(item.Code);
-                        else _checkedCodes.Remove(item.Code);
+                        var item = list.Items[e.Index] as ChannelListItemViewModel;
+                        if (item != null)
+                        {
+                            _channelWorkspacePresenter.SetChannelSelected(item.Code, list.GetItemChecked(e.Index));
+                        }
                     }
                 }
                 finally
@@ -1875,9 +2018,9 @@ namespace JSQViewer.UI
                     _syncingSourceChannelSelection = false;
                 }
 
-                RebuildChannelList();
-                SyncSourceWindowsChecksFromSelectedCodes();
+                RefreshChannelViews();
                 UpdateSelectionInfo();
+                RedrawChart();
             }));
         }
 
@@ -1891,7 +2034,7 @@ namespace JSQViewer.UI
 
         private void CompareOverlayCheckOnCheckedChanged(object sender, EventArgs e)
         {
-            TestData data = AppState.Data;
+            TestData data = _viewerSession.Data;
             if (data == null)
             {
                 return;
@@ -1908,32 +2051,21 @@ namespace JSQViewer.UI
 
             BeginInvoke((Action)(delegate
             {
-                AppLogger.LogInfo(_projectRoot, string.Format(
+                _logger.LogInfo(string.Format(
                     "COMPARE_TOGGLE begin checked={0} dataRows={1} sourceWindows={2} checkedCodes={3}",
                     _compareOverlayCheck.Checked ? "1" : "0",
                     data.RowCount,
                     _sourceWindows.Count,
-                    string.Join(",", _checkedCodes.Take(20).ToArray())));
+                    string.Join(",", GetSelectedCodes().Take(20).ToArray())));
 
                 _rangeStartOa = double.NaN;
                 _rangeEndOa = double.NaN;
                 _rangeLabel.Text = BuildRangeLabelText(_rangeStartOa, _rangeEndOa);
                 _resetRangeButton.Visible = false;
-                List<string> previousSelection = _checkedCodes.ToList();
-                RefreshCheckedCodesFromSourceWindows();
-                if (_checkedCodes.Count == 0 && previousSelection.Count > 0)
+                List<string> previousSelection = GetSelectedCodes();
+                if (previousSelection.Count == 0 && _lastSelectedCodes.Count > 0)
                 {
-                    for (int i = 0; i < previousSelection.Count; i++)
-                    {
-                        _checkedCodes.Add(previousSelection[i]);
-                    }
-                }
-                if (_checkedCodes.Count == 0 && _lastSelectedCodes.Count > 0)
-                {
-                    for (int i = 0; i < _lastSelectedCodes.Count; i++)
-                    {
-                        _checkedCodes.Add(_lastSelectedCodes[i]);
-                    }
+                    previousSelection = _lastSelectedCodes.ToList();
                 }
                 if (_chart.ChartAreas.Count > 0)
                 {
@@ -1952,12 +2084,12 @@ namespace JSQViewer.UI
                         _rangeTrackBar.UpperValue = _rangeTrackBar.Maximum;
                     }
                 });
-                ApplyChannelChecks(_checkedCodes.ToList());
+                ApplyChannelChecks(previousSelection);
                 _chart.Invalidate();
-                AppLogger.LogInfo(_projectRoot, string.Format(
+                _logger.LogInfo(string.Format(
                     "COMPARE_TOGGLE end checked={0} checkedCodes={1} axisX=[{2};{3}] range=[{4};{5}] series={6}",
                     _compareOverlayCheck.Checked ? "1" : "0",
-                    string.Join(",", _checkedCodes.Take(20).ToArray()),
+                    string.Join(",", GetSelectedCodes().Take(20).ToArray()),
                     _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Minimum.ToString(CultureInfo.InvariantCulture) : "na",
                     _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Maximum.ToString(CultureInfo.InvariantCulture) : "na",
                     _rangeTrackBar.LowerValue.ToString(CultureInfo.InvariantCulture),
@@ -1968,11 +2100,14 @@ namespace JSQViewer.UI
 
         private void ChannelViewOptionsChanged(object sender, EventArgs e)
         {
-            RebuildChannelList();
-            foreach (var kv in _sourceWindows)
+            if (_syncingChannelWorkspaceOptions)
             {
-                RebuildSourceWindowList(kv.Value);
+                return;
             }
+
+            _channelWorkspacePresenter.UpdateMainViewOptions(_channelFilterBox.Text, GetSelectedSortKey(), _selectedOnlyCheck.Checked);
+            ApplyPresenterOptionsToControls();
+            RefreshChannelViews();
             UpdateSelectionInfo();
             RedrawChart();
         }
@@ -1981,35 +2116,33 @@ namespace JSQViewer.UI
         {
             BeginInvoke((Action)(delegate
             {
-                SyncCheckedFromVisibleList();
-                SyncSourceWindowsChecksFromSelectedCodes();
+                if (e.Index >= 0 && e.Index < _channelsList.Items.Count)
+                {
+                    var item = _channelsList.Items[e.Index] as ChannelListItemViewModel;
+                    if (item != null)
+                    {
+                        _channelWorkspacePresenter.SetChannelSelected(item.Code, _channelsList.GetItemChecked(e.Index));
+                    }
+                }
+
+                RefreshChannelViews();
                 UpdateSelectionInfo();
+                RedrawChart();
             }));
         }
 
         private void SelectAllChannelsButtonOnClick(object sender, EventArgs e)
         {
-            for (int i = 0; i < _allChannels.Count; i++)
-            {
-                _checkedCodes.Add(_allChannels[i].Code);
-            }
-            for (int i = 0; i < _channelsList.Items.Count; i++)
-            {
-                _channelsList.SetItemChecked(i, true);
-            }
-            SyncSourceWindowsChecksFromSelectedCodes();
+            _channelWorkspacePresenter.SelectAllChannels();
+            RefreshChannelViews();
             UpdateSelectionInfo();
             RedrawChart();
         }
 
         private void ClearChannelsButtonOnClick(object sender, EventArgs e)
         {
-            _checkedCodes.Clear();
-            for (int i = 0; i < _channelsList.Items.Count; i++)
-            {
-                _channelsList.SetItemChecked(i, false);
-            }
-            SyncSourceWindowsChecksFromSelectedCodes();
+            _channelWorkspacePresenter.ClearAllChannels();
+            RefreshChannelViews();
             UpdateSelectionInfo();
             RedrawChart();
         }
@@ -2035,7 +2168,7 @@ namespace JSQViewer.UI
 
         private void SourceListDragDrop(SourceWindowState state, DragEventArgs e)
         {
-            if (_dragIndex < 0 || !e.Data.GetDataPresent(typeof(ChannelItem))) return;
+            if (_dragIndex < 0 || !e.Data.GetDataPresent(typeof(ChannelListItemViewModel))) return;
             if ((state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked) ||
                 (state.FilterBox != null && !string.IsNullOrWhiteSpace(state.FilterBox.Text)) ||
                 GetSelectedSortKey(state.SortModeBox) != "User") return;
@@ -2043,11 +2176,11 @@ namespace JSQViewer.UI
             int targetIndex = state.List.IndexFromPoint(p);
             if (targetIndex < 0) targetIndex = state.List.Items.Count - 1;
             if (targetIndex == _dragIndex || targetIndex < 0) return;
-            ChannelItem dragged = state.Items[_dragIndex];
-            state.Items.RemoveAt(_dragIndex);
-            state.Items.Insert(targetIndex, dragged);
-            RebuildSourceWindowList(state);
-            state.List.SelectedIndex = targetIndex;
+            if (_channelWorkspacePresenter.MoveSourceChannel(state.SourceRoot, _dragIndex, targetIndex))
+            {
+                RebuildSourceWindowList(state);
+                state.List.SelectedIndex = targetIndex;
+            }
         }
 
         private void ChannelsListOnMouseDown(object sender, MouseEventArgs e)
@@ -2071,40 +2204,37 @@ namespace JSQViewer.UI
 
         private void ChannelsListOnDragOver(object sender, DragEventArgs e)
         {
-            e.Effect = e.Data.GetDataPresent(typeof(ChannelItem)) ? DragDropEffects.Move : DragDropEffects.None;
+            e.Effect = e.Data.GetDataPresent(typeof(ChannelListItemViewModel)) ? DragDropEffects.Move : DragDropEffects.None;
         }
 
         private void ChannelsListOnDragDrop(object sender, DragEventArgs e)
         {
-            if (_dragIndex < 0 || !e.Data.GetDataPresent(typeof(ChannelItem))) return;
+            if (_dragIndex < 0 || !e.Data.GetDataPresent(typeof(ChannelListItemViewModel))) return;
             if (_selectedOnlyCheck.Checked || !string.IsNullOrWhiteSpace(_channelFilterBox.Text) || GetSelectedSortKey() != "User") return;
             Point p = _channelsList.PointToClient(new Point(e.X, e.Y));
             int targetIndex = _channelsList.IndexFromPoint(p);
             if (targetIndex < 0) targetIndex = _channelsList.Items.Count - 1;
             if (targetIndex == _dragIndex) return;
-            object dragged = _channelsList.Items[_dragIndex];
-            bool draggedChecked = _channelsList.GetItemChecked(_dragIndex);
-            _channelsList.Items.RemoveAt(_dragIndex);
-            _channelsList.Items.Insert(targetIndex, dragged);
-            _channelsList.SetItemChecked(targetIndex, draggedChecked);
-            _channelsList.SelectedIndex = targetIndex;
-            RebuildAllChannelsFromVisibleList();
-            SyncCheckedFromVisibleList();
-            UpdateSelectionInfo();
-            RedrawChart();
+            if (_channelWorkspacePresenter.MoveMainChannel(_dragIndex, targetIndex))
+            {
+                RebuildChannelList();
+                _channelsList.SelectedIndex = targetIndex;
+                UpdateSelectionInfo();
+                RedrawChart();
+            }
         }
 
         private void RedrawChart()
         {
-            _chart.Series.Clear();
-            TestData data = AppState.Data;
+            TestData data = _viewerSession.Data;
             if (data == null || data.RowCount == 0)
             {
+                _chart.Series.Clear();
                 HideChartHost();
                 return;
             }
+
             bool overlayMode = IsOverlayCompareModeActive();
-            ApplyAxisXMode(overlayMode);
             List<string> selectedCodes = GetSelectedCodes();
             if (selectedCodes.Count == 0 && _lastSelectedCodes.Count > 0)
             {
@@ -2117,7 +2247,7 @@ namespace JSQViewer.UI
             }
             if (overlayMode)
             {
-                AppLogger.LogInfo(_projectRoot, string.Format(
+                _logger.LogInfo(string.Format(
                     "REDRAW overlay=1 selected={0} codes={1} dataRows={2}",
                     selectedCodes.Count,
                     string.Join(",", selectedCodes.Take(20).ToArray()),
@@ -2126,165 +2256,32 @@ namespace JSQViewer.UI
             _lastSelectedCodes.Clear();
             _lastSelectedCodes.AddRange(selectedCodes);
             ShowChartHost();
-            int step = ResolveStep(data.TimestampsMs.Length);
-            if (step > 1 && ShouldForceStepOneForMultiSource(data, selectedCodes))
+            var request = ChartPipelineRequest.ForChart(
+                data,
+                selectedCodes,
+                overlayMode,
+                _viewerSession.DataVersion,
+                _autoStepCheck.Checked,
+                (int)_manualStepUpDown.Value,
+                ParseTargetPoints(),
+                _channelWorkspacePresenter.SelectedChannelCount,
+                ConvertTrackRangeToChartSpaceStart(overlayMode),
+                ConvertTrackRangeToChartSpaceEnd(overlayMode));
+            ChartPipelineResult chartState = _buildChartViewUseCase.Execute(request);
+            ChartViewModel viewModel = _chartViewModelFactory.Create(chartState, Loc.Get("OverlayXAxisTitle"));
+            _chartRenderer.Render(_chart, viewModel);
+            ApplyChartViewToRangeControls(viewModel);
+
+            if (overlayMode)
             {
-                AppLogger.LogInfo(_projectRoot, string.Format(
-                    "REDRAW step override from {0} to 1 for multi-source selected channels.",
-                    step));
-                step = 1;
-            }
-            SeriesSlice slice = SeriesCache.GetOrBuild(AppState.DataVersion, data, selectedCodes, data.TimestampsMs[0], data.TimestampsMs[data.TimestampsMs.Length - 1], step);
-
-            // Pre-convert timestamps to OADate once for all channels in normal mode
-            long[] ts = slice.Timestamps;
-            double[] oaDates = null;
-            if (!overlayMode)
-            {
-                oaDates = new double[ts.Length];
-                for (int i = 0; i < ts.Length; i++)
-                    oaDates[i] = AppState.UnixMsToLocalDateTime(ts[i]).ToOADate();
-            }
-
-            // Hide legend when too many series (major perf killer)
-            bool showLegend = selectedCodes.Count <= 20;
-            if (_chart.Legends.Count > 0)
-                _chart.Legends[0].Enabled = showLegend;
-
-            _chart.BeginInit();
-            _chart.SuspendLayout();
-            _chart.AntiAliasing = selectedCodes.Count > 10 ? AntiAliasingStyles.None : AntiAliasingStyles.All;
-            try
-            {
-                long maxOverlayDurationMs = 0L;
-                int builtSeries = 0;
-                foreach (string code in selectedCodes)
-                {
-                    double?[] values;
-                    if (!slice.Series.TryGetValue(code, out values)) continue;
-                    var series = new Series(code);
-                    series.ChartType = SeriesChartType.FastLine;
-                    series.XValueType = overlayMode ? ChartValueType.Double : ChartValueType.DateTime;
-                    series.BorderWidth = selectedCodes.Count > 20 ? 1 : 2;
-                    series.IsVisibleInLegend = showLegend;
-                    series.LegendText = BuildSeriesLegendText(data, code);
-                    int n = Math.Min(ts.Length, values.Length);
-                    int firstValueIndex = -1;
-                    for (int i = 0; i < n; i++)
-                    {
-                        if (values[i].HasValue)
-                        {
-                            firstValueIndex = i;
-                            break;
-                        }
-                    }
-                    long seriesBaseMs = firstValueIndex >= 0 ? ts[firstValueIndex] : (n > 0 ? ts[0] : 0L);
-
-                    // Count non-null first to allocate exact size
-                    int count = 0;
-                    for (int i = 0; i < n; i++) if (values[i].HasValue) count++;
-                    if (count > 0)
-                    {
-                        double[] xArr = new double[count];
-                        double[] yArr = new double[count];
-                        int w = 0;
-                        for (int i = 0; i < n; i++)
-                        {
-                            if (values[i].HasValue)
-                            {
-                                long relativeMs = Math.Max(0L, ts[i] - seriesBaseMs);
-                                xArr[w] = overlayMode
-                                    ? relativeMs / 3600000.0
-                                    : oaDates[i];
-                                yArr[w] = values[i].Value;
-                                if (overlayMode && relativeMs > maxOverlayDurationMs) maxOverlayDurationMs = relativeMs;
-                                w++;
-                            }
-                        }
-                        series.Points.DataBindXY(xArr, yArr);
-                        if (overlayMode)
-                        {
-                            AppLogger.LogInfo(_projectRoot, string.Format(
-                                "REDRAW series code={0} points={1} firstX={2} lastX={3}",
-                                code,
-                                count,
-                                count > 0 ? xArr[0].ToString(CultureInfo.InvariantCulture) : "na",
-                                count > 0 ? xArr[count - 1].ToString(CultureInfo.InvariantCulture) : "na"));
-                        }
-                    }
-                    _chart.Series.Add(series);
-                    builtSeries++;
-                }
-
-                // Update range track bar bounds from displayed X-space
-                double dataMin = double.NaN;
-                double dataMax = double.NaN;
-                if (overlayMode)
-                {
-                    long maxDurationMs = ResolveOverlayMaxDurationMs(data, selectedCodes);
-                    long overlayDurationMs = Math.Max(maxDurationMs, maxOverlayDurationMs);
-                    dataMin = 0.0;
-                    dataMax = Math.Max(1.0 / 3600.0, overlayDurationMs / 3600000.0);
-                }
-                else if (oaDates != null && oaDates.Length > 0)
-                {
-                    dataMin = oaDates[0];
-                    dataMax = oaDates[oaDates.Length - 1];
-                }
-
-                if (!double.IsNaN(dataMin) && !double.IsNaN(dataMax) && dataMin < dataMax)
-                {
-                    bool wasFullRange = Math.Abs(_rangeTrackBar.LowerValue - _rangeTrackBar.Minimum) < 1e-10
-                                     && Math.Abs(_rangeTrackBar.UpperValue - _rangeTrackBar.Maximum) < 1e-10;
-                    RunWithoutRangeSync(delegate
-                    {
-                        _rangeTrackBar.Minimum = dataMin;
-                        _rangeTrackBar.Maximum = dataMax;
-                        if (wasFullRange || double.IsNaN(_rangeStartOa))
-                        {
-                            _rangeTrackBar.LowerValue = dataMin;
-                            _rangeTrackBar.UpperValue = dataMax;
-                        }
-                    });
-                }
-
-                // Apply range to chart axis if set
-                if (_chart.ChartAreas.Count > 0)
-                {
-                    if (!double.IsNaN(_rangeStartOa) && !double.IsNaN(_rangeEndOa))
-                    {
-                        _chart.ChartAreas[0].AxisX.Minimum = _rangeStartOa;
-                        _chart.ChartAreas[0].AxisX.Maximum = _rangeEndOa;
-                    }
-                    else
-                    {
-                        _chart.ChartAreas[0].AxisX.Minimum = double.NaN;
-                        _chart.ChartAreas[0].AxisX.Maximum = double.NaN;
-                    }
-                }
-                _chart.ResetAutoValues();
-                if (_chart.ChartAreas.Count > 0)
-                {
-                    _chart.ChartAreas[0].RecalculateAxesScale();
-                }
-                if (overlayMode)
-                {
-                    AppLogger.LogInfo(_projectRoot, string.Format(
-                        "REDRAW done overlay=1 builtSeries={0} axisX=[{1};{2}] track=[{3};{4}] maxOverlayMs={5}",
-                        builtSeries,
-                        _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Minimum.ToString(CultureInfo.InvariantCulture) : "na",
-                        _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Maximum.ToString(CultureInfo.InvariantCulture) : "na",
-                        _rangeTrackBar.LowerValue.ToString(CultureInfo.InvariantCulture),
-                        _rangeTrackBar.UpperValue.ToString(CultureInfo.InvariantCulture),
-                        maxOverlayDurationMs));
-                }
-            }
-            finally
-            {
-                _chart.ResumeLayout();
-                _chart.EndInit();
-                _chart.Invalidate();
-                _chart.Update();
+                _logger.LogInfo(string.Format(
+                    "REDRAW done overlay=1 builtSeries={0} axisX=[{1};{2}] track=[{3};{4}] maxOverlayMs={5}",
+                    viewModel.Series.Count,
+                    _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Minimum.ToString(CultureInfo.InvariantCulture) : "na",
+                    _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Maximum.ToString(CultureInfo.InvariantCulture) : "na",
+                    _rangeTrackBar.LowerValue.ToString(CultureInfo.InvariantCulture),
+                    _rangeTrackBar.UpperValue.ToString(CultureInfo.InvariantCulture),
+                    viewModel.MaxOverlayDurationMs));
             }
         }
 
@@ -2294,6 +2291,68 @@ namespace JSQViewer.UI
             ChartArea area = _chart.ChartAreas[0];
             area.AxisX.LabelStyle.Format = overlayMode ? "0.##" : "HH:mm\ndd.MM";
             area.AxisX.Title = overlayMode ? Loc.Get("OverlayXAxisTitle") : string.Empty;
+        }
+
+        private void ApplyChartViewToRangeControls(ChartViewModel viewModel)
+        {
+            if (viewModel == null)
+            {
+                return;
+            }
+
+            _rangeTrackBar.ValueLabelFormatter = CreateRangeTrackBarLabelFormatter(viewModel.OverlayMode);
+            if (!double.IsNaN(viewModel.DataMinimum) && !double.IsNaN(viewModel.DataMaximum) && viewModel.DataMinimum < viewModel.DataMaximum)
+            {
+                bool wasFullRange = Math.Abs(_rangeTrackBar.LowerValue - _rangeTrackBar.Minimum) < 1e-10
+                                 && Math.Abs(_rangeTrackBar.UpperValue - _rangeTrackBar.Maximum) < 1e-10;
+                RunWithoutRangeSync(delegate
+                {
+                    _rangeTrackBar.Minimum = viewModel.DataMinimum;
+                    _rangeTrackBar.Maximum = viewModel.DataMaximum;
+                    if (wasFullRange || !viewModel.Range.IsActive)
+                    {
+                        _rangeTrackBar.LowerValue = viewModel.DataMinimum;
+                        _rangeTrackBar.UpperValue = viewModel.DataMaximum;
+                    }
+                });
+            }
+        }
+
+        private double ConvertTrackRangeToChartSpaceStart(bool overlayMode)
+        {
+            if (double.IsNaN(_rangeStartOa))
+            {
+                return double.NaN;
+            }
+
+            return overlayMode ? _rangeStartOa : ToUnixMilliseconds(_rangeStartOa);
+        }
+
+        private double ConvertTrackRangeToChartSpaceEnd(bool overlayMode)
+        {
+            if (double.IsNaN(_rangeEndOa))
+            {
+                return double.NaN;
+            }
+
+            return overlayMode ? _rangeEndOa : ToUnixMilliseconds(_rangeEndOa);
+        }
+
+        private static double ToUnixMilliseconds(double oaValue)
+        {
+            DateTime dateTime = DateTime.FromOADate(oaValue);
+            DateTime epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            return (dateTime.ToUniversalTime() - epoch).TotalMilliseconds;
+        }
+
+        private Func<double, string> CreateRangeTrackBarLabelFormatter(bool overlayMode)
+        {
+            return overlayMode
+                ? (Func<double, string>)FormatOverlayElapsedHours
+                : delegate(double value)
+                {
+                    return DateTime.FromOADate(value).ToString("dd.MM HH:mm");
+                };
         }
 
         private bool IsOverlayCompareModeAvailable(TestData data)
@@ -2307,7 +2366,7 @@ namespace JSQViewer.UI
 
         private bool IsOverlayCompareModeActive()
         {
-            return _compareOverlayCheck.Checked && IsOverlayCompareModeAvailable(AppState.Data);
+            return _compareOverlayCheck.Checked && IsOverlayCompareModeAvailable(_viewerSession.Data);
         }
 
         private static long ResolveOverlayMaxDurationMs(TestData data, List<string> selectedCodes)
@@ -2411,28 +2470,6 @@ namespace JSQViewer.UI
 
         private void RefreshCheckedCodesFromSourceWindows()
         {
-            if (_sourceWindows == null || _sourceWindows.Count == 0) return;
-            var fresh = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var kv in _sourceWindows)
-            {
-                SourceWindowState state = kv.Value;
-                if (state == null || state.List == null || state.List.IsDisposed) continue;
-                CheckedListBox list = state.List;
-                for (int i = 0; i < list.Items.Count; i++)
-                {
-                    ChannelItem item = list.Items[i] as ChannelItem;
-                    if (item == null) continue;
-                    if (list.GetItemChecked(i))
-                    {
-                        fresh.Add(item.Code);
-                    }
-                }
-            }
-            if (fresh.Count > 0)
-            {
-                _checkedCodes.Clear();
-                foreach (string code in fresh) _checkedCodes.Add(code);
-            }
         }
 
         private int ResolveStep(int totalPoints)
@@ -2444,7 +2481,7 @@ namespace JSQViewer.UI
                 int parsed; if (int.TryParse(_targetPointsBox.SelectedItem.ToString(), out parsed)) target = Math.Max(1, parsed);
             }
             // Scale down target when many channels are selected to keep total point count reasonable
-            int channelCount = _checkedCodes.Count;
+            int channelCount = _channelWorkspacePresenter.SelectedChannelCount;
             if (channelCount > 10)
             {
                 // Cap total points across all series at ~50k for responsiveness
@@ -2489,25 +2526,13 @@ namespace JSQViewer.UI
 
         private async void ExportTemplateButtonOnClick(object sender, EventArgs e)
         {
-            TestData data = AppState.Data; if (data == null) return;
+            TestData data = _viewerSession.Data; if (data == null) return;
             string templatePath = Path.Combine(_projectRoot, "template.xlsx");
-            if (!File.Exists(templatePath)) { NotifyError(Loc.Get("TemplateNotFound")); return; }
+            if (!_fileSystem.FileExists(templatePath)) { NotifyError(Loc.Get("TemplateNotFound")); return; }
             List<string> selectedCodes = GetSelectedCodes();
             string refrig = _refrigerantBox.SelectedItem == null ? "R290" : _refrigerantBox.SelectedItem.ToString();
             bool includeExtra = _includeExtraCheck.Checked;
             ViewerSettingsModel settings = _viewerSettings;
-
-            // Read selected range from stored values
-            long? rangeStartMs = null;
-            long? rangeEndMs = null;
-            if (!IsOverlayCompareModeActive() && !double.IsNaN(_rangeStartOa) && !double.IsNaN(_rangeEndOa))
-            {
-                DateTime dtStart = DateTime.FromOADate(_rangeStartOa);
-                DateTime dtEnd = DateTime.FromOADate(_rangeEndOa);
-                DateTime epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-                rangeStartMs = (long)(dtStart.ToUniversalTime() - epoch).TotalMilliseconds;
-                rangeEndMs = (long)(dtEnd.ToUniversalTime() - epoch).TotalMilliseconds;
-            }
 
             using (var dialog = new SaveFileDialog())
             {
@@ -2517,30 +2542,40 @@ namespace JSQViewer.UI
                 try
                 {
                     SetBusy(true, Loc.Get("ExportingTemplate"));
-                    string loadedFolder = AppState.Folder;
-                    byte[] payload = await Task.Run(() => TemplateExporter.Export(templatePath, loadedFolder, data, selectedCodes, includeExtra, refrig, settings, rangeStartMs, rangeEndMs));
-                    File.WriteAllBytes(savePath, payload);
-                    TemplateValidationResult vr = TemplateExportValidator.Validate(payload);
+                    ExportTemplateRequest request = _exportSettingsPresenter.BuildRequest(
+                        templatePath,
+                        _viewerSession.Folder,
+                        data,
+                        selectedCodes,
+                        includeExtra,
+                        refrig,
+                        settings,
+                        IsOverlayCompareModeActive(),
+                        _rangeStartOa,
+                        _rangeEndOa);
+                    ExportTemplateResult exportResult = await Task.Run(() => _exportTemplateUseCase.Execute(request));
+                    _fileSystem.WriteAllBytes(savePath, exportResult.Payload);
+                    TemplateValidationResult vr = exportResult.Validation;
                     if (vr.Ok)
                     {
                         NotifySuccess(Loc.Get("TemplateExported"));
                     }
                     else
                     {
-                        AppLogger.LogError(_projectRoot, "Template export validation warning: " + vr.Message, null);
+                        _logger.LogError("Template export validation warning: " + vr.Message, null);
                         NotifyError(Loc.Get("TemplateExportedWarning"));
                     }
-                    try { Process.Start(new ProcessStartInfo(savePath) { UseShellExecute = true }); }
+                    try { _externalProcessLauncher.Open(savePath); }
                     catch { }
                 }
-                catch (Exception ex) { AppLogger.LogError(_projectRoot, "Template export failed.", ex); MessageBox.Show(this, ex.Message, Loc.Get("TemplateExportFailed"), MessageBoxButtons.OK, MessageBoxIcon.Error); NotifyError(Loc.Get("TemplateExportFailed")); }
+                catch (Exception ex) { _logger.LogError("Template export failed.", ex); _notificationService.ShowError(this, Loc.Get("TemplateExportFailed"), ex.Message); NotifyError(Loc.Get("TemplateExportFailed")); }
                 finally { SetBusy(false, null); }
             }
         }
 
         private void SettingsButtonOnClick(object sender, EventArgs e)
         {
-            using (var dlg = new SettingsDialog(_viewerSettings))
+            using (var dlg = new SettingsDialog(_viewerSettings, _viewerSettingsSanitizer))
             {
                 if (dlg.ShowDialog(this) != DialogResult.OK)
                 {
@@ -2549,17 +2584,17 @@ namespace JSQViewer.UI
 
                 _viewerSettings = dlg.Result ?? ViewerSettingsModel.CreateDefault();
                 SetBusy(true, Loc.Get("SavingStyles"));
-                bool ok = ViewerSettingsStore.Save(_viewerSettingsFilePath, _viewerSettings);
+                bool ok = _viewerSettingsRepository.Save(_viewerSettings);
                 if (ok) NotifySuccess(Loc.Get("StylesSaved"));
                 else NotifyError(Loc.Get("StylesSaveFailed"));
-                if (!ok) AppLogger.LogError(_projectRoot, "Style settings save failed.", null);
+                if (!ok) _logger.LogError("Style settings save failed.", null);
                 SetBusy(false, null);
             }
         }
 
         private void ShowChartButtonOnClick(object sender, EventArgs e)
         {
-            if (AppState.Data == null || !AppState.IsLoaded)
+            if (_viewerSession.Data == null || !_viewerSession.IsLoaded)
             {
                 NotifyError(Loc.Get("NoTestLoaded"));
                 return;
@@ -2591,9 +2626,24 @@ namespace JSQViewer.UI
             payload.include_extra = _includeExtraCheck.Checked;
             payload.refrigerant = _refrigerantBox.SelectedItem == null ? "R290" : _refrigerantBox.SelectedItem.ToString();
 
-            bool existed = PresetStore.Exists(_projectRoot, payload.name);
-            ViewerPreset preset = PresetStore.Save(_projectRoot, payload);
+            bool existed = _presetRepository.Exists(payload.name);
+            ViewerPreset preset = _presetRepository.Save(payload);
             ReloadPresets(); SelectPresetByKey(preset.key); NotifySuccess(string.Format(existed ? Loc.Get("PresetUpdated") : Loc.Get("PresetSaved"), preset.name));
+        }
+
+        private int ParseTargetPoints()
+        {
+            int target = 5000;
+            if (_targetPointsBox.SelectedItem != null)
+            {
+                int parsed;
+                if (int.TryParse(_targetPointsBox.SelectedItem.ToString(), out parsed))
+                {
+                    target = Math.Max(1, parsed);
+                }
+            }
+
+            return target;
         }
 
         private void SavePresetFromSource(SourceWindowState state)
@@ -2608,7 +2658,7 @@ namespace JSQViewer.UI
         private void LoadPresetButtonOnClick(object sender, EventArgs e)
         {
             var item = _presetsBox.SelectedItem as PresetItem; if (item == null) return;
-            ViewerPreset preset = PresetStore.Load(_projectRoot, item.Key);
+            ViewerPreset preset = _presetRepository.Load(item.Key);
             if (preset == null || preset.channels == null) { NotifyError(Loc.Get("PresetInvalid")); return; }
             if (!string.IsNullOrWhiteSpace(preset.sort_mode))
             {
@@ -2650,7 +2700,7 @@ namespace JSQViewer.UI
         {
             var item = _presetsBox.SelectedItem as PresetItem; if (item == null) return;
             if (MessageBox.Show(this, string.Format(Loc.Get("DeletePresetQ"), item.Name), Loc.Get("DeletePresetTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-            bool ok = PresetStore.Delete(_projectRoot, item.Key);
+            bool ok = _presetRepository.Delete(item.Key);
             ReloadPresets();
             if (ok) NotifySuccess(string.Format(Loc.Get("PresetDeleted"), item.Name));
             else NotifyError(Loc.Get("PresetDeleteFailed"));
@@ -2678,9 +2728,9 @@ namespace JSQViewer.UI
                 NotifyError(Loc.Get("NoChannelsToSave"));
                 return;
             }
-            bool existed = OrderStore.Exists(_projectRoot, name);
-            ChannelOrderModel saved = OrderStore.Save(_projectRoot, name, order);
-            AppLogger.LogInfo(_projectRoot, string.Format(
+            bool existed = _orderRepository.Exists(name);
+            ChannelOrderModel saved = _orderRepository.Save(name, order);
+            _logger.LogInfo(string.Format(
                 "ORDER save name='{0}' key='{1}' count={2} mode='{3}'",
                 saved == null ? name : saved.name,
                 saved == null ? string.Empty : saved.key,
@@ -2710,9 +2760,9 @@ namespace JSQViewer.UI
                 return;
             }
 
-            bool existed = OrderStore.Exists(_projectRoot, name);
-            ChannelOrderModel saved = OrderStore.Save(_projectRoot, name, order);
-            AppLogger.LogInfo(_projectRoot, string.Format(
+            bool existed = _orderRepository.Exists(name);
+            ChannelOrderModel saved = _orderRepository.Save(name, order);
+            _logger.LogInfo(string.Format(
                 "ORDER save source name='{0}' key='{1}' count={2} source='{3}' source_mode='{4}'",
                 saved == null ? name : saved.name,
                 saved == null ? string.Empty : saved.key,
@@ -2732,13 +2782,13 @@ namespace JSQViewer.UI
         {
             var item = _ordersBox.SelectedItem as OrderItem;
             if (item == null) return;
-            ChannelOrderModel order = OrderStore.Load(_projectRoot, item.Key);
+            ChannelOrderModel order = _orderRepository.Load(item.Key);
             if (order == null || order.order == null)
             {
                 NotifyError(Loc.Get("OrderInvalid"));
                 return;
             }
-            AppLogger.LogInfo(_projectRoot, string.Format(
+            _logger.LogInfo(string.Format(
                 "ORDER load key='{0}' name='{1}' count={2} mode_before='{3}'",
                 item.Key,
                 order.name ?? string.Empty,
@@ -2746,7 +2796,7 @@ namespace JSQViewer.UI
                 GetSelectedSortKey()));
             EnsureUserSortModeForOrderApply();
             ApplyOrder(order.order);
-            AppLogger.LogInfo(_projectRoot, string.Format(
+            _logger.LogInfo(string.Format(
                 "ORDER load applied key='{0}' mode_after='{1}'",
                 item.Key,
                 GetSelectedSortKey()));
@@ -2755,16 +2805,9 @@ namespace JSQViewer.UI
 
         private void EnsureUserSortModeForOrderApply()
         {
-            SelectSortModeByKey("User");
-            foreach (var kv in _sourceWindows)
-            {
-                SourceWindowState state = kv.Value;
-                if (state == null || state.SortModeBox == null || state.SortModeBox.IsDisposed)
-                {
-                    continue;
-                }
-                SelectSortModeByKey(state.SortModeBox, "User");
-            }
+            _channelWorkspacePresenter.SetAllSortModes("User");
+            ApplyPresenterOptionsToControls();
+            RefreshChannelViews();
         }
 
         private void LoadOrderFromSource(SourceWindowState state)
@@ -2780,7 +2823,7 @@ namespace JSQViewer.UI
             var item = _ordersBox.SelectedItem as OrderItem;
             if (item == null) return;
             if (MessageBox.Show(this, string.Format(Loc.Get("DeleteOrderQ"), item.Name), Loc.Get("DeleteOrderTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-            bool ok = OrderStore.Delete(_projectRoot, item.Key);
+            bool ok = _orderRepository.Delete(item.Key);
             ReloadOrders();
             if (ok) NotifySuccess(string.Format(Loc.Get("OrderDeleted"), item.Name));
             else NotifyError(Loc.Get("OrderDeleteFailed"));
@@ -2796,75 +2839,24 @@ namespace JSQViewer.UI
 
         private void ApplyChannelChecks(IList<string> checkedCodes)
         {
-            _checkedCodes.Clear();
-            if (checkedCodes != null) for (int i = 0; i < checkedCodes.Count; i++) _checkedCodes.Add(checkedCodes[i]);
-            RebuildChannelList();
-            SyncSourceWindowsChecksFromSelectedCodes();
+            _channelWorkspacePresenter.ApplyCheckedCodes(checkedCodes);
+            RefreshChannelViews();
             UpdateSelectionInfo();
             RedrawChart();
         }
 
         private List<string> GetSelectedCodes()
         {
-            var result = new List<string>();
-            for (int i = 0; i < _allChannels.Count; i++)
-            {
-                ChannelItem item = _allChannels[i];
-                if (_checkedCodes.Contains(item.Code)) result.Add(item.Code);
-            }
-            return result;
+            return _channelWorkspacePresenter.GetSelectedCodes().ToList();
         }
 
         private void RebuildChannelList()
         {
-            IEnumerable<ChannelItem> items = _allChannels;
-
-            string filter = (_channelFilterBox.Text ?? string.Empty).Trim();
-            if (filter.Length > 0)
-            {
-                string f = filter.ToLowerInvariant();
-                items = items.Where(delegate(ChannelItem c)
-                {
-                    return (c.Code ?? string.Empty).ToLowerInvariant().Contains(f)
-                        || (c.Label ?? string.Empty).ToLowerInvariant().Contains(f);
-                });
-            }
-
-            if (_selectedOnlyCheck.Checked)
-            {
-                items = items.Where(c => _checkedCodes.Contains(c.Code));
-            }
-
-            string mode = GetSelectedSortKey();
-            if (mode == "Code")
-            {
-                items = items.OrderBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
-            }
-            else if (mode == "Natural code")
-            {
-                items = items.OrderBy(c => c.Code, new NaturalStringComparer());
-            }
-            else if (mode == "Label")
-            {
-                items = items.OrderBy(c => c.Label, StringComparer.OrdinalIgnoreCase);
-            }
-            else if (mode == "Unit")
-            {
-                items = items.OrderBy(c => c.Unit, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
-            }
-            else if (mode == "Priority A/C")
-            {
-                items = items.OrderBy(c => PrefixPriority(c.Code)).ThenBy(c => c.Code, new NaturalStringComparer());
-            }
-            else if (mode == "Selected first")
-            {
-                items = items.OrderByDescending(c => _checkedCodes.Contains(c.Code)).ThenBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
-            }
-
+            ChannelListViewModel viewModel = _channelWorkspacePresenter.GetMainChannelList();
             _channelsList.Items.Clear();
-            foreach (ChannelItem c in items)
+            foreach (ChannelListItemViewModel item in viewModel.Items)
             {
-                int idx = _channelsList.Items.Add(c, _checkedCodes.Contains(c.Code));
+                int idx = _channelsList.Items.Add(item, item.IsSelected);
                 if (idx >= 0) { }
             }
         }
@@ -2876,74 +2868,41 @@ namespace JSQViewer.UI
 
         private void RebuildAllChannelsFromVisibleList()
         {
-            if (GetSelectedSortKey() != "User")
-            {
-                return;
-            }
-            if (_selectedOnlyCheck.Checked || !string.IsNullOrWhiteSpace(_channelFilterBox.Text))
-            {
-                return;
-            }
-            _allChannels.Clear();
-            for (int i = 0; i < _channelsList.Items.Count; i++)
-            {
-                ChannelItem item = _channelsList.Items[i] as ChannelItem;
-                if (item != null) _allChannels.Add(item);
-            }
         }
 
         private void SourceWindowOptionsChanged(SourceWindowState origin)
         {
             if (origin == null) return;
-            if (_syncingSourceChannelSelection) return;
-            _syncingSourceChannelSelection = true;
+            if (_syncingChannelWorkspaceOptions) return;
+            _syncingChannelWorkspaceOptions = true;
             try
             {
                 string filter = origin.FilterBox == null ? string.Empty : origin.FilterBox.Text;
                 bool selectedOnly = origin.SelectedOnlyCheck != null && origin.SelectedOnlyCheck.Checked;
-
-                _channelFilterBox.Text = filter;
-                _selectedOnlyCheck.Checked = selectedOnly;
-
-                foreach (var kv in _sourceWindows)
-                {
-                    SourceWindowState state = kv.Value;
-                    if (state == null || state == origin) continue;
-                    if (state.FilterBox != null && state.FilterBox.Text != filter) state.FilterBox.Text = filter;
-                    if (state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked != selectedOnly) state.SelectedOnlyCheck.Checked = selectedOnly;
-                }
-
-                foreach (var kv in _sourceWindows)
-                {
-                    RebuildSourceWindowList(kv.Value);
-                }
+                _channelWorkspacePresenter.UpdateSourceWindowOptions(origin.SourceRoot, filter, GetSelectedSortKey(origin.SortModeBox), selectedOnly);
+                ApplyPresenterOptionsToControls();
+                RefreshChannelViews();
             }
             finally
             {
-                _syncingSourceChannelSelection = false;
+                _syncingChannelWorkspaceOptions = false;
             }
         }
 
         private void SelectAllInSource(SourceWindowState state)
         {
-            if (state == null || state.Items == null) return;
-            for (int i = 0; i < state.Items.Count; i++)
-            {
-                _checkedCodes.Add(state.Items[i].Code);
-            }
-            SyncSourceWindowsChecksFromSelectedCodes();
+            if (state == null) return;
+            _channelWorkspacePresenter.SelectAllSourceChannels(state.SourceRoot);
+            RefreshChannelViews();
             UpdateSelectionInfo();
             RedrawChart();
         }
 
         private void ClearAllInSource(SourceWindowState state)
         {
-            if (state == null || state.Items == null) return;
-            for (int i = 0; i < state.Items.Count; i++)
-            {
-                _checkedCodes.Remove(state.Items[i].Code);
-            }
-            SyncSourceWindowsChecksFromSelectedCodes();
+            if (state == null) return;
+            _channelWorkspacePresenter.ClearSourceChannels(state.SourceRoot);
+            RefreshChannelViews();
             UpdateSelectionInfo();
             RedrawChart();
         }
@@ -2951,30 +2910,11 @@ namespace JSQViewer.UI
         private void RebuildSourceWindowList(SourceWindowState state)
         {
             if (state == null || state.List == null || state.List.IsDisposed) return;
-            IEnumerable<ChannelItem> items = state.Items ?? Enumerable.Empty<ChannelItem>();
-            string filter = state.FilterBox == null ? string.Empty : (state.FilterBox.Text ?? string.Empty).Trim();
-            if (filter.Length > 0)
-            {
-                string f = filter.ToLowerInvariant();
-                items = items.Where(c => (c.Code ?? string.Empty).ToLowerInvariant().Contains(f) || (c.Label ?? string.Empty).ToLowerInvariant().Contains(f));
-            }
-            if (state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked)
-            {
-                items = items.Where(c => _checkedCodes.Contains(c.Code));
-            }
-
-            string mode = GetSelectedSortKey(state.SortModeBox);
-            if (mode == "Code") items = items.OrderBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
-            else if (mode == "Natural code") items = items.OrderBy(c => c.Code, new NaturalStringComparer());
-            else if (mode == "Label") items = items.OrderBy(c => c.Label, StringComparer.OrdinalIgnoreCase);
-            else if (mode == "Unit") items = items.OrderBy(c => c.Unit, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
-            else if (mode == "Priority A/C") items = items.OrderBy(c => PrefixPriority(c.Code)).ThenBy(c => c.Code, new NaturalStringComparer());
-            else if (mode == "Selected first") items = items.OrderByDescending(c => _checkedCodes.Contains(c.Code)).ThenBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
-
+            state.ViewModel = _channelWorkspacePresenter.GetSourceWindow(state.SourceRoot);
             state.List.Items.Clear();
-            foreach (ChannelItem c in items)
+            foreach (ChannelListItemViewModel item in state.ViewModel.Items)
             {
-                state.List.Items.Add(c, _checkedCodes.Contains(c.Code));
+                state.List.Items.Add(item, item.IsSelected);
             }
         }
 
@@ -2995,7 +2935,7 @@ namespace JSQViewer.UI
         private void ReloadPresets()
         {
             _presetsBox.Items.Clear();
-            List<ViewerPreset> presets = PresetStore.List(_projectRoot);
+            List<ViewerPreset> presets = _presetRepository.List();
             for (int i = 0; i < presets.Count; i++)
             {
                 ViewerPreset p = presets[i];
@@ -3012,7 +2952,7 @@ namespace JSQViewer.UI
         private void ReloadOrders()
         {
             _ordersBox.Items.Clear();
-            List<ChannelOrderModel> orders = OrderStore.List(_projectRoot);
+            List<ChannelOrderModel> orders = _orderRepository.List();
             for (int i = 0; i < orders.Count; i++)
             {
                 ChannelOrderModel o = orders[i];
@@ -3117,10 +3057,10 @@ namespace JSQViewer.UI
 
         private void UpdateSelectionInfo()
         {
-            int selected = _checkedCodes.Count;
-            int total = _allChannels.Count;
+            int selected = _channelWorkspacePresenter.SelectedChannelCount;
+            int total = _channelWorkspacePresenter.TotalChannelCount;
             string stepInfo = string.Empty;
-            TestData data = AppState.Data;
+            TestData data = _viewerSession.Data;
             if (data != null && data.TimestampsMs != null && data.TimestampsMs.Length > 0)
             {
                 int step = ResolveStep(data.TimestampsMs.Length);
@@ -3146,14 +3086,14 @@ namespace JSQViewer.UI
         private void NotifySuccess(string text)
         {
             SetStatus(text);
-            AppLogger.LogInfo(_projectRoot, text);
-            ToastNotification.Show(this, text, false);
+            _logger.LogInfo(text);
+            _notificationService.ShowInfoToast(this, text);
         }
 
         private void NotifyError(string text)
         {
             SetStatus(text);
-            ToastNotification.Show(this, text, true);
+            _notificationService.ShowErrorToast(this, text);
         }
 
         private void SetBusy(bool busy, string text)
@@ -3173,154 +3113,46 @@ namespace JSQViewer.UI
             _addDataButton.Enabled = !busy;
             _refreshButton.Enabled = !busy;
             _closeAllButton.Enabled = !busy;
-            _exportTemplateButton.Enabled = !busy && AppState.IsLoaded;
-            _showChartButton.Enabled = !busy && AppState.IsLoaded;
-            _savePresetButton.Enabled = !busy && AppState.IsLoaded;
-            _saveOrderButton.Enabled = !busy && AppState.IsLoaded;
+            _exportTemplateButton.Enabled = !busy && _viewerSession.IsLoaded;
+            _showChartButton.Enabled = !busy && _viewerSession.IsLoaded;
+            _savePresetButton.Enabled = !busy && _viewerSession.IsLoaded;
+            _saveOrderButton.Enabled = !busy && _viewerSession.IsLoaded;
             _settingsButton.Enabled = !busy;
 
             Update();
         }
 
-        private string[] ApplySavedOrder(string[] columns)
-        {
-            var source = new List<string>(columns ?? new string[0]);
-            var saved = LoadSavedOrder();
-            if (saved.Count == 0) return source.ToArray();
-            var result = new List<string>(source.Count);
-            var inSource = new HashSet<string>(source, StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < saved.Count; i++) if (inSource.Contains(saved[i]) && !result.Contains(saved[i], StringComparer.OrdinalIgnoreCase)) result.Add(saved[i]);
-            for (int i = 0; i < source.Count; i++) if (!result.Contains(source[i], StringComparer.OrdinalIgnoreCase)) result.Add(source[i]);
-            return result.ToArray();
-        }
-
         private List<string> BuildCurrentOrder()
         {
-            RebuildAllChannelsFromVisibleList();
-            var order = new List<string>();
-            for (int i = 0; i < _allChannels.Count; i++)
-            {
-                order.Add(_allChannels[i].Code);
-            }
-            return order;
+            return _channelWorkspacePresenter.GetCurrentOrder().ToList();
         }
 
         private List<string> BuildCurrentOrderFromSourceWindow(SourceWindowState state)
         {
-            var order = new List<string>();
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            if (state != null && state.List != null && !state.List.IsDisposed)
+            if (state == null)
             {
-                for (int i = 0; i < state.List.Items.Count; i++)
-                {
-                    ChannelItem item = state.List.Items[i] as ChannelItem;
-                    if (item == null || string.IsNullOrWhiteSpace(item.Code))
-                    {
-                        continue;
-                    }
-                    if (seen.Add(item.Code))
-                    {
-                        order.Add(item.Code);
-                    }
-                }
+                return new List<string>();
             }
 
-            if (state != null && state.Items != null)
-            {
-                for (int i = 0; i < state.Items.Count; i++)
-                {
-                    ChannelItem item = state.Items[i];
-                    if (item == null || string.IsNullOrWhiteSpace(item.Code))
-                    {
-                        continue;
-                    }
-                    if (seen.Add(item.Code))
-                    {
-                        order.Add(item.Code);
-                    }
-                }
-            }
-
-            for (int i = 0; i < _allChannels.Count; i++)
-            {
-                ChannelItem item = _allChannels[i];
-                if (item == null || string.IsNullOrWhiteSpace(item.Code))
-                {
-                    continue;
-                }
-                if (seen.Add(item.Code))
-                {
-                    order.Add(item.Code);
-                }
-            }
-
-            return order;
+            return _channelWorkspacePresenter.GetCurrentOrderForSource(state.SourceRoot).ToList();
         }
 
         private void ApplyOrder(IList<string> order)
         {
-            if (order == null || order.Count == 0)
-            {
-                return;
-            }
-            var map = new Dictionary<string, ChannelItem>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < _allChannels.Count; i++)
-            {
-                ChannelItem c = _allChannels[i];
-                map[c.Code] = c;
-            }
-
-            var reordered = new List<ChannelItem>(_allChannels.Count);
-            for (int i = 0; i < order.Count; i++)
-            {
-                ChannelItem c;
-                if (map.TryGetValue(order[i], out c))
-                {
-                    reordered.Add(c);
-                    map.Remove(order[i]);
-                }
-            }
-            foreach (ChannelItem rest in _allChannels)
-            {
-                if (map.ContainsKey(rest.Code))
-                {
-                    reordered.Add(rest);
-                    map.Remove(rest.Code);
-                }
-            }
-            _allChannels.Clear();
-            _allChannels.AddRange(reordered);
-            AppLogger.LogInfo(_projectRoot, string.Format(
+            _channelWorkspacePresenter.ApplyOrder(order);
+            _logger.LogInfo(string.Format(
                 "ORDER apply requested={0} reordered={1} mode='{2}'",
-                order.Count,
-                reordered.Count,
+                order == null ? 0 : order.Count,
+                _channelWorkspacePresenter.TotalChannelCount,
                 GetSelectedSortKey()));
-            RebuildChannelList();
-            foreach (var kv in _sourceWindows)
-            {
-                SourceWindowState sw = kv.Value;
-                if (sw == null || sw.Items == null) continue;
-                var itemMap = new Dictionary<string, ChannelItem>(StringComparer.OrdinalIgnoreCase);
-                foreach (ChannelItem ci in sw.Items) itemMap[ci.Code] = ci;
-                var reorderedItems = new List<ChannelItem>();
-                for (int i = 0; i < _allChannels.Count; i++)
-                {
-                    ChannelItem ci;
-                    if (itemMap.TryGetValue(_allChannels[i].Code, out ci)) reorderedItems.Add(ci);
-                }
-                sw.Items = reorderedItems;
-                RebuildSourceWindowList(sw);
-            }
+            RefreshChannelViews();
         }
 
         private List<string> LoadSavedOrder()
         {
             try
             {
-                if (!File.Exists(_orderFilePath)) return new List<string>();
-                var payload = JsonHelper.LoadFromFile(_orderFilePath, new OrderPayload());
-                return payload != null && payload.order != null ? payload.order : new List<string>();
+                return _orderRepository.LoadLegacyOrder();
             }
             catch { return new List<string>(); }
         }
@@ -3328,9 +3160,8 @@ namespace JSQViewer.UI
         private void LoadRecentFolders()
         {
             _recentFoldersBox.Items.Clear();
-            var payload = JsonHelper.LoadFromFile(_recentFoldersFilePath, new RecentFoldersPayload());
-            if (payload == null || payload.folders == null) return;
-            for (int i = 0; i < payload.folders.Count; i++) if (!string.IsNullOrWhiteSpace(payload.folders[i])) _recentFoldersBox.Items.Add(payload.folders[i]);
+            List<string> folders = _recentFoldersRepository.Load();
+            for (int i = 0; i < folders.Count; i++) if (!string.IsNullOrWhiteSpace(folders[i])) _recentFoldersBox.Items.Add(folders[i]);
             UpdateRecentDropDownWidth();
             if (_recentFoldersBox.Items.Count > 0) _recentFoldersBox.SelectedIndex = 0;
         }
@@ -3350,7 +3181,7 @@ namespace JSQViewer.UI
             for (int i = 0; i < folders.Count; i++) _recentFoldersBox.Items.Add(folders[i]);
             UpdateRecentDropDownWidth();
             if (_recentFoldersBox.Items.Count > 0) _recentFoldersBox.SelectedIndex = 0;
-            JsonHelper.SaveToFile(_recentFoldersFilePath, new RecentFoldersPayload { folders = folders });
+            _recentFoldersRepository.Save(folders);
         }
 
         private void UpdateRecentDropDownWidth()
@@ -3378,13 +3209,7 @@ namespace JSQViewer.UI
         {
             try
             {
-                var order = new List<string>();
-                RebuildAllChannelsFromVisibleList();
-                for (int i = 0; i < _allChannels.Count; i++)
-                {
-                    order.Add(_allChannels[i].Code);
-                }
-                JsonHelper.SaveToFile(_orderFilePath, new OrderPayload { order = order });
+                _orderRepository.SaveLegacyOrder(BuildCurrentOrder());
             }
             catch { }
         }
@@ -3394,7 +3219,7 @@ namespace JSQViewer.UI
             try
             {
                 SyncCheckedFromVisibleList();
-                var state = new UiStatePayload();
+                var state = new UiStateModel();
                 state.folder = _folderBox.Text;
                 state.auto_step = _autoStepCheck.Checked;
                 state.target_points = _targetPointsBox.SelectedItem == null ? "5000" : _targetPointsBox.SelectedItem.ToString();
@@ -3406,8 +3231,8 @@ namespace JSQViewer.UI
                 state.include_extra = _includeExtraCheck.Checked;
                 state.refrigerant = _refrigerantBox.SelectedItem == null ? "R290" : _refrigerantBox.SelectedItem.ToString();
                 state.splitter_distance = _splitMain.SplitterDistance;
-                state.checked_channels = _checkedCodes.ToList();
-                JsonHelper.SaveToFile(_uiStateFilePath, state);
+                state.checked_channels = GetSelectedCodes();
+                _uiStateRepository.Save(state);
             }
             catch { }
         }
@@ -3416,7 +3241,7 @@ namespace JSQViewer.UI
         {
             try
             {
-                UiStatePayload state = JsonHelper.LoadFromFile(_uiStateFilePath, new UiStatePayload());
+                UiStateModel state = _uiStateRepository.Load();
                 if (state == null)
                 {
                     return;
@@ -3469,18 +3294,6 @@ namespace JSQViewer.UI
             catch { }
         }
 
-        private static string ResolveProjectRoot()
-        {
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            DirectoryInfo dir = new DirectoryInfo(baseDir);
-            for (int i = 0; i < 8 && dir != null; i++)
-            {
-                if (File.Exists(Path.Combine(dir.FullName, "template.xlsx"))) return dir.FullName;
-                dir = dir.Parent;
-            }
-            return baseDir;
-        }
-
         private static int PrefixPriority(string code)
         {
             string c = code ?? string.Empty;
@@ -3516,27 +3329,10 @@ namespace JSQViewer.UI
             public override string ToString() { return _label; }
         }
 
-        private sealed class OrderPayload { public List<string> order { get; set; } }
-        private sealed class RecentFoldersPayload { public List<string> folders { get; set; } }
-        private sealed class UiStatePayload
-        {
-            public string folder { get; set; }
-            public bool? auto_step { get; set; }
-            public string target_points { get; set; }
-            public int? manual_step { get; set; }
-            public bool? compare_overlay { get; set; }
-            public string sort_mode { get; set; }
-            public bool? selected_only { get; set; }
-            public string channel_filter { get; set; }
-            public bool? include_extra { get; set; }
-            public string refrigerant { get; set; }
-            public int? splitter_distance { get; set; }
-            public List<string> checked_channels { get; set; }
-        }
-
         private sealed class SourceWindowState
         {
             public string SourceRoot { get; set; }
+            public SourceChannelWindowViewModel ViewModel { get; set; }
             public Form Form { get; set; }
             public TextBox FilterBox { get; set; }
             public ComboBox SortModeBox { get; set; }

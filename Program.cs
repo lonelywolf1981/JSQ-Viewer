@@ -1,35 +1,105 @@
 using System;
 using System.Threading;
 using System.Windows.Forms;
+using JSQViewer.Application.Abstractions;
+using JSQViewer.Application.Charting;
+using JSQViewer.Application.Charting.UseCases;
+using JSQViewer.Application.Exporting;
+using JSQViewer.Application.Session;
+using JSQViewer.Application.Workspace;
 using JSQViewer.Core;
+using JSQViewer.Infrastructure.Composition;
+using JSQViewer.Infrastructure.Cache;
+using JSQViewer.Infrastructure.Exporting;
+using JSQViewer.Infrastructure.Persistence;
+using JSQViewer.Infrastructure.Platform;
+using JSQViewer.Presentation.WinForms.Charting;
+using JSQViewer.Presentation.WinForms.Composition;
+using JSQViewer.Presentation.WinForms.Presenters;
 using JSQViewer.UI;
+using WinFormsApplication = System.Windows.Forms.Application;
 
 namespace JSQViewer
 {
     internal static class Program
     {
+        private static ILogger _logger;
+        private static INotificationService _notificationService;
+        private static IExternalProcessLauncher _externalProcessLauncher;
+        private static IMainFormNotificationService _mainFormNotificationService;
+
         [STAThread]
         private static void Main()
         {
-            Application.ThreadException += OnThreadException;
-            AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
-            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            IAppPaths appPaths = new ApplicationPaths();
+            IFileSystem fileSystem = new FileSystemAdapter();
+            ILocalizationService localizationService = new DictionaryLocalizationService();
+            _logger = new FileSystemLogger(fileSystem, appPaths);
+            _notificationService = new MessageBoxNotificationService();
+            _externalProcessLauncher = new ShellExternalProcessLauncher();
+            _mainFormNotificationService = new WinFormsMainFormNotificationService();
+            IRecentFoldersRepository recentFoldersRepository = new FileRecentFoldersRepository(appPaths);
+            IUiStateRepository uiStateRepository = new FileUiStateRepository(appPaths);
+            IPresetRepository presetRepository = new FilePresetRepository(appPaths);
+            IOrderRepository orderRepository = new FileOrderRepository(appPaths);
+            IViewerSettingsRepository viewerSettingsRepository = new FileViewerSettingsRepository(appPaths);
+            ISeriesSliceCache seriesSliceCache = new MemorySeriesSliceCache();
+            var timestampRangeService = new TimestampRangeService();
+            var dataSummaryService = new DataSummaryService(timestampRangeService);
+            var seriesSliceService = new SeriesSliceService(seriesSliceCache, timestampRangeService);
+            var chartPipelineService = new ChartPipelineService(seriesSliceService);
+            var buildChartViewUseCase = new BuildChartViewUseCase(chartPipelineService);
+            var buildWorkspaceSummaryUseCase = new BuildWorkspaceSummaryUseCase(dataSummaryService);
+            var chartViewModelFactory = new ChartViewModelFactory(timestampRangeService);
+            var chartRenderer = new ChartRenderer();
+            var exportTemplateUseCase = new ExportTemplateUseCase(new OpenXmlTemplateExporter(), new OpenXmlTemplateExportValidator());
+            var exportSettingsPresenter = new ExportSettingsPresenter();
+            var viewerSettingsSanitizer = new ViewerSettingsSanitizer();
+            IViewerSession viewerSession = new ViewerSession(seriesSliceCache);
+            AppState.Configure(viewerSession, timestampRangeService, dataSummaryService);
+            SeriesCache.Configure(seriesSliceService);
+            WorkspaceFolderSpecParser workspaceFolderSpecParser = WorkspaceLoadingComposition.CreateFolderSpecParser();
+            var loadWorkspaceDataUseCase = WorkspaceLoadingComposition.CreateLoadWorkspaceDataUseCase(workspaceFolderSpecParser);
+            Loc.Initialize(localizationService);
 
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MainForm());
+            WinFormsApplication.ThreadException += OnThreadException;
+            AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+            WinFormsApplication.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+
+            WinFormsApplication.EnableVisualStyles();
+            WinFormsApplication.SetCompatibleTextRenderingDefault(false);
+            WinFormsApplication.Run(new MainForm(
+                appPaths,
+                fileSystem,
+                _logger,
+                _mainFormNotificationService,
+                _externalProcessLauncher,
+                recentFoldersRepository,
+                uiStateRepository,
+                presetRepository,
+                orderRepository,
+                viewerSettingsRepository,
+                viewerSession,
+                timestampRangeService,
+                buildChartViewUseCase,
+                buildWorkspaceSummaryUseCase,
+                chartViewModelFactory,
+                chartRenderer,
+                exportTemplateUseCase,
+                exportSettingsPresenter,
+                viewerSettingsSanitizer,
+                workspaceFolderSpecParser,
+                loadWorkspaceDataUseCase));
         }
 
         private static void OnThreadException(object sender, ThreadExceptionEventArgs e)
         {
             try
             {
-                AppLogger.LogError(AppDomain.CurrentDomain.BaseDirectory, "Unhandled UI exception.", e.Exception);
-                MessageBox.Show(
-                    "An unexpected error occurred:\n" + e.Exception.Message,
+                _logger.LogError("Unhandled UI exception.", e.Exception);
+                _notificationService.ShowError(
                     "JSQViewer Error",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                    "An unexpected error occurred:\n" + e.Exception.Message);
             }
             catch
             {
@@ -41,12 +111,10 @@ namespace JSQViewer
             try
             {
                 Exception ex = e.ExceptionObject as Exception;
-                AppLogger.LogError(AppDomain.CurrentDomain.BaseDirectory, "Unhandled fatal exception.", ex);
-                MessageBox.Show(
-                    "A fatal error occurred:\n" + (ex != null ? ex.Message : "Unknown error"),
+                _logger.LogError("Unhandled fatal exception.", ex);
+                _notificationService.ShowError(
                     "JSQViewer Fatal Error",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                    "A fatal error occurred:\n" + (ex != null ? ex.Message : "Unknown error"));
             }
             catch
             {

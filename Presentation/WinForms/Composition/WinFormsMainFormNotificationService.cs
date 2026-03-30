@@ -1,22 +1,36 @@
-using System;
-using System.Drawing;
 using System.Windows.Forms;
+using System.Drawing;
 
-namespace JSQViewer.UI
+namespace JSQViewer.Presentation.WinForms.Composition
 {
-    public static class ToastNotification
+    public sealed class WinFormsMainFormNotificationService : IMainFormNotificationService
     {
-        private static Form _current;
-        private static Timer _currentTimer;
+        private Form _currentToast;
+        private Timer _currentTimer;
 
-        public static void Show(Form owner, string text, bool isError)
+        public void ShowError(Form owner, string title, string message)
+        {
+            MessageBox.Show(owner, message, title, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+
+        public void ShowInfoToast(Form owner, string message)
+        {
+            ShowToast(owner, message, false);
+        }
+
+        public void ShowErrorToast(Form owner, string message)
+        {
+            ShowToast(owner, message, true);
+        }
+
+        private void ShowToast(Form owner, string text, bool isError)
         {
             try
             {
                 CloseCurrentToast();
 
                 var toast = new Form();
-                _current = toast;
+                _currentToast = toast;
                 toast.FormBorderStyle = FormBorderStyle.None;
                 toast.ShowInTaskbar = false;
                 toast.StartPosition = FormStartPosition.Manual;
@@ -37,21 +51,17 @@ namespace JSQViewer.UI
                 var timer = new Timer();
                 _currentTimer = timer;
                 timer.Interval = 2200;
-                timer.Tick += delegate
-                {
-                    CloseCurrentToast();
-                };
-
+                timer.Tick += delegate { CloseCurrentToast(); };
                 toast.FormClosed += delegate
                 {
                     if (_currentTimer == timer)
                     {
                         _currentTimer = null;
                     }
+
                     timer.Stop();
                     timer.Dispose();
                 };
-
                 toast.Shown += delegate { timer.Start(); };
                 toast.Show(owner);
             }
@@ -60,7 +70,7 @@ namespace JSQViewer.UI
             }
         }
 
-        private static void CloseCurrentToast()
+        private void CloseCurrentToast()
         {
             if (_currentTimer != null)
             {
@@ -68,11 +78,13 @@ namespace JSQViewer.UI
                 _currentTimer.Dispose();
                 _currentTimer = null;
             }
-            if (_current != null && !_current.IsDisposed)
+
+            if (_currentToast != null && !_currentToast.IsDisposed)
             {
-                _current.Close();
+                _currentToast.Close();
             }
-            _current = null;
+
+            _currentToast = null;
         }
     }
 }

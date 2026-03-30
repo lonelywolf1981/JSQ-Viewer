@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using JSQViewer.Application.Charting;
 using JSQViewer.Core;
 using JSQViewer.Settings;
 
@@ -49,6 +50,7 @@ namespace JSQViewer.Export
             string[] cols = data.ColumnNames ?? new string[0];
             var selectedSet = new HashSet<string>(selectedChannels ?? new string[0], StringComparer.OrdinalIgnoreCase);
             long[] tList = data.TimestampsMs;
+            var timestampRangeService = new TimestampRangeService();
 
             long startMs = rangeStartMs.HasValue ? rangeStartMs.Value : tList[0];
             long endMs = rangeEndMs.HasValue ? rangeEndMs.Value : tList[tList.Length - 1];
@@ -64,7 +66,7 @@ namespace JSQViewer.Export
             var idxs = new List<int>(gridMs.Count);
             for (int i = 0; i < gridMs.Count; i++)
             {
-                int idx = AppState.NearestIndex(tList, gridMs[i]);
+                int idx = timestampRangeService.NearestIndex(tList, gridMs[i]);
                 if (idx < 0 || Math.Abs(tList[idx] - gridMs[i]) > 30000)
                 {
                     idxs.Add(-1);
@@ -146,7 +148,7 @@ namespace JSQViewer.Export
 
                         if (idx >= 0)
                         {
-                            DateTime dt = AppState.UnixMsToLocalDateTime(tList[idx]);
+                            DateTime dt = timestampRangeService.UnixMsToLocalDateTime(tList[idx]);
                             double timeOfDayDays = dt.TimeOfDay.TotalSeconds / 86400.0;
                             SetNumber(sheetData, ns, row, 3, timeOfDayDays);
                         }
