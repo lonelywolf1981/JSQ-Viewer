@@ -44,9 +44,10 @@ namespace JSQViewer
             var timestampRangeService = new TimestampRangeService();
             var dataSummaryService = new DataSummaryService(timestampRangeService);
             var seriesSliceService = new SeriesSliceService(seriesSliceCache, timestampRangeService);
-            var chartPipelineService = new ChartPipelineService(timestampRangeService);
+            var chartPipelineService = new ChartPipelineService(seriesSliceService);
             var buildChartViewUseCase = new BuildChartViewUseCase(chartPipelineService);
             var buildWorkspaceSummaryUseCase = new BuildWorkspaceSummaryUseCase(dataSummaryService);
+            var chartViewModelFactory = new ChartViewModelFactory(timestampRangeService);
             var chartRenderer = new ChartRenderer();
             IViewerSession viewerSession = new ViewerSession(seriesSliceCache);
             AppState.Configure(viewerSession, timestampRangeService, dataSummaryService);
@@ -72,10 +73,10 @@ namespace JSQViewer
                 orderRepository,
                 viewerSettingsRepository,
                 viewerSession,
-                seriesSliceService,
                 timestampRangeService,
                 buildChartViewUseCase,
                 buildWorkspaceSummaryUseCase,
+                chartViewModelFactory,
                 chartRenderer,
                 workspaceFolderSpecParser,
                 loadWorkspaceDataUseCase));

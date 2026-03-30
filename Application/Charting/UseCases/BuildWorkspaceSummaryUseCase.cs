@@ -1,6 +1,5 @@
 using System;
 using JSQViewer.Core;
-using JSQViewer.Presentation.WinForms.ViewModels;
 
 namespace JSQViewer.Application.Charting.UseCases
 {
@@ -13,15 +12,9 @@ namespace JSQViewer.Application.Charting.UseCases
             _dataSummaryService = dataSummaryService ?? throw new ArgumentNullException(nameof(dataSummaryService));
         }
 
-        public WorkspaceSummaryViewModel Execute(TestData data)
+        public DataSummary Execute(TestData data)
         {
-            DataSummary summary = _dataSummaryService.BuildSummary(data);
-            return new WorkspaceSummaryViewModel
-            {
-                PointCount = summary.Points,
-                Start = summary.Start,
-                End = summary.End
-            };
+            return _dataSummaryService.BuildSummary(data);
         }
     }
 }

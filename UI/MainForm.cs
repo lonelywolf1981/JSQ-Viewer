@@ -112,10 +112,10 @@ namespace JSQViewer.UI
         private readonly IOrderRepository _orderRepository;
         private readonly IViewerSettingsRepository _viewerSettingsRepository;
         private readonly IViewerSession _viewerSession;
-        private readonly SeriesSliceService _seriesSliceService;
         private readonly TimestampRangeService _timestampRangeService;
         private readonly BuildChartViewUseCase _buildChartViewUseCase;
         private readonly BuildWorkspaceSummaryUseCase _buildWorkspaceSummaryUseCase;
+        private readonly ChartViewModelFactory _chartViewModelFactory;
         private readonly ChartRenderer _chartRenderer;
         private readonly WorkspaceFolderSpecParser _workspaceFolderSpecParser;
         private readonly LoadWorkspaceDataUseCase _loadWorkspaceDataUseCase;
@@ -133,10 +133,10 @@ namespace JSQViewer.UI
             IOrderRepository orderRepository,
             IViewerSettingsRepository viewerSettingsRepository,
             IViewerSession viewerSession,
-            SeriesSliceService seriesSliceService,
             TimestampRangeService timestampRangeService,
             BuildChartViewUseCase buildChartViewUseCase,
             BuildWorkspaceSummaryUseCase buildWorkspaceSummaryUseCase,
+            ChartViewModelFactory chartViewModelFactory,
             ChartRenderer chartRenderer,
             WorkspaceFolderSpecParser workspaceFolderSpecParser,
             LoadWorkspaceDataUseCase loadWorkspaceDataUseCase)
@@ -151,10 +151,10 @@ namespace JSQViewer.UI
             if (orderRepository == null) throw new ArgumentNullException(nameof(orderRepository));
             if (viewerSettingsRepository == null) throw new ArgumentNullException(nameof(viewerSettingsRepository));
             if (viewerSession == null) throw new ArgumentNullException(nameof(viewerSession));
-            if (seriesSliceService == null) throw new ArgumentNullException(nameof(seriesSliceService));
             if (timestampRangeService == null) throw new ArgumentNullException(nameof(timestampRangeService));
             if (buildChartViewUseCase == null) throw new ArgumentNullException(nameof(buildChartViewUseCase));
             if (buildWorkspaceSummaryUseCase == null) throw new ArgumentNullException(nameof(buildWorkspaceSummaryUseCase));
+            if (chartViewModelFactory == null) throw new ArgumentNullException(nameof(chartViewModelFactory));
             if (chartRenderer == null) throw new ArgumentNullException(nameof(chartRenderer));
             if (workspaceFolderSpecParser == null) throw new ArgumentNullException(nameof(workspaceFolderSpecParser));
             if (loadWorkspaceDataUseCase == null) throw new ArgumentNullException(nameof(loadWorkspaceDataUseCase));
@@ -169,10 +169,10 @@ namespace JSQViewer.UI
             _orderRepository = orderRepository;
             _viewerSettingsRepository = viewerSettingsRepository;
             _viewerSession = viewerSession;
-            _seriesSliceService = seriesSliceService;
             _timestampRangeService = timestampRangeService;
             _buildChartViewUseCase = buildChartViewUseCase;
             _buildWorkspaceSummaryUseCase = buildWorkspaceSummaryUseCase;
+            _chartViewModelFactory = chartViewModelFactory;
             _chartRenderer = chartRenderer;
             _workspaceFolderSpecParser = workspaceFolderSpecParser;
             _loadWorkspaceDataUseCase = loadWorkspaceDataUseCase;
@@ -1729,8 +1729,8 @@ namespace JSQViewer.UI
             {
                 RebuildSourceChannelWindows(refreshPlan.Windows);
             }
-            WorkspaceSummaryViewModel summary = _buildWorkspaceSummaryUseCase.Execute(data);
-            _summaryLabel.Text = string.Format(Loc.Get("Points"), summary.PointCount, summary.Start, summary.End);
+            DataSummary summary = _buildWorkspaceSummaryUseCase.Execute(data);
+            _summaryLabel.Text = string.Format(Loc.Get("Points"), summary.Points, summary.Start, summary.End);
             if (_chartHostForm != null && !_chartHostForm.IsDisposed)
             {
                 _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), _viewerSession.Folder ?? Loc.Get("AppTitle"));
@@ -2244,13 +2244,15 @@ namespace JSQViewer.UI
                 data,
                 selectedCodes,
                 overlayMode,
+                _viewerSession.DataVersion,
                 _autoStepCheck.Checked,
                 (int)_manualStepUpDown.Value,
                 ParseTargetPoints(),
                 _channelWorkspacePresenter.SelectedChannelCount,
-                _rangeStartOa,
-                _rangeEndOa);
-            ChartViewModel viewModel = _buildChartViewUseCase.Execute(request, Loc.Get("OverlayXAxisTitle"));
+                ConvertTrackRangeToChartSpaceStart(overlayMode),
+                ConvertTrackRangeToChartSpaceEnd(overlayMode));
+            ChartPipelineResult chartState = _buildChartViewUseCase.Execute(request);
+            ChartViewModel viewModel = _chartViewModelFactory.Create(chartState, Loc.Get("OverlayXAxisTitle"));
             _chartRenderer.Render(_chart, viewModel);
             ApplyChartViewToRangeControls(viewModel);
 
@@ -2298,6 +2300,33 @@ namespace JSQViewer.UI
                     }
                 });
             }
+        }
+
+        private double ConvertTrackRangeToChartSpaceStart(bool overlayMode)
+        {
+            if (double.IsNaN(_rangeStartOa))
+            {
+                return double.NaN;
+            }
+
+            return overlayMode ? _rangeStartOa : ToUnixMilliseconds(_rangeStartOa);
+        }
+
+        private double ConvertTrackRangeToChartSpaceEnd(bool overlayMode)
+        {
+            if (double.IsNaN(_rangeEndOa))
+            {
+                return double.NaN;
+            }
+
+            return overlayMode ? _rangeEndOa : ToUnixMilliseconds(_rangeEndOa);
+        }
+
+        private static double ToUnixMilliseconds(double oaValue)
+        {
+            DateTime dateTime = DateTime.FromOADate(oaValue);
+            DateTime epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            return (dateTime.ToUniversalTime() - epoch).TotalMilliseconds;
         }
 
         private Func<double, string> CreateRangeTrackBarLabelFormatter(bool overlayMode)

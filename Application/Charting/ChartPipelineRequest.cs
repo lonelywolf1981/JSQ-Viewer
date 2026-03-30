@@ -25,20 +25,23 @@ namespace JSQViewer.Application.Charting
 
         public int SelectedChannelCount { get; private set; }
 
-        public double RangeStartOa { get; private set; }
+        public int DataVersion { get; private set; }
 
-        public double RangeEndOa { get; private set; }
+        public double SelectedRangeStart { get; private set; }
+
+        public double SelectedRangeEnd { get; private set; }
 
         public static ChartPipelineRequest ForChart(
             TestData data,
             IEnumerable<string> selectedCodes,
             bool overlayMode,
+            int dataVersion,
             bool autoStepEnabled,
             int manualStep,
             int targetPoints,
             int selectedChannelCount,
-            double rangeStartOa = double.NaN,
-            double rangeEndOa = double.NaN)
+            double selectedRangeStart = double.NaN,
+            double selectedRangeEnd = double.NaN)
         {
             IReadOnlyList<string> codes;
             if (selectedCodes == null)
@@ -55,12 +58,13 @@ namespace JSQViewer.Application.Charting
                 Data = data,
                 SelectedCodes = codes,
                 OverlayMode = overlayMode,
+                DataVersion = dataVersion,
                 AutoStepEnabled = autoStepEnabled,
                 ManualStep = manualStep,
                 TargetPoints = targetPoints,
                 SelectedChannelCount = selectedChannelCount,
-                RangeStartOa = rangeStartOa,
-                RangeEndOa = rangeEndOa
+                SelectedRangeStart = selectedRangeStart,
+                SelectedRangeEnd = selectedRangeEnd
             };
         }
     }

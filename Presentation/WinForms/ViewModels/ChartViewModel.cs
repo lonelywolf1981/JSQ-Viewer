@@ -22,10 +22,6 @@ namespace JSQViewer.Presentation.WinForms.ViewModels
 
         public double DataMaximum { get; set; }
 
-        public double AxisMinimum { get; set; }
-
-        public double AxisMaximum { get; set; }
-
         public long MaxOverlayDurationMs { get; set; }
 
         public string XAxisLabelFormat { get; set; }

@@ -8,11 +8,11 @@ namespace JSQViewer.Application.Charting
 {
     public sealed class ChartPipelineService
     {
-        private readonly TimestampRangeService _timestampRangeService;
+        private readonly SeriesSliceService _seriesSliceService;
 
-        public ChartPipelineService(TimestampRangeService timestampRangeService)
+        public ChartPipelineService(SeriesSliceService seriesSliceService)
         {
-            _timestampRangeService = timestampRangeService ?? throw new ArgumentNullException(nameof(timestampRangeService));
+            _seriesSliceService = seriesSliceService ?? throw new ArgumentNullException(nameof(seriesSliceService));
         }
 
         public ChartPipelineResult Execute(ChartPipelineRequest request)
@@ -58,19 +58,16 @@ namespace JSQViewer.Application.Charting
             }
 
             List<string> codesToRender = selectedCodes;
-            SeriesSlice slice = BuildSlice(data, codesToRender, data.TimestampsMs[0], data.TimestampsMs[data.TimestampsMs.Length - 1], step);
+            SeriesSlice slice = _seriesSliceService.GetOrBuild(
+                request.DataVersion,
+                data,
+                codesToRender,
+                data.TimestampsMs[0],
+                data.TimestampsMs[data.TimestampsMs.Length - 1],
+                step);
             long[] timestamps = slice.Timestamps;
             bool overlayMode = request.OverlayMode;
             bool showLegend = codesToRender.Count <= 20;
-            double[] oaDates = null;
-            if (!overlayMode)
-            {
-                oaDates = new double[timestamps.Length];
-                for (int i = 0; i < timestamps.Length; i++)
-                {
-                    oaDates[i] = _timestampRangeService.UnixMsToLocalDateTime(timestamps[i]).ToOADate();
-                }
-            }
 
             long maxOverlayDurationMs = 0L;
             var series = new List<ChartPipelineSeries>(codesToRender.Count);
@@ -112,7 +109,7 @@ namespace JSQViewer.Application.Charting
                     }
 
                     long relativeMs = Math.Max(0L, timestamps[i] - seriesBaseMs);
-                    xArr[writeIndex] = overlayMode ? relativeMs / 3600000.0 : oaDates[i];
+                    xArr[writeIndex] = overlayMode ? relativeMs / 3600000.0 : timestamps[i];
                     yArr[writeIndex] = values[i].Value;
                     if (overlayMode && relativeMs > maxOverlayDurationMs)
                     {
@@ -141,13 +138,12 @@ namespace JSQViewer.Application.Charting
                 dataMin = 0.0;
                 dataMax = Math.Max(1.0 / 3600.0, maxDurationMs / 3600000.0);
             }
-            else if (oaDates != null && oaDates.Length > 0)
+            else if (timestamps.Length > 0)
             {
-                dataMin = oaDates[0];
-                dataMax = oaDates[oaDates.Length - 1];
+                dataMin = timestamps[0];
+                dataMax = timestamps[timestamps.Length - 1];
             }
 
-            bool hasRange = !double.IsNaN(request.RangeStartOa) && !double.IsNaN(request.RangeEndOa);
             return new ChartPipelineResult
             {
                 HasData = true,
@@ -156,10 +152,8 @@ namespace JSQViewer.Application.Charting
                 Step = step,
                 DataMinimum = dataMin,
                 DataMaximum = dataMax,
-                RangeStartOa = request.RangeStartOa,
-                RangeEndOa = request.RangeEndOa,
-                AxisMinimum = hasRange ? request.RangeStartOa : double.NaN,
-                AxisMaximum = hasRange ? request.RangeEndOa : double.NaN,
+                SelectedRangeStart = request.SelectedRangeStart,
+                SelectedRangeEnd = request.SelectedRangeEnd,
                 MaxOverlayDurationMs = maxOverlayDurationMs,
                 Series = series
             };
@@ -173,57 +167,6 @@ namespace JSQViewer.Application.Charting
             }
 
             return selectedCodes.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
-        }
-
-        private SeriesSlice BuildSlice(TestData data, IReadOnlyList<string> codes, long startMs, long endMs, int step)
-        {
-            Tuple<int, int> range = _timestampRangeService.SliceByTime(data.TimestampsMs, startMs, endMs);
-            int i0 = range.Item1;
-            int i1 = range.Item2;
-            if (i1 <= i0)
-            {
-                return EmptySlice();
-            }
-
-            int len = ((i1 - i0) + step - 1) / step;
-            var timestamps = new long[len];
-            int timestampIndex = 0;
-            for (int i = i0; i < i1; i += step)
-            {
-                timestamps[timestampIndex++] = data.TimestampsMs[i];
-            }
-
-            var series = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase);
-            for (int c = 0; c < codes.Count; c++)
-            {
-                string code = codes[c];
-                double?[] source;
-                if (!data.Columns.TryGetValue(code, out source))
-                {
-                    series[code] = new double?[len];
-                    continue;
-                }
-
-                var target = new double?[len];
-                int seriesIndex = 0;
-                for (int i = i0; i < i1; i += step)
-                {
-                    target[seriesIndex++] = source[i];
-                }
-
-                series[code] = target;
-            }
-
-            return new SeriesSlice { Timestamps = timestamps, Series = series };
-        }
-
-        private static SeriesSlice EmptySlice()
-        {
-            return new SeriesSlice
-            {
-                Timestamps = new long[0],
-                Series = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase)
-            };
         }
 
         private static int ResolveStep(int totalPoints, bool autoStepEnabled, int manualStep, int targetPoints, int selectedChannelCount)

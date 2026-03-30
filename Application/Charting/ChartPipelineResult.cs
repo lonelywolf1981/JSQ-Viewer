@@ -21,13 +21,9 @@ namespace JSQViewer.Application.Charting
 
         public double DataMaximum { get; set; }
 
-        public double RangeStartOa { get; set; }
+        public double SelectedRangeStart { get; set; }
 
-        public double RangeEndOa { get; set; }
-
-        public double AxisMinimum { get; set; }
-
-        public double AxisMaximum { get; set; }
+        public double SelectedRangeEnd { get; set; }
 
         public long MaxOverlayDurationMs { get; set; }
 
