@@ -12,7 +12,7 @@ namespace JSQViewer.Infrastructure.Platform
                 return;
             }
 
-            Process.Start(path);
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
         }
     }
 }

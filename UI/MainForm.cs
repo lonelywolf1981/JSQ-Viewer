@@ -8,11 +8,11 @@ using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using System.Windows.Forms.DataVisualization.Charting;
 using System.Drawing.Imaging;
-using System.Diagnostics;
 using System.Threading.Tasks;
 using JSQViewer.Application.Abstractions;
 using JSQViewer.Core;
 using JSQViewer.Export;
+using JSQViewer.Presentation.WinForms.Composition;
 using JSQViewer.Settings;
 
 namespace JSQViewer.UI
@@ -97,18 +97,27 @@ namespace JSQViewer.UI
         private readonly string _recentFoldersFilePath;
         private readonly string _viewerSettingsFilePath;
         private readonly string _uiStateFilePath;
+        private readonly ILogger _logger;
+        private readonly IMainFormNotificationService _notificationService;
+        private readonly IExternalProcessLauncher _externalProcessLauncher;
         private ViewerSettingsModel _viewerSettings;
         private static readonly Regex NaturalSplitRegex = new Regex("(\\d+)", RegexOptions.Compiled);
 
-        public MainForm(IAppPaths appPaths)
+        public MainForm(IAppPaths appPaths, ILogger logger, IMainFormNotificationService notificationService, IExternalProcessLauncher externalProcessLauncher)
         {
             if (appPaths == null) throw new ArgumentNullException(nameof(appPaths));
+            if (logger == null) throw new ArgumentNullException(nameof(logger));
+            if (notificationService == null) throw new ArgumentNullException(nameof(notificationService));
+            if (externalProcessLauncher == null) throw new ArgumentNullException(nameof(externalProcessLauncher));
 
             _projectRoot = appPaths.ProjectRoot;
             _orderFilePath = Path.Combine(_projectRoot, "channel_order.json");
             _recentFoldersFilePath = Path.Combine(_projectRoot, "recent_folders.json");
             _viewerSettingsFilePath = Path.Combine(_projectRoot, "viewer_settings.json");
             _uiStateFilePath = Path.Combine(_projectRoot, "ui_state.json");
+            _logger = logger;
+            _notificationService = notificationService;
+            _externalProcessLauncher = externalProcessLauncher;
             _viewerSettings = ViewerSettingsStore.Load(_viewerSettingsFilePath);
 
             Font = new Font("Microsoft Sans Serif", 10f);
@@ -953,7 +962,7 @@ namespace JSQViewer.UI
                     _chart.SaveImage(dialog.FileName, format);
                     NotifySuccess(Loc.Get("ChartImageSaved"));
                 }
-                catch (Exception ex) { AppLogger.LogError(_projectRoot, "Save chart image failed.", ex); NotifyError(ex.Message); }
+                catch (Exception ex) { _logger.LogError("Save chart image failed.", ex); NotifyError(ex.Message); }
             }
         }
 
@@ -972,7 +981,7 @@ namespace JSQViewer.UI
                 }
                 NotifySuccess(Loc.Get("ChartImageCopied"));
             }
-            catch (Exception ex) { AppLogger.LogError(_projectRoot, "Copy chart image failed.", ex); NotifyError(ex.Message); }
+            catch (Exception ex) { _logger.LogError("Copy chart image failed.", ex); NotifyError(ex.Message); }
         }
 
         private void DetachChartMenuItemOnClick(object sender, EventArgs e)
@@ -1293,7 +1302,7 @@ namespace JSQViewer.UI
             }
             catch (Exception ex)
             {
-                AppLogger.LogError(_projectRoot, "Add data folder failed.", ex);
+                _logger.LogError("Add data folder failed.", ex);
                 NotifyError(Loc.Get("LoadFailed"));
             }
         }
@@ -1341,7 +1350,7 @@ namespace JSQViewer.UI
             }
             catch (Exception ex)
             {
-                AppLogger.LogError(_projectRoot, "Auto-load recent folder failed.", ex);
+                _logger.LogError("Auto-load recent folder failed.", ex);
             }
         }
 
@@ -1449,7 +1458,7 @@ namespace JSQViewer.UI
                 }
                 NotifySuccess(string.Format(Loc.Get("LoadedTest"), data.RowCount));
             }
-            catch (Exception ex) { AppLogger.LogError(_projectRoot, "Load test failed.", ex); MessageBox.Show(this, ex.Message, Loc.Get("LoadFailed"), MessageBoxButtons.OK, MessageBoxIcon.Error); NotifyError(Loc.Get("LoadFailed")); }
+            catch (Exception ex) { _logger.LogError("Load test failed.", ex); _notificationService.ShowError(this, Loc.Get("LoadFailed"), ex.Message); NotifyError(Loc.Get("LoadFailed")); }
             finally { Cursor = Cursors.Default; SetBusy(false, null); }
         }
 
@@ -1911,7 +1920,7 @@ namespace JSQViewer.UI
 
             BeginInvoke((Action)(delegate
             {
-                AppLogger.LogInfo(_projectRoot, string.Format(
+                _logger.LogInfo(string.Format(
                     "COMPARE_TOGGLE begin checked={0} dataRows={1} sourceWindows={2} checkedCodes={3}",
                     _compareOverlayCheck.Checked ? "1" : "0",
                     data.RowCount,
@@ -1957,7 +1966,7 @@ namespace JSQViewer.UI
                 });
                 ApplyChannelChecks(_checkedCodes.ToList());
                 _chart.Invalidate();
-                AppLogger.LogInfo(_projectRoot, string.Format(
+                _logger.LogInfo(string.Format(
                     "COMPARE_TOGGLE end checked={0} checkedCodes={1} axisX=[{2};{3}] range=[{4};{5}] series={6}",
                     _compareOverlayCheck.Checked ? "1" : "0",
                     string.Join(",", _checkedCodes.Take(20).ToArray()),
@@ -2120,7 +2129,7 @@ namespace JSQViewer.UI
             }
             if (overlayMode)
             {
-                AppLogger.LogInfo(_projectRoot, string.Format(
+                _logger.LogInfo(string.Format(
                     "REDRAW overlay=1 selected={0} codes={1} dataRows={2}",
                     selectedCodes.Count,
                     string.Join(",", selectedCodes.Take(20).ToArray()),
@@ -2132,7 +2141,7 @@ namespace JSQViewer.UI
             int step = ResolveStep(data.TimestampsMs.Length);
             if (step > 1 && ShouldForceStepOneForMultiSource(data, selectedCodes))
             {
-                AppLogger.LogInfo(_projectRoot, string.Format(
+                _logger.LogInfo(string.Format(
                     "REDRAW step override from {0} to 1 for multi-source selected channels.",
                     step));
                 step = 1;
@@ -2207,7 +2216,7 @@ namespace JSQViewer.UI
                         series.Points.DataBindXY(xArr, yArr);
                         if (overlayMode)
                         {
-                            AppLogger.LogInfo(_projectRoot, string.Format(
+                            _logger.LogInfo(string.Format(
                                 "REDRAW series code={0} points={1} firstX={2} lastX={3}",
                                 code,
                                 count,
@@ -2272,7 +2281,7 @@ namespace JSQViewer.UI
                 }
                 if (overlayMode)
                 {
-                    AppLogger.LogInfo(_projectRoot, string.Format(
+                    _logger.LogInfo(string.Format(
                         "REDRAW done overlay=1 builtSeries={0} axisX=[{1};{2}] track=[{3};{4}] maxOverlayMs={5}",
                         builtSeries,
                         _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Minimum.ToString(CultureInfo.InvariantCulture) : "na",
@@ -2530,13 +2539,13 @@ namespace JSQViewer.UI
                     }
                     else
                     {
-                        AppLogger.LogError(_projectRoot, "Template export validation warning: " + vr.Message, null);
+                        _logger.LogError("Template export validation warning: " + vr.Message, null);
                         NotifyError(Loc.Get("TemplateExportedWarning"));
                     }
-                    try { Process.Start(new ProcessStartInfo(savePath) { UseShellExecute = true }); }
+                    try { _externalProcessLauncher.Open(savePath); }
                     catch { }
                 }
-                catch (Exception ex) { AppLogger.LogError(_projectRoot, "Template export failed.", ex); MessageBox.Show(this, ex.Message, Loc.Get("TemplateExportFailed"), MessageBoxButtons.OK, MessageBoxIcon.Error); NotifyError(Loc.Get("TemplateExportFailed")); }
+                catch (Exception ex) { _logger.LogError("Template export failed.", ex); _notificationService.ShowError(this, Loc.Get("TemplateExportFailed"), ex.Message); NotifyError(Loc.Get("TemplateExportFailed")); }
                 finally { SetBusy(false, null); }
             }
         }
@@ -2555,7 +2564,7 @@ namespace JSQViewer.UI
                 bool ok = ViewerSettingsStore.Save(_viewerSettingsFilePath, _viewerSettings);
                 if (ok) NotifySuccess(Loc.Get("StylesSaved"));
                 else NotifyError(Loc.Get("StylesSaveFailed"));
-                if (!ok) AppLogger.LogError(_projectRoot, "Style settings save failed.", null);
+                if (!ok) _logger.LogError("Style settings save failed.", null);
                 SetBusy(false, null);
             }
         }
@@ -2683,7 +2692,7 @@ namespace JSQViewer.UI
             }
             bool existed = OrderStore.Exists(_projectRoot, name);
             ChannelOrderModel saved = OrderStore.Save(_projectRoot, name, order);
-            AppLogger.LogInfo(_projectRoot, string.Format(
+            _logger.LogInfo(string.Format(
                 "ORDER save name='{0}' key='{1}' count={2} mode='{3}'",
                 saved == null ? name : saved.name,
                 saved == null ? string.Empty : saved.key,
@@ -2715,7 +2724,7 @@ namespace JSQViewer.UI
 
             bool existed = OrderStore.Exists(_projectRoot, name);
             ChannelOrderModel saved = OrderStore.Save(_projectRoot, name, order);
-            AppLogger.LogInfo(_projectRoot, string.Format(
+            _logger.LogInfo(string.Format(
                 "ORDER save source name='{0}' key='{1}' count={2} source='{3}' source_mode='{4}'",
                 saved == null ? name : saved.name,
                 saved == null ? string.Empty : saved.key,
@@ -2741,7 +2750,7 @@ namespace JSQViewer.UI
                 NotifyError(Loc.Get("OrderInvalid"));
                 return;
             }
-            AppLogger.LogInfo(_projectRoot, string.Format(
+            _logger.LogInfo(string.Format(
                 "ORDER load key='{0}' name='{1}' count={2} mode_before='{3}'",
                 item.Key,
                 order.name ?? string.Empty,
@@ -2749,7 +2758,7 @@ namespace JSQViewer.UI
                 GetSelectedSortKey()));
             EnsureUserSortModeForOrderApply();
             ApplyOrder(order.order);
-            AppLogger.LogInfo(_projectRoot, string.Format(
+            _logger.LogInfo(string.Format(
                 "ORDER load applied key='{0}' mode_after='{1}'",
                 item.Key,
                 GetSelectedSortKey()));
@@ -3149,14 +3158,14 @@ namespace JSQViewer.UI
         private void NotifySuccess(string text)
         {
             SetStatus(text);
-            AppLogger.LogInfo(_projectRoot, text);
-            ToastNotification.Show(this, text, false);
+            _logger.LogInfo(text);
+            _notificationService.ShowInfoToast(this, text);
         }
 
         private void NotifyError(string text)
         {
             SetStatus(text);
-            ToastNotification.Show(this, text, true);
+            _notificationService.ShowErrorToast(this, text);
         }
 
         private void SetBusy(bool busy, string text)
@@ -3294,7 +3303,7 @@ namespace JSQViewer.UI
             }
             _allChannels.Clear();
             _allChannels.AddRange(reordered);
-            AppLogger.LogInfo(_projectRoot, string.Format(
+            _logger.LogInfo(string.Format(
                 "ORDER apply requested={0} reordered={1} mode='{2}'",
                 order.Count,
                 reordered.Count,

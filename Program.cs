@@ -3,6 +3,7 @@ using System.Threading;
 using System.Windows.Forms;
 using JSQViewer.Application.Abstractions;
 using JSQViewer.Infrastructure.Platform;
+using JSQViewer.Presentation.WinForms.Composition;
 using JSQViewer.UI;
 using WinFormsApplication = System.Windows.Forms.Application;
 
@@ -12,6 +13,8 @@ namespace JSQViewer
     {
         private static ILogger _logger;
         private static INotificationService _notificationService;
+        private static IExternalProcessLauncher _externalProcessLauncher;
+        private static IMainFormNotificationService _mainFormNotificationService;
 
         [STAThread]
         private static void Main()
@@ -21,6 +24,8 @@ namespace JSQViewer
             ILocalizationService localizationService = new DictionaryLocalizationService();
             _logger = new FileSystemLogger(fileSystem, appPaths);
             _notificationService = new MessageBoxNotificationService();
+            _externalProcessLauncher = new ShellExternalProcessLauncher();
+            _mainFormNotificationService = new WinFormsMainFormNotificationService();
             Loc.Initialize(localizationService);
 
             WinFormsApplication.ThreadException += OnThreadException;
@@ -29,7 +34,7 @@ namespace JSQViewer
 
             WinFormsApplication.EnableVisualStyles();
             WinFormsApplication.SetCompatibleTextRenderingDefault(false);
-            WinFormsApplication.Run(new MainForm(appPaths));
+            WinFormsApplication.Run(new MainForm(appPaths, _logger, _mainFormNotificationService, _externalProcessLauncher));
         }
 
         private static void OnThreadException(object sender, ThreadExceptionEventArgs e)
