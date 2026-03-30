@@ -1,35 +1,43 @@
 using System;
 using System.Threading;
 using System.Windows.Forms;
-using JSQViewer.Core;
+using JSQViewer.Application.Abstractions;
+using JSQViewer.Infrastructure.Platform;
 using JSQViewer.UI;
+using WinFormsApplication = System.Windows.Forms.Application;
 
 namespace JSQViewer
 {
     internal static class Program
     {
+        private static ILogger _logger;
+        private static INotificationService _notificationService;
+
         [STAThread]
         private static void Main()
         {
-            Application.ThreadException += OnThreadException;
-            AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
-            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            IAppPaths appPaths = new ApplicationPaths();
+            IFileSystem fileSystem = new FileSystemAdapter();
+            _logger = new FileSystemLogger(fileSystem, appPaths);
+            _notificationService = new MessageBoxNotificationService();
 
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MainForm());
+            WinFormsApplication.ThreadException += OnThreadException;
+            AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+            WinFormsApplication.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+
+            WinFormsApplication.EnableVisualStyles();
+            WinFormsApplication.SetCompatibleTextRenderingDefault(false);
+            WinFormsApplication.Run(new MainForm(appPaths));
         }
 
         private static void OnThreadException(object sender, ThreadExceptionEventArgs e)
         {
             try
             {
-                AppLogger.LogError(AppDomain.CurrentDomain.BaseDirectory, "Unhandled UI exception.", e.Exception);
-                MessageBox.Show(
-                    "An unexpected error occurred:\n" + e.Exception.Message,
+                _logger.LogError("Unhandled UI exception.", e.Exception);
+                _notificationService.ShowError(
                     "JSQViewer Error",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                    "An unexpected error occurred:\n" + e.Exception.Message);
             }
             catch
             {
@@ -41,12 +49,10 @@ namespace JSQViewer
             try
             {
                 Exception ex = e.ExceptionObject as Exception;
-                AppLogger.LogError(AppDomain.CurrentDomain.BaseDirectory, "Unhandled fatal exception.", ex);
-                MessageBox.Show(
-                    "A fatal error occurred:\n" + (ex != null ? ex.Message : "Unknown error"),
+                _logger.LogError("Unhandled fatal exception.", ex);
+                _notificationService.ShowError(
                     "JSQViewer Fatal Error",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                    "A fatal error occurred:\n" + (ex != null ? ex.Message : "Unknown error"));
             }
             catch
             {

@@ -10,6 +10,7 @@ using System.Windows.Forms.DataVisualization.Charting;
 using System.Drawing.Imaging;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using JSQViewer.Application.Abstractions;
 using JSQViewer.Core;
 using JSQViewer.Export;
 using JSQViewer.Settings;
@@ -99,9 +100,11 @@ namespace JSQViewer.UI
         private ViewerSettingsModel _viewerSettings;
         private static readonly Regex NaturalSplitRegex = new Regex("(\\d+)", RegexOptions.Compiled);
 
-        public MainForm()
+        public MainForm(IAppPaths appPaths)
         {
-            _projectRoot = ResolveProjectRoot();
+            if (appPaths == null) throw new ArgumentNullException(nameof(appPaths));
+
+            _projectRoot = appPaths.ProjectRoot;
             _orderFilePath = Path.Combine(_projectRoot, "channel_order.json");
             _recentFoldersFilePath = Path.Combine(_projectRoot, "recent_folders.json");
             _viewerSettingsFilePath = Path.Combine(_projectRoot, "viewer_settings.json");
@@ -3467,18 +3470,6 @@ namespace JSQViewer.UI
                 }
             }
             catch { }
-        }
-
-        private static string ResolveProjectRoot()
-        {
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            DirectoryInfo dir = new DirectoryInfo(baseDir);
-            for (int i = 0; i < 8 && dir != null; i++)
-            {
-                if (File.Exists(Path.Combine(dir.FullName, "template.xlsx"))) return dir.FullName;
-                dir = dir.Parent;
-            }
-            return baseDir;
         }
 
         private static int PrefixPriority(string code)
