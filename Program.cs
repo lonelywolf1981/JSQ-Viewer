@@ -18,8 +18,10 @@ namespace JSQViewer
         {
             IAppPaths appPaths = new ApplicationPaths();
             IFileSystem fileSystem = new FileSystemAdapter();
+            ILocalizationService localizationService = new DictionaryLocalizationService();
             _logger = new FileSystemLogger(fileSystem, appPaths);
             _notificationService = new MessageBoxNotificationService();
+            Loc.Initialize(localizationService);
 
             WinFormsApplication.ThreadException += OnThreadException;
             AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;

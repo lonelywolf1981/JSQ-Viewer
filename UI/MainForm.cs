@@ -328,7 +328,7 @@ namespace JSQViewer.UI
 
         private void LangButtonOnClick(object sender, EventArgs e)
         {
-            Loc.Current = Loc.Current == Lang.Ru ? Lang.En : Lang.Ru;
+            Loc.Current = Loc.Current == AppLanguage.Ru ? AppLanguage.En : AppLanguage.Ru;
         }
 
         private void ApplyLocalization()
