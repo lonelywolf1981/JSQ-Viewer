@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Threading;
 using JSQViewer.Application.Abstractions;
 using JSQViewer.Application.Charting;
 using JSQViewer.Application.Charting.UseCases;
@@ -202,17 +203,157 @@ namespace JSQViewer.Tests
                 Assert.IsTrue(harness.GetRangeTrackBar().Enabled);
             }
         }
+
+        [TestMethod]
+        public void AddDataButtonOnClick_RejectsSixFoldersBeforePicker()
+        {
+            using (TestMainFormHarness harness = TestMainFormHarness.Create())
+            {
+                string spec = harness.BuildFolderSpec(6);
+                harness.AllowExistingDirectories(6);
+                harness.SetFolderBoxText(spec);
+
+                harness.InvokeAddDataButtonOnClick();
+
+                Assert.AreEqual(spec, harness.GetFolderBoxText());
+                Assert.AreEqual(harness.Localization.Get("TooManyFolders"), harness.NotificationService.LastErrorToastMessage);
+            }
+        }
+
+        [TestMethod]
+        public void IsValidFolderSpec_AllowsFourSixAndRejectsSevenFolders()
+        {
+            using (TestMainFormHarness harness = TestMainFormHarness.Create())
+            {
+                harness.AllowExistingDirectories(4);
+                Assert.IsTrue(harness.InvokeIsValidFolderSpec(harness.BuildFolderSpec(4)));
+
+                harness.AllowExistingDirectories(6);
+                Assert.IsTrue(harness.InvokeIsValidFolderSpec(harness.BuildFolderSpec(6)));
+
+                harness.AllowExistingDirectories(7);
+                Assert.IsFalse(harness.InvokeIsValidFolderSpec(harness.BuildFolderSpec(7)));
+            }
+        }
+
+        [TestMethod]
+        public void RecentFoldersBoxOnSelectedIndexChanged_LoadsFourFolders()
+        {
+            using (TestMainFormHarness harness = TestMainFormHarness.Create())
+            {
+                string spec = harness.BuildFolderSpec(4);
+                harness.AllowExistingDirectories(4);
+                harness.SetRecentFolderItems(spec);
+
+                harness.InvokeRecentFoldersBoxOnSelectedIndexChanged();
+
+                harness.WaitForSessionFolder(spec);
+                Assert.AreEqual(spec, harness.SessionFolder);
+                Assert.IsTrue(string.IsNullOrEmpty(harness.NotificationService.LastErrorToastMessage));
+            }
+        }
+
+        [TestMethod]
+        public void RecentFoldersBoxOnSelectedIndexChanged_LoadsSixFolders()
+        {
+            using (TestMainFormHarness harness = TestMainFormHarness.Create())
+            {
+                string spec = harness.BuildFolderSpec(6);
+                harness.AllowExistingDirectories(6);
+                harness.SetRecentFolderItems(spec);
+
+                harness.InvokeRecentFoldersBoxOnSelectedIndexChanged();
+
+                harness.WaitForSessionFolder(spec);
+                Assert.AreEqual(spec, harness.SessionFolder);
+                Assert.IsTrue(string.IsNullOrEmpty(harness.NotificationService.LastErrorToastMessage));
+            }
+        }
+
+        [TestMethod]
+        public void RecentFoldersBoxOnSelectedIndexChanged_DoesNotLoadSevenFolders()
+        {
+            using (TestMainFormHarness harness = TestMainFormHarness.Create())
+            {
+                string spec = harness.BuildFolderSpec(7);
+                harness.AllowExistingDirectories(7);
+                harness.SetRecentFolderItems(spec);
+
+                harness.InvokeRecentFoldersBoxOnSelectedIndexChanged();
+
+                Assert.IsFalse(harness.InvokeIsValidFolderSpec(spec));
+                Assert.AreEqual(string.Empty, harness.SessionFolder);
+                Assert.IsTrue(string.IsNullOrEmpty(harness.NotificationService.LastErrorToastMessage));
+            }
+        }
+
+        [TestMethod]
+        public void TryAutoLoadLastFolder_LoadsFourFolders()
+        {
+            using (TestMainFormHarness harness = TestMainFormHarness.Create())
+            {
+                string spec = harness.BuildFolderSpec(4);
+                harness.AllowExistingDirectories(4);
+                harness.SetRecentFolderItems(spec);
+
+                harness.InvokeTryAutoLoadLastFolder();
+
+                harness.WaitForSessionFolder(spec);
+                Assert.AreEqual(spec, harness.SessionFolder);
+                Assert.IsTrue(string.IsNullOrEmpty(harness.NotificationService.LastErrorToastMessage));
+            }
+        }
+
+        [TestMethod]
+        public void TryAutoLoadLastFolder_LoadsSixFolders()
+        {
+            using (TestMainFormHarness harness = TestMainFormHarness.Create())
+            {
+                string spec = harness.BuildFolderSpec(6);
+                harness.AllowExistingDirectories(6);
+                harness.SetRecentFolderItems(spec);
+
+                harness.InvokeTryAutoLoadLastFolder();
+
+                harness.WaitForSessionFolder(spec);
+                Assert.AreEqual(spec, harness.SessionFolder);
+                Assert.IsTrue(string.IsNullOrEmpty(harness.NotificationService.LastErrorToastMessage));
+            }
+        }
+
+        [TestMethod]
+        public void TryAutoLoadLastFolder_DoesNotLoadSevenFolders()
+        {
+            using (TestMainFormHarness harness = TestMainFormHarness.Create())
+            {
+                string spec = harness.BuildFolderSpec(7);
+                harness.AllowExistingDirectories(7);
+                harness.SetRecentFolderItems(spec);
+
+                harness.InvokeTryAutoLoadLastFolder();
+
+                Assert.IsFalse(harness.InvokeIsValidFolderSpec(spec));
+                Assert.AreEqual(string.Empty, harness.SessionFolder);
+                Assert.IsTrue(string.IsNullOrEmpty(harness.NotificationService.LastErrorToastMessage));
+            }
+        }
     }
 
     internal sealed class TestMainFormHarness : IDisposable
     {
         private readonly ViewerSession _viewerSession;
         private readonly MainForm _form;
+        private readonly FakeFileSystem _fileSystem;
+        private readonly FakeNotificationService _notificationService;
+        private readonly FakeLocalizationService _localization;
 
-        private TestMainFormHarness(ViewerSession viewerSession, MainForm form)
+        private TestMainFormHarness(ViewerSession viewerSession, MainForm form, FakeFileSystem fileSystem, FakeNotificationService notificationService, FakeLocalizationService localization)
         {
             _viewerSession = viewerSession;
             _form = form;
+            _fileSystem = fileSystem;
+            _notificationService = notificationService;
+            _localization = localization;
         }
 
         public MainForm Form
@@ -220,9 +361,25 @@ namespace JSQViewer.Tests
             get { return _form; }
         }
 
+        public string SessionFolder
+        {
+            get { return _viewerSession.Folder; }
+        }
+
+        public FakeNotificationService NotificationService
+        {
+            get { return _notificationService; }
+        }
+
+        public FakeLocalizationService Localization
+        {
+            get { return _localization; }
+        }
+
         public static TestMainFormHarness Create()
         {
-            Loc.Initialize(new FakeLocalizationService());
+            var localization = new FakeLocalizationService();
+            Loc.Initialize(localization);
             var fileSystem = new FakeFileSystem();
             var logger = new FakeLogger();
             var notificationService = new FakeNotificationService();
@@ -256,7 +413,7 @@ namespace JSQViewer.Tests
                     new FakeTestDataSourceReader(),
                     new MergeLoadedSourcesUseCase()));
 
-            return new TestMainFormHarness(session, form);
+            return new TestMainFormHarness(session, form, fileSystem, notificationService, localization);
         }
 
         public void LoadSession()
@@ -364,6 +521,81 @@ namespace JSQViewer.Tests
             onFormClosing.Invoke(host, new object[] { args });
         }
 
+        public void AllowExistingDirectories(int count)
+        {
+            _fileSystem.SetExistingDirectories(BuildFolderSpec(count).Split(new[] { " ; " }, StringSplitOptions.None));
+        }
+
+        public string BuildFolderSpec(int count)
+        {
+            var folders = new List<string>(count);
+            for (int i = 1; i <= count; i++)
+            {
+                folders.Add(@"C:\tests\source-" + i);
+            }
+
+            return string.Join(" ; ", folders);
+        }
+
+        public bool InvokeIsValidFolderSpec(string spec)
+        {
+            return (bool)InvokePrivate(_form, "IsValidFolderSpec", spec);
+        }
+
+        public void SetRecentFolderItems(string spec)
+        {
+            var comboBox = new ComboBox();
+            FieldInfo recentFoldersField = typeof(MainForm).GetField("_recentFoldersBox", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(recentFoldersField, "Missing field: _recentFoldersBox");
+            recentFoldersField.SetValue(_form, comboBox);
+            comboBox.Items.Clear();
+            comboBox.Items.Add(spec);
+            comboBox.SelectedIndex = 0;
+        }
+
+        public void SetFolderBoxText(string spec)
+        {
+            GetPrivateField<TextBox>(_form, "_folderBox").Text = spec;
+        }
+
+        public string GetFolderBoxText()
+        {
+            return GetPrivateField<TextBox>(_form, "_folderBox").Text;
+        }
+
+        public void InvokeRecentFoldersBoxOnSelectedIndexChanged()
+        {
+            InvokePrivate(_form, "RecentFoldersBoxOnSelectedIndexChanged", _form, EventArgs.Empty);
+            System.Windows.Forms.Application.DoEvents();
+        }
+
+        public void InvokeTryAutoLoadLastFolder()
+        {
+            InvokePrivate(_form, "TryAutoLoadLastFolder");
+            System.Windows.Forms.Application.DoEvents();
+        }
+
+        public void InvokeAddDataButtonOnClick()
+        {
+            InvokePrivate(_form, "AddDataButtonOnClick", _form, EventArgs.Empty);
+            System.Windows.Forms.Application.DoEvents();
+        }
+
+        public void WaitForSessionFolder(string expectedFolder)
+        {
+            DateTime deadline = DateTime.UtcNow.AddSeconds(2);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (string.Equals(_viewerSession.Folder, expectedFolder, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                System.Windows.Forms.Application.DoEvents();
+                Thread.Sleep(10);
+            }
+        }
+
         public Chart GetChart()
         {
             return GetPrivateField<Chart>(_form, "_chart");
@@ -418,8 +650,24 @@ namespace JSQViewer.Tests
 
     internal sealed class FakeFileSystem : IFileSystem
     {
+        private readonly HashSet<string> _existingDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         public bool FileExists(string path) { return false; }
-        public bool DirectoryExists(string path) { return false; }
+
+        public bool DirectoryExists(string path)
+        {
+            return _existingDirectories.Contains(path);
+        }
+
+        public void SetExistingDirectories(IEnumerable<string> directories)
+        {
+            _existingDirectories.Clear();
+            foreach (string directory in directories)
+            {
+                _existingDirectories.Add(directory);
+            }
+        }
+
         public void WriteAllBytes(string path, byte[] contents) { }
         public void CreateDirectory(string path) { }
         public void AppendAllText(string path, string contents, System.Text.Encoding encoding) { }
@@ -433,9 +681,11 @@ namespace JSQViewer.Tests
 
     internal sealed class FakeNotificationService : IMainFormNotificationService
     {
+        public string LastErrorToastMessage { get; private set; }
+
         public void ShowError(Form owner, string title, string message) { }
         public void ShowInfoToast(Form owner, string message) { }
-        public void ShowErrorToast(Form owner, string message) { }
+        public void ShowErrorToast(Form owner, string message) { LastErrorToastMessage = message; }
     }
 
     internal sealed class FakeExternalProcessLauncher : IExternalProcessLauncher
@@ -526,7 +776,30 @@ namespace JSQViewer.Tests
     {
         public TestData Read(string root, Dictionary<string, ChannelInfo> channels, Dictionary<string, string> metadata)
         {
-            return SessionAndChartingTestData.CreateData(new long[] { 0L });
+            var data = new TestData
+            {
+                Root = root,
+                RowCount = 1,
+                TimestampsMs = new[] { 0L },
+                ColumnNames = new[] { "A-01" },
+                SourceColumns = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [root] = new[] { "A-01" }
+                },
+                SourceStartMs = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [root] = 0L
+                },
+                SourceEndMs = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [root] = 0L
+                }
+            };
+
+            data.Columns["A-01"] = new double?[] { 1d };
+            data.Channels["A-01"] = new ChannelInfo { Code = "A-01", Name = "A-01", Unit = "u" };
+            data.CodeSources["A-01"] = root;
+            return data;
         }
     }
 }

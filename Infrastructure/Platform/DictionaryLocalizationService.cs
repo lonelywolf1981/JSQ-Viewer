@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using JSQViewer.Application.Abstractions;
+using JSQViewer.Application.Workspace;
 
 namespace JSQViewer.Infrastructure.Platform
 {
@@ -43,7 +44,7 @@ namespace JSQViewer.Infrastructure.Platform
             { "PathCopied", "Путь скопирован." },
             { "CopyPathFailed", "Ошибка копирования пути." },
             { "SelectFolder", "Сначала выберите папку." },
-            { "TooManyFolders", "Можно загрузить не более 3 папок (разделитель: ;)." },
+            { "TooManyFolders", "Можно загрузить не более " + WorkspaceLoadLimits.MaxLoadedSources + " папок (разделитель: ;)." },
             { "FolderAlreadyAdded", "Эта папка уже добавлена." },
             { "OverlappingChannelsTitle", "Пересекающиеся каналы" },
             { "OverlappingChannelsPrompt", "Найдены пересекающиеся каналы ({0}): {1}\n\nРазделить их по источникам и продолжить загрузку?" },
@@ -217,7 +218,7 @@ namespace JSQViewer.Infrastructure.Platform
             { "PathCopied", "Path copied to clipboard." },
             { "CopyPathFailed", "Copy path failed." },
             { "SelectFolder", "Select a folder first." },
-            { "TooManyFolders", "You can load up to 3 folders (separator: ;)." },
+            { "TooManyFolders", "You can load up to " + WorkspaceLoadLimits.MaxLoadedSources + " folders (separator: ;)." },
             { "FolderAlreadyAdded", "This folder is already added." },
             { "OverlappingChannelsTitle", "Overlapping channels" },
             { "OverlappingChannelsPrompt", "Found overlapping channels ({0}): {1}\n\nSplit them by source and continue loading?" },

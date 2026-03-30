@@ -1506,7 +1506,7 @@ namespace JSQViewer.UI
                     NotifyError(Loc.Get("SelectFolder"));
                     return;
                 }
-                if (current.Count >= 3)
+                if (current.Count >= WorkspaceLoadLimits.MaxLoadedSources)
                 {
                     NotifyError(Loc.Get("TooManyFolders"));
                     return;
@@ -1627,7 +1627,7 @@ namespace JSQViewer.UI
                     NotifyError(Loc.Get("SelectFolder"));
                     return;
                 }
-                if (folders.Count > 3)
+                if (folders.Count > WorkspaceLoadLimits.MaxLoadedSources)
                 {
                     NotifyError(Loc.Get("TooManyFolders"));
                     return;
@@ -1696,7 +1696,7 @@ namespace JSQViewer.UI
         private bool IsValidFolderSpec(string spec)
         {
             List<string> folders = ParseFolderSpec(spec);
-            if (folders.Count == 0 || folders.Count > 3) return false;
+            if (folders.Count == 0 || folders.Count > WorkspaceLoadLimits.MaxLoadedSources) return false;
             for (int i = 0; i < folders.Count; i++)
             {
                 if (!_fileSystem.DirectoryExists(folders[i])) return false;

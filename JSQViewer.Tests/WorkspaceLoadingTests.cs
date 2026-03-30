@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using JSQViewer.Application.Abstractions;
 using JSQViewer.Application.Workspace;
 using JSQViewer.Application.Workspace.Ports;
 using JSQViewer.Application.Workspace.UseCases;
 using JSQViewer.Core;
+using JSQViewer.Infrastructure.Platform;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace JSQViewer.Tests
@@ -57,6 +59,32 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Execute_AllowsFourFolders()
+        {
+            WorkspaceLoadResult result = ExecuteWithFolderCount(4);
+
+            Assert.AreEqual(4, result.Folders.Count);
+        }
+
+        [TestMethod]
+        public void Execute_AllowsSixFolders()
+        {
+            WorkspaceLoadResult result = ExecuteWithFolderCount(6);
+
+            Assert.AreEqual(6, result.Folders.Count);
+        }
+
+        [TestMethod]
+        public void Execute_RejectsSevenFolders()
+        {
+            var useCase = CreateUseCase(7);
+
+            var ex = Assert.ThrowsException<ArgumentException>(() => useCase.Execute(new WorkspaceLoadRequest(BuildFolderSpec(7))));
+
+            StringAssert.Contains(ex.Message, "6");
+        }
+
+        [TestMethod]
         public void Execute_MergesMultipleFoldersWithOverlapSplit()
         {
             var roots = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -81,6 +109,52 @@ namespace JSQViewer.Tests
 
             CollectionAssert.AreEquivalent(new[] { "rootA::A-01", "rootB::A-01" }, result.Data.ColumnNames);
             Assert.AreEqual(2, result.Data.RowCount);
+        }
+
+        private static WorkspaceLoadResult ExecuteWithFolderCount(int count)
+        {
+            return CreateUseCase(count).Execute(new WorkspaceLoadRequest(BuildFolderSpec(count)));
+        }
+
+        private static LoadWorkspaceDataUseCase CreateUseCase(int count)
+        {
+            var roots = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 1; i <= count; i++)
+            {
+                string source = @"C:\src" + i;
+                string root = @"C:\root" + i;
+                roots[source] = root;
+            }
+
+            return new LoadWorkspaceDataUseCase(
+                new WorkspaceFolderSpecParser(),
+                new FakeRootLocator(roots),
+                new FakeMetadataReader(),
+                new FakeCanaliReader(),
+                new FakeDataSourceReader(CreateDataByRoot(roots)),
+                new MergeLoadedSourcesUseCase());
+        }
+
+        private static Dictionary<string, TestData> CreateDataByRoot(Dictionary<string, string> roots)
+        {
+            var dataByRoot = new Dictionary<string, TestData>(StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, string> entry in roots)
+            {
+                dataByRoot[entry.Value] = CreateData(entry.Value, new[] { entry.Value + "::A-01" }, 10L);
+            }
+
+            return dataByRoot;
+        }
+
+        private static string BuildFolderSpec(int count)
+        {
+            var folders = new List<string>(count);
+            for (int i = 1; i <= count; i++)
+            {
+                folders.Add(@"C:\src" + i);
+            }
+
+            return string.Join(" ; ", folders);
         }
 
         private static TestData CreateData(string root, string[] columns, long timestamp)
@@ -182,6 +256,22 @@ namespace JSQViewer.Tests
                 ReadRoots.Add(root);
                 return _dataByRoot[root];
             }
+        }
+    }
+
+    [TestClass]
+    public class LocalizationTests
+    {
+        [TestMethod]
+        public void TooManyFolders_MessageUsesSharedMaxLoadedSources()
+        {
+            var localization = new DictionaryLocalizationService();
+
+            localization.CurrentLanguage = AppLanguage.En;
+            Assert.AreEqual("You can load up to " + WorkspaceLoadLimits.MaxLoadedSources + " folders (separator: ;).", localization.Get("TooManyFolders"));
+
+            localization.CurrentLanguage = AppLanguage.Ru;
+            Assert.AreEqual("Можно загрузить не более " + WorkspaceLoadLimits.MaxLoadedSources + " папок (разделитель: ;).", localization.Get("TooManyFolders"));
         }
     }
 }
