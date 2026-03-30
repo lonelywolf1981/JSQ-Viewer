@@ -11,10 +11,12 @@ using System.Drawing.Imaging;
 using System.Threading.Tasks;
 using JSQViewer.Application.Abstractions;
 using JSQViewer.Application.Charting;
+using JSQViewer.Application.Charting.UseCases;
 using JSQViewer.Application.Session;
 using JSQViewer.Application.Workspace;
 using JSQViewer.Application.Workspace.UseCases;
 using JSQViewer.Presentation.WinForms.Presenters;
+using JSQViewer.Presentation.WinForms.Charting;
 using JSQViewer.Core;
 using JSQViewer.Export;
 using JSQViewer.Presentation.WinForms.Composition;
@@ -110,9 +112,11 @@ namespace JSQViewer.UI
         private readonly IOrderRepository _orderRepository;
         private readonly IViewerSettingsRepository _viewerSettingsRepository;
         private readonly IViewerSession _viewerSession;
-        private readonly DataSummaryService _dataSummaryService;
         private readonly SeriesSliceService _seriesSliceService;
         private readonly TimestampRangeService _timestampRangeService;
+        private readonly BuildChartViewUseCase _buildChartViewUseCase;
+        private readonly BuildWorkspaceSummaryUseCase _buildWorkspaceSummaryUseCase;
+        private readonly ChartRenderer _chartRenderer;
         private readonly WorkspaceFolderSpecParser _workspaceFolderSpecParser;
         private readonly LoadWorkspaceDataUseCase _loadWorkspaceDataUseCase;
         private ViewerSettingsModel _viewerSettings;
@@ -129,9 +133,11 @@ namespace JSQViewer.UI
             IOrderRepository orderRepository,
             IViewerSettingsRepository viewerSettingsRepository,
             IViewerSession viewerSession,
-            DataSummaryService dataSummaryService,
             SeriesSliceService seriesSliceService,
             TimestampRangeService timestampRangeService,
+            BuildChartViewUseCase buildChartViewUseCase,
+            BuildWorkspaceSummaryUseCase buildWorkspaceSummaryUseCase,
+            ChartRenderer chartRenderer,
             WorkspaceFolderSpecParser workspaceFolderSpecParser,
             LoadWorkspaceDataUseCase loadWorkspaceDataUseCase)
         {
@@ -145,9 +151,11 @@ namespace JSQViewer.UI
             if (orderRepository == null) throw new ArgumentNullException(nameof(orderRepository));
             if (viewerSettingsRepository == null) throw new ArgumentNullException(nameof(viewerSettingsRepository));
             if (viewerSession == null) throw new ArgumentNullException(nameof(viewerSession));
-            if (dataSummaryService == null) throw new ArgumentNullException(nameof(dataSummaryService));
             if (seriesSliceService == null) throw new ArgumentNullException(nameof(seriesSliceService));
             if (timestampRangeService == null) throw new ArgumentNullException(nameof(timestampRangeService));
+            if (buildChartViewUseCase == null) throw new ArgumentNullException(nameof(buildChartViewUseCase));
+            if (buildWorkspaceSummaryUseCase == null) throw new ArgumentNullException(nameof(buildWorkspaceSummaryUseCase));
+            if (chartRenderer == null) throw new ArgumentNullException(nameof(chartRenderer));
             if (workspaceFolderSpecParser == null) throw new ArgumentNullException(nameof(workspaceFolderSpecParser));
             if (loadWorkspaceDataUseCase == null) throw new ArgumentNullException(nameof(loadWorkspaceDataUseCase));
 
@@ -161,9 +169,11 @@ namespace JSQViewer.UI
             _orderRepository = orderRepository;
             _viewerSettingsRepository = viewerSettingsRepository;
             _viewerSession = viewerSession;
-            _dataSummaryService = dataSummaryService;
             _seriesSliceService = seriesSliceService;
             _timestampRangeService = timestampRangeService;
+            _buildChartViewUseCase = buildChartViewUseCase;
+            _buildWorkspaceSummaryUseCase = buildWorkspaceSummaryUseCase;
+            _chartRenderer = chartRenderer;
             _workspaceFolderSpecParser = workspaceFolderSpecParser;
             _loadWorkspaceDataUseCase = loadWorkspaceDataUseCase;
             _viewerSettings = _viewerSettingsRepository.Load();
@@ -321,6 +331,7 @@ namespace JSQViewer.UI
             _rangeTrackBar = new RangeTrackBar();
             _rangeTrackBar.Dock = DockStyle.Bottom;
             _rangeTrackBar.Height = 48;
+            _rangeTrackBar.ValueLabelFormatter = CreateRangeTrackBarLabelFormatter(false);
             _rangeTrackBar.RangeChanged += RangeTrackBarOnRangeChanged;
             _splitMain.Panel2.Controls.Add(_chart);
             _splitMain.Panel2.Controls.Add(_rangeTrackBar);
@@ -1220,6 +1231,7 @@ namespace JSQViewer.UI
             detachedRangeBar.Maximum = _rangeTrackBar.Maximum;
             detachedRangeBar.LowerValue = _rangeTrackBar.LowerValue;
             detachedRangeBar.UpperValue = _rangeTrackBar.UpperValue;
+            detachedRangeBar.ValueLabelFormatter = CreateRangeTrackBarLabelFormatter(overlayMode);
 
             // Use shared handler for sync; also update detached chart axis
             detachedRangeBar.RangeChanged += RangeTrackBarOnRangeChanged;
@@ -1717,8 +1729,8 @@ namespace JSQViewer.UI
             {
                 RebuildSourceChannelWindows(refreshPlan.Windows);
             }
-            DataSummary summary = _dataSummaryService.BuildSummary(data);
-            _summaryLabel.Text = string.Format(Loc.Get("Points"), summary.Points, summary.Start, summary.End);
+            WorkspaceSummaryViewModel summary = _buildWorkspaceSummaryUseCase.Execute(data);
+            _summaryLabel.Text = string.Format(Loc.Get("Points"), summary.PointCount, summary.Start, summary.End);
             if (_chartHostForm != null && !_chartHostForm.IsDisposed)
             {
                 _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), _viewerSession.Folder ?? Loc.Get("AppTitle"));
@@ -2198,15 +2210,15 @@ namespace JSQViewer.UI
 
         private void RedrawChart()
         {
-            _chart.Series.Clear();
             TestData data = _viewerSession.Data;
             if (data == null || data.RowCount == 0)
             {
+                _chart.Series.Clear();
                 HideChartHost();
                 return;
             }
+
             bool overlayMode = IsOverlayCompareModeActive();
-            ApplyAxisXMode(overlayMode);
             List<string> selectedCodes = GetSelectedCodes();
             if (selectedCodes.Count == 0 && _lastSelectedCodes.Count > 0)
             {
@@ -2228,165 +2240,30 @@ namespace JSQViewer.UI
             _lastSelectedCodes.Clear();
             _lastSelectedCodes.AddRange(selectedCodes);
             ShowChartHost();
-            int step = ResolveStep(data.TimestampsMs.Length);
-            if (step > 1 && ShouldForceStepOneForMultiSource(data, selectedCodes))
+            var request = ChartPipelineRequest.ForChart(
+                data,
+                selectedCodes,
+                overlayMode,
+                _autoStepCheck.Checked,
+                (int)_manualStepUpDown.Value,
+                ParseTargetPoints(),
+                _channelWorkspacePresenter.SelectedChannelCount,
+                _rangeStartOa,
+                _rangeEndOa);
+            ChartViewModel viewModel = _buildChartViewUseCase.Execute(request, Loc.Get("OverlayXAxisTitle"));
+            _chartRenderer.Render(_chart, viewModel);
+            ApplyChartViewToRangeControls(viewModel);
+
+            if (overlayMode)
             {
                 _logger.LogInfo(string.Format(
-                    "REDRAW step override from {0} to 1 for multi-source selected channels.",
-                    step));
-                step = 1;
-            }
-            SeriesSlice slice = _seriesSliceService.GetOrBuild(_viewerSession.DataVersion, data, selectedCodes, data.TimestampsMs[0], data.TimestampsMs[data.TimestampsMs.Length - 1], step);
-
-            // Pre-convert timestamps to OADate once for all channels in normal mode
-            long[] ts = slice.Timestamps;
-            double[] oaDates = null;
-            if (!overlayMode)
-            {
-                oaDates = new double[ts.Length];
-                for (int i = 0; i < ts.Length; i++)
-                    oaDates[i] = _timestampRangeService.UnixMsToLocalDateTime(ts[i]).ToOADate();
-            }
-
-            // Hide legend when too many series (major perf killer)
-            bool showLegend = selectedCodes.Count <= 20;
-            if (_chart.Legends.Count > 0)
-                _chart.Legends[0].Enabled = showLegend;
-
-            _chart.BeginInit();
-            _chart.SuspendLayout();
-            _chart.AntiAliasing = selectedCodes.Count > 10 ? AntiAliasingStyles.None : AntiAliasingStyles.All;
-            try
-            {
-                long maxOverlayDurationMs = 0L;
-                int builtSeries = 0;
-                foreach (string code in selectedCodes)
-                {
-                    double?[] values;
-                    if (!slice.Series.TryGetValue(code, out values)) continue;
-                    var series = new Series(code);
-                    series.ChartType = SeriesChartType.FastLine;
-                    series.XValueType = overlayMode ? ChartValueType.Double : ChartValueType.DateTime;
-                    series.BorderWidth = selectedCodes.Count > 20 ? 1 : 2;
-                    series.IsVisibleInLegend = showLegend;
-                    series.LegendText = BuildSeriesLegendText(data, code);
-                    int n = Math.Min(ts.Length, values.Length);
-                    int firstValueIndex = -1;
-                    for (int i = 0; i < n; i++)
-                    {
-                        if (values[i].HasValue)
-                        {
-                            firstValueIndex = i;
-                            break;
-                        }
-                    }
-                    long seriesBaseMs = firstValueIndex >= 0 ? ts[firstValueIndex] : (n > 0 ? ts[0] : 0L);
-
-                    // Count non-null first to allocate exact size
-                    int count = 0;
-                    for (int i = 0; i < n; i++) if (values[i].HasValue) count++;
-                    if (count > 0)
-                    {
-                        double[] xArr = new double[count];
-                        double[] yArr = new double[count];
-                        int w = 0;
-                        for (int i = 0; i < n; i++)
-                        {
-                            if (values[i].HasValue)
-                            {
-                                long relativeMs = Math.Max(0L, ts[i] - seriesBaseMs);
-                                xArr[w] = overlayMode
-                                    ? relativeMs / 3600000.0
-                                    : oaDates[i];
-                                yArr[w] = values[i].Value;
-                                if (overlayMode && relativeMs > maxOverlayDurationMs) maxOverlayDurationMs = relativeMs;
-                                w++;
-                            }
-                        }
-                        series.Points.DataBindXY(xArr, yArr);
-                        if (overlayMode)
-                        {
-                            _logger.LogInfo(string.Format(
-                                "REDRAW series code={0} points={1} firstX={2} lastX={3}",
-                                code,
-                                count,
-                                count > 0 ? xArr[0].ToString(CultureInfo.InvariantCulture) : "na",
-                                count > 0 ? xArr[count - 1].ToString(CultureInfo.InvariantCulture) : "na"));
-                        }
-                    }
-                    _chart.Series.Add(series);
-                    builtSeries++;
-                }
-
-                // Update range track bar bounds from displayed X-space
-                double dataMin = double.NaN;
-                double dataMax = double.NaN;
-                if (overlayMode)
-                {
-                    long maxDurationMs = ResolveOverlayMaxDurationMs(data, selectedCodes);
-                    long overlayDurationMs = Math.Max(maxDurationMs, maxOverlayDurationMs);
-                    dataMin = 0.0;
-                    dataMax = Math.Max(1.0 / 3600.0, overlayDurationMs / 3600000.0);
-                }
-                else if (oaDates != null && oaDates.Length > 0)
-                {
-                    dataMin = oaDates[0];
-                    dataMax = oaDates[oaDates.Length - 1];
-                }
-
-                if (!double.IsNaN(dataMin) && !double.IsNaN(dataMax) && dataMin < dataMax)
-                {
-                    bool wasFullRange = Math.Abs(_rangeTrackBar.LowerValue - _rangeTrackBar.Minimum) < 1e-10
-                                     && Math.Abs(_rangeTrackBar.UpperValue - _rangeTrackBar.Maximum) < 1e-10;
-                    RunWithoutRangeSync(delegate
-                    {
-                        _rangeTrackBar.Minimum = dataMin;
-                        _rangeTrackBar.Maximum = dataMax;
-                        if (wasFullRange || double.IsNaN(_rangeStartOa))
-                        {
-                            _rangeTrackBar.LowerValue = dataMin;
-                            _rangeTrackBar.UpperValue = dataMax;
-                        }
-                    });
-                }
-
-                // Apply range to chart axis if set
-                if (_chart.ChartAreas.Count > 0)
-                {
-                    if (!double.IsNaN(_rangeStartOa) && !double.IsNaN(_rangeEndOa))
-                    {
-                        _chart.ChartAreas[0].AxisX.Minimum = _rangeStartOa;
-                        _chart.ChartAreas[0].AxisX.Maximum = _rangeEndOa;
-                    }
-                    else
-                    {
-                        _chart.ChartAreas[0].AxisX.Minimum = double.NaN;
-                        _chart.ChartAreas[0].AxisX.Maximum = double.NaN;
-                    }
-                }
-                _chart.ResetAutoValues();
-                if (_chart.ChartAreas.Count > 0)
-                {
-                    _chart.ChartAreas[0].RecalculateAxesScale();
-                }
-                if (overlayMode)
-                {
-                    _logger.LogInfo(string.Format(
-                        "REDRAW done overlay=1 builtSeries={0} axisX=[{1};{2}] track=[{3};{4}] maxOverlayMs={5}",
-                        builtSeries,
-                        _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Minimum.ToString(CultureInfo.InvariantCulture) : "na",
-                        _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Maximum.ToString(CultureInfo.InvariantCulture) : "na",
-                        _rangeTrackBar.LowerValue.ToString(CultureInfo.InvariantCulture),
-                        _rangeTrackBar.UpperValue.ToString(CultureInfo.InvariantCulture),
-                        maxOverlayDurationMs));
-                }
-            }
-            finally
-            {
-                _chart.ResumeLayout();
-                _chart.EndInit();
-                _chart.Invalidate();
-                _chart.Update();
+                    "REDRAW done overlay=1 builtSeries={0} axisX=[{1};{2}] track=[{3};{4}] maxOverlayMs={5}",
+                    viewModel.Series.Count,
+                    _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Minimum.ToString(CultureInfo.InvariantCulture) : "na",
+                    _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Maximum.ToString(CultureInfo.InvariantCulture) : "na",
+                    _rangeTrackBar.LowerValue.ToString(CultureInfo.InvariantCulture),
+                    _rangeTrackBar.UpperValue.ToString(CultureInfo.InvariantCulture),
+                    viewModel.MaxOverlayDurationMs));
             }
         }
 
@@ -2396,6 +2273,41 @@ namespace JSQViewer.UI
             ChartArea area = _chart.ChartAreas[0];
             area.AxisX.LabelStyle.Format = overlayMode ? "0.##" : "HH:mm\ndd.MM";
             area.AxisX.Title = overlayMode ? Loc.Get("OverlayXAxisTitle") : string.Empty;
+        }
+
+        private void ApplyChartViewToRangeControls(ChartViewModel viewModel)
+        {
+            if (viewModel == null)
+            {
+                return;
+            }
+
+            _rangeTrackBar.ValueLabelFormatter = CreateRangeTrackBarLabelFormatter(viewModel.OverlayMode);
+            if (!double.IsNaN(viewModel.DataMinimum) && !double.IsNaN(viewModel.DataMaximum) && viewModel.DataMinimum < viewModel.DataMaximum)
+            {
+                bool wasFullRange = Math.Abs(_rangeTrackBar.LowerValue - _rangeTrackBar.Minimum) < 1e-10
+                                 && Math.Abs(_rangeTrackBar.UpperValue - _rangeTrackBar.Maximum) < 1e-10;
+                RunWithoutRangeSync(delegate
+                {
+                    _rangeTrackBar.Minimum = viewModel.DataMinimum;
+                    _rangeTrackBar.Maximum = viewModel.DataMaximum;
+                    if (wasFullRange || !viewModel.Range.IsActive)
+                    {
+                        _rangeTrackBar.LowerValue = viewModel.DataMinimum;
+                        _rangeTrackBar.UpperValue = viewModel.DataMaximum;
+                    }
+                });
+            }
+        }
+
+        private Func<double, string> CreateRangeTrackBarLabelFormatter(bool overlayMode)
+        {
+            return overlayMode
+                ? (Func<double, string>)FormatOverlayElapsedHours
+                : delegate(double value)
+                {
+                    return DateTime.FromOADate(value).ToString("dd.MM HH:mm");
+                };
         }
 
         private bool IsOverlayCompareModeAvailable(TestData data)
@@ -2674,6 +2586,21 @@ namespace JSQViewer.UI
             bool existed = _presetRepository.Exists(payload.name);
             ViewerPreset preset = _presetRepository.Save(payload);
             ReloadPresets(); SelectPresetByKey(preset.key); NotifySuccess(string.Format(existed ? Loc.Get("PresetUpdated") : Loc.Get("PresetSaved"), preset.name));
+        }
+
+        private int ParseTargetPoints()
+        {
+            int target = 5000;
+            if (_targetPointsBox.SelectedItem != null)
+            {
+                int parsed;
+                if (int.TryParse(_targetPointsBox.SelectedItem.ToString(), out parsed))
+                {
+                    target = Math.Max(1, parsed);
+                }
+            }
+
+            return target;
         }
 
         private void SavePresetFromSource(SourceWindowState state)

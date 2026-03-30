@@ -3,6 +3,7 @@ using System.Threading;
 using System.Windows.Forms;
 using JSQViewer.Application.Abstractions;
 using JSQViewer.Application.Charting;
+using JSQViewer.Application.Charting.UseCases;
 using JSQViewer.Application.Session;
 using JSQViewer.Application.Workspace;
 using JSQViewer.Core;
@@ -10,6 +11,7 @@ using JSQViewer.Infrastructure.Composition;
 using JSQViewer.Infrastructure.Cache;
 using JSQViewer.Infrastructure.Persistence;
 using JSQViewer.Infrastructure.Platform;
+using JSQViewer.Presentation.WinForms.Charting;
 using JSQViewer.Presentation.WinForms.Composition;
 using JSQViewer.UI;
 using WinFormsApplication = System.Windows.Forms.Application;
@@ -42,6 +44,10 @@ namespace JSQViewer
             var timestampRangeService = new TimestampRangeService();
             var dataSummaryService = new DataSummaryService(timestampRangeService);
             var seriesSliceService = new SeriesSliceService(seriesSliceCache, timestampRangeService);
+            var chartPipelineService = new ChartPipelineService(timestampRangeService);
+            var buildChartViewUseCase = new BuildChartViewUseCase(chartPipelineService);
+            var buildWorkspaceSummaryUseCase = new BuildWorkspaceSummaryUseCase(dataSummaryService);
+            var chartRenderer = new ChartRenderer();
             IViewerSession viewerSession = new ViewerSession(seriesSliceCache);
             AppState.Configure(viewerSession, timestampRangeService, dataSummaryService);
             SeriesCache.Configure(seriesSliceService);
@@ -66,9 +72,11 @@ namespace JSQViewer
                 orderRepository,
                 viewerSettingsRepository,
                 viewerSession,
-                dataSummaryService,
                 seriesSliceService,
                 timestampRangeService,
+                buildChartViewUseCase,
+                buildWorkspaceSummaryUseCase,
+                chartRenderer,
                 workspaceFolderSpecParser,
                 loadWorkspaceDataUseCase));
         }

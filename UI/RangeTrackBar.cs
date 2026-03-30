@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Globalization;
 using System.Windows.Forms;
 
 namespace JSQViewer.UI
@@ -20,6 +21,8 @@ namespace JSQViewer.UI
         private double _dragOffset;
 
         public event EventHandler RangeChanged;
+
+        public Func<double, string> ValueLabelFormatter { get; set; }
 
         public double Minimum
         {
@@ -110,10 +113,8 @@ namespace JSQViewer.UI
             {
                 try
                 {
-                    DateTime dtLo = DateTime.FromOADate(_lowerValue);
-                    DateTime dtHi = DateTime.FromOADate(_upperValue);
-                    string sLo = dtLo.ToString("dd.MM HH:mm");
-                    string sHi = dtHi.ToString("dd.MM HH:mm");
+                    string sLo = FormatValueLabel(_lowerValue);
+                    string sHi = FormatValueLabel(_upperValue);
                     using (var font = new Font("Microsoft Sans Serif", 7f))
                     using (var brush = new SolidBrush(Color.FromArgb(80, 80, 80)))
                     {
@@ -125,6 +126,17 @@ namespace JSQViewer.UI
                 }
                 catch { }
             }
+        }
+
+        private string FormatValueLabel(double value)
+        {
+            Func<double, string> formatter = ValueLabelFormatter;
+            if (formatter != null)
+            {
+                return formatter(value) ?? string.Empty;
+            }
+
+            return value.ToString("0.##", CultureInfo.InvariantCulture);
         }
 
         private void DrawThumb(Graphics g, int x, Color color)
