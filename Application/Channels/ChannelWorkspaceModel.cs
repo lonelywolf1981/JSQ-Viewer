@@ -308,6 +308,47 @@ namespace JSQViewer.Application.Channels
             }
         }
 
+        public void ApplyOrderToSource(string sourceRoot, IEnumerable<string> order)
+        {
+            List<ChannelWorkspaceEntry> sourceItems;
+            if (!_sourceOrders.TryGetValue(sourceRoot ?? string.Empty, out sourceItems))
+            {
+                return;
+            }
+
+            string[] requested = order == null
+                ? new string[0]
+                : order.Where(code => !string.IsNullOrWhiteSpace(code)).ToArray();
+            if (requested.Length == 0)
+            {
+                return;
+            }
+
+            var sourceMap = sourceItems.ToDictionary(entry => entry.Code, StringComparer.OrdinalIgnoreCase);
+            var reordered = new List<ChannelWorkspaceEntry>(sourceItems.Count);
+            for (int i = 0; i < requested.Length; i++)
+            {
+                ChannelWorkspaceEntry entry;
+                if (sourceMap.TryGetValue(requested[i], out entry))
+                {
+                    reordered.Add(entry);
+                    sourceMap.Remove(requested[i]);
+                }
+            }
+
+            for (int i = 0; i < sourceItems.Count; i++)
+            {
+                ChannelWorkspaceEntry entry = sourceItems[i];
+                if (sourceMap.ContainsKey(entry.Code))
+                {
+                    reordered.Add(entry);
+                    sourceMap.Remove(entry.Code);
+                }
+            }
+
+            _sourceOrders[sourceRoot ?? string.Empty] = reordered;
+        }
+
         public void ApplyOrder(string firstCode, string secondCode, string thirdCode)
         {
             ApplyOrder(new[] { firstCode, secondCode, thirdCode });

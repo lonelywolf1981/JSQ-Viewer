@@ -9,7 +9,7 @@ namespace JSQViewer.Presentation.WinForms.Presenters
     public sealed class ExportSettingsPresenter
     {
         public ExportTemplateRequest BuildRequest(
-            string templatePath,
+            ProtocolTemplateMode templateMode,
             string loadedFolder,
             TestData data,
             IReadOnlyList<string> selectedChannels,
@@ -30,7 +30,7 @@ namespace JSQViewer.Presentation.WinForms.Presenters
 
             return new ExportTemplateRequest
             {
-                TemplatePath = templatePath,
+                TemplateMode = templateMode,
                 LoadedFolder = loadedFolder,
                 Data = data,
                 SelectedChannels = selectedChannels == null

@@ -120,6 +120,11 @@ namespace JSQViewer.Presentation.WinForms.Presenters
             _workspace.ApplyOrder(order);
         }
 
+        public void ApplyOrderToSource(string sourceRoot, IEnumerable<string> order)
+        {
+            _workspace.ApplyOrderToSource(sourceRoot, order);
+        }
+
         public IReadOnlyList<string> GetSelectedCodes()
         {
             return _workspace.GetSelectedCodes();

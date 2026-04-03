@@ -40,9 +40,11 @@ namespace JSQViewer.Application.Workspace.UseCases
                 throw new ArgumentException("No folders provided for loading.", nameof(request));
             }
 
-            if (folders.Count > 3)
+            if (folders.Count > WorkspaceFolderSpecParser.MaxFolderCount)
             {
-                throw new ArgumentException("No more than 3 folders can be loaded at once.", nameof(request));
+                throw new ArgumentException(
+                    "No more than " + WorkspaceFolderSpecParser.MaxFolderCount + " folders can be loaded at once.",
+                    nameof(request));
             }
 
             var loadedSources = new List<TestData>(folders.Count);

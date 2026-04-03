@@ -37,6 +37,66 @@ namespace JSQViewer.Tests
     public class LoadWorkspaceDataUseCaseTests
     {
         [TestMethod]
+        public void Execute_AcceptsUpToSixFolders()
+        {
+            var roots = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var dataByRoot = new Dictionary<string, TestData>(StringComparer.OrdinalIgnoreCase);
+            var sourceSpecs = new List<string>();
+            for (int i = 1; i <= 6; i++)
+            {
+                string source = "C:\\src" + i;
+                string root = "C:\\root" + i;
+                roots[source] = root;
+                dataByRoot[root] = CreateData(root, new[] { "A-0" + i }, i * 10L);
+                sourceSpecs.Add(source);
+            }
+
+            var useCase = new LoadWorkspaceDataUseCase(
+                new WorkspaceFolderSpecParser(),
+                new FakeRootLocator(roots),
+                new FakeMetadataReader(),
+                new FakeCanaliReader(),
+                new FakeDataSourceReader(dataByRoot),
+                new MergeLoadedSourcesUseCase());
+
+            WorkspaceLoadResult result = useCase.Execute(new WorkspaceLoadRequest(string.Join(" ; ", sourceSpecs)));
+
+            Assert.AreEqual(6, result.Folders.Count);
+            CollectionAssert.AreEquivalent(
+                new[] { "A-01", "A-02", "A-03", "A-04", "A-05", "A-06" },
+                result.Data.ColumnNames);
+        }
+
+        [TestMethod]
+        public void Execute_RejectsMoreThanSixFolders()
+        {
+            var roots = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var dataByRoot = new Dictionary<string, TestData>(StringComparer.OrdinalIgnoreCase);
+            var sourceSpecs = new List<string>();
+            for (int i = 1; i <= 7; i++)
+            {
+                string source = "C:\\src" + i;
+                string root = "C:\\root" + i;
+                roots[source] = root;
+                dataByRoot[root] = CreateData(root, new[] { "A-0" + i }, i * 10L);
+                sourceSpecs.Add(source);
+            }
+
+            var useCase = new LoadWorkspaceDataUseCase(
+                new WorkspaceFolderSpecParser(),
+                new FakeRootLocator(roots),
+                new FakeMetadataReader(),
+                new FakeCanaliReader(),
+                new FakeDataSourceReader(dataByRoot),
+                new MergeLoadedSourcesUseCase());
+
+            Exception exception = Assert.ThrowsException<ArgumentException>(
+                () => useCase.Execute(new WorkspaceLoadRequest(string.Join(" ; ", sourceSpecs))));
+
+            StringAssert.Contains(exception.Message, "No more than 6 folders");
+        }
+
+        [TestMethod]
         public void Execute_LoadsSingleFolderWithoutMerge()
         {
             var rootLocator = new FakeRootLocator("C:\\src", "C:\\root");

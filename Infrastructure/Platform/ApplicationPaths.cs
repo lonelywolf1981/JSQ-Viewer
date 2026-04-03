@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using JSQViewer.Application.Abstractions;
+using JSQViewer.Application.Exporting;
 
 namespace JSQViewer.Infrastructure.Platform
 {
@@ -42,6 +43,14 @@ namespace JSQViewer.Infrastructure.Platform
         public string LogDirectory
         {
             get { return Path.Combine(ApplicationBaseDirectory, "log"); }
+        }
+
+        public string GetProtocolTemplatePath(ProtocolTemplateMode mode)
+        {
+            string fileName = mode == ProtocolTemplateMode.DoubleCabinet
+                ? "template2.xlsx"
+                : "template.xlsx";
+            return Path.Combine(ProjectRoot, fileName);
         }
     }
 }

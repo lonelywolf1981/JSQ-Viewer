@@ -40,6 +40,7 @@ namespace JSQViewer
             _mainFormNotificationService = new WinFormsMainFormNotificationService();
             IRecentFoldersRepository recentFoldersRepository = new FileRecentFoldersRepository(appPaths);
             IUiStateRepository uiStateRepository = new FileUiStateRepository(appPaths);
+            IWorkspaceLayoutRepository workspaceLayoutRepository = new FileWorkspaceLayoutRepository(appPaths);
             IPresetRepository presetRepository = new FilePresetRepository(appPaths);
             IOrderRepository orderRepository = new FileOrderRepository(appPaths);
             IViewerSettingsRepository viewerSettingsRepository = new FileViewerSettingsRepository(appPaths);
@@ -52,7 +53,7 @@ namespace JSQViewer
             var buildWorkspaceSummaryUseCase = new BuildWorkspaceSummaryUseCase(dataSummaryService);
             var chartViewModelFactory = new ChartViewModelFactory(timestampRangeService);
             var chartRenderer = new ChartRenderer();
-            var exportTemplateUseCase = new ExportTemplateUseCase(new OpenXmlTemplateExporter(), new OpenXmlTemplateExportValidator());
+            var exportTemplateUseCase = new ExportTemplateUseCase(new OpenXmlTemplateExporter(appPaths), new OpenXmlTemplateExportValidator());
             var exportSettingsPresenter = new ExportSettingsPresenter();
             var viewerSettingsSanitizer = new ViewerSettingsSanitizer();
             IViewerSession viewerSession = new ViewerSession(seriesSliceCache);
@@ -76,6 +77,7 @@ namespace JSQViewer
                 _externalProcessLauncher,
                 recentFoldersRepository,
                 uiStateRepository,
+                workspaceLayoutRepository,
                 presetRepository,
                 orderRepository,
                 viewerSettingsRepository,

@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using JSQViewer.Infrastructure.Platform;
 using JSQViewer.Application.Exporting;
 using JSQViewer.Application.Exporting.Ports;
 using JSQViewer.Presentation.WinForms.Presenters;
@@ -19,7 +21,7 @@ namespace JSQViewer.Tests
             var useCase = new ExportTemplateUseCase(exporter, validator);
             var request = new ExportTemplateRequest
             {
-                TemplatePath = "template.xlsx",
+                TemplateMode = ProtocolTemplateMode.SingleCabinet,
                 LoadedFolder = "C:\\tests\\root",
                 Data = SessionAndChartingTestData.CreateData(new long[] { 0L, 1000L }),
                 SelectedChannels = new[] { "A-01" },
@@ -47,7 +49,7 @@ namespace JSQViewer.Tests
             double endOa = new DateTime(2024, 1, 1, 11, 0, 0, DateTimeKind.Local).ToOADate();
 
             ExportTemplateRequest request = presenter.BuildRequest(
-                "template.xlsx",
+                ProtocolTemplateMode.DoubleCabinet,
                 "C:\\tests\\root",
                 SessionAndChartingTestData.CreateData(new long[] { 0L, 1000L }),
                 new[] { "A-01" },
@@ -61,6 +63,24 @@ namespace JSQViewer.Tests
             Assert.IsTrue(request.RangeStartMs.HasValue);
             Assert.IsTrue(request.RangeEndMs.HasValue);
             Assert.IsTrue(request.RangeEndMs.Value > request.RangeStartMs.Value);
+            Assert.AreEqual(ProtocolTemplateMode.DoubleCabinet, request.TemplateMode);
+        }
+    }
+
+    [TestClass]
+    public class ApplicationPathsTemplateModeTests
+    {
+        [TestMethod]
+        public void GetProtocolTemplatePath_ResolvesSingleAndDoubleCabinetTemplates()
+        {
+            var appPaths = new ApplicationPaths("C:\\app\\bin\\Debug");
+
+            Assert.AreEqual(
+                Path.Combine("C:\\app\\bin\\Debug", "template.xlsx"),
+                appPaths.GetProtocolTemplatePath(ProtocolTemplateMode.SingleCabinet));
+            Assert.AreEqual(
+                Path.Combine("C:\\app\\bin\\Debug", "template2.xlsx"),
+                appPaths.GetProtocolTemplatePath(ProtocolTemplateMode.DoubleCabinet));
         }
     }
 

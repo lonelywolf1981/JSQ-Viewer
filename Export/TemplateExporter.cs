@@ -3,13 +3,18 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.IO.Packaging;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Xml;
 using System.Xml.Linq;
+using System.Runtime.CompilerServices;
 using JSQViewer.Application.Charting;
 using JSQViewer.Core;
 using JSQViewer.Settings;
+
+[assembly: InternalsVisibleTo("JSQViewer.Tests")]
 
 namespace JSQViewer.Export
 {
@@ -34,7 +39,8 @@ namespace JSQViewer.Export
             string refrigerant,
             ViewerSettingsModel viewerSettings,
             long? rangeStartMs = null,
-            long? rangeEndMs = null)
+            long? rangeEndMs = null,
+            Action<string> profilingSink = null)
         {
             if (data == null || data.TimestampsMs == null || data.TimestampsMs.Length == 0)
             {
@@ -45,57 +51,40 @@ namespace JSQViewer.Export
                 throw new FileNotFoundException("template.xlsx not found.", templatePath);
             }
 
+            bool profile = profilingSink != null
+                || string.Equals(Environment.GetEnvironmentVariable("JSQ_EXPORT_PROFILE"), "1", StringComparison.Ordinal);
+            Stopwatch totalTimer = profile ? Stopwatch.StartNew() : null;
+            Stopwatch stageTimer = profile ? Stopwatch.StartNew() : null;
+            long preparationMs = 0L;
+            long templateLoadMs = 0L;
+            long worksheetWriteMs = 0L;
+            long postProcessMs = 0L;
+
             string rootFolder = loadedFolder ?? string.Empty;
             string refrigerantNorm = refrigerant == "R600a" ? "R600a" : "R290";
             string[] cols = data.ColumnNames ?? new string[0];
-            var selectedSet = new HashSet<string>(selectedChannels ?? new string[0], StringComparer.OrdinalIgnoreCase);
             long[] tList = data.TimestampsMs;
-            var timestampRangeService = new TimestampRangeService();
+            TimeGridPreparationResult gridAndIndices = BuildTimeGridAndIndices(tList, rangeStartMs, rangeEndMs);
+            List<int> idxs = gridAndIndices.Indices;
 
-            long startMs = rangeStartMs.HasValue ? rangeStartMs.Value : tList[0];
-            long endMs = rangeEndMs.HasValue ? rangeEndMs.Value : tList[tList.Length - 1];
-            if (startMs > endMs) { long tmp = startMs; startMs = endMs; endMs = tmp; }
-            long t0 = startMs;
-
-            var gridMs = new List<long>();
-            for (long g = t0; g <= endMs; g += 20000)
-            {
-                gridMs.Add(g);
-            }
-
-            var idxs = new List<int>(gridMs.Count);
-            for (int i = 0; i < gridMs.Count; i++)
-            {
-                int idx = timestampRangeService.NearestIndex(tList, gridMs[i]);
-                if (idx < 0 || Math.Abs(tList[idx] - gridMs[i]) > 30000)
-                {
-                    idxs.Add(-1);
-                }
-                else
-                {
-                    idxs.Add(idx);
-                }
-            }
-
-            var fixedMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var key in KeyToColumn.Keys)
-            {
-                fixedMap[key] = ResolveForSelection(key, cols, selectedSet);
-            }
+            Dictionary<string, string> fixedMap = ResolveFixedChannelMap(cols, selectedChannels);
+            var selectedSet = new HashSet<string>(selectedChannels ?? new string[0], StringComparer.OrdinalIgnoreCase);
 
             var fixedCodes = new HashSet<string>(
                 fixedMap.Values.Where(s => !string.IsNullOrWhiteSpace(s)),
                 StringComparer.OrdinalIgnoreCase);
 
-            List<string> candidates = selectedSet.Count > 0
-                ? cols.Where(c => selectedSet.Contains(c)).ToList()
-                : cols.ToList();
             List<string> extraCodes = includeExtra
-                ? candidates.Where(c => !fixedCodes.Contains(c)).ToList()
+                ? ResolveExtraChannelCodes(cols, selectedSet, fixedCodes)
                 : new List<string>();
 
             extraCodes.Sort(new NaturalDisplayComparer(data.Channels));
             const int extraStartCol = 26;
+            if (profile)
+            {
+                preparationMs = stageTimer.ElapsedMilliseconds;
+                stageTimer.Restart();
+            }
 
             byte[] templateBytes = File.ReadAllBytes(templatePath);
             using (var ms = new MemoryStream())
@@ -137,77 +126,7 @@ namespace JSQViewer.Export
                     Dictionary<int, string> patternFormulas = ReadPatternFormulas(sheetData, ns, startRow);
                     Dictionary<int, string> patternStyles = ReadPatternStyles(sheetData, ns, startRow);
                     string patternRowStyle = ReadPatternRowStyle(sheetData, ns, startRow);
-
-                    for (int j = 0; j < idxs.Count; j++)
-                    {
-                        int row = startRow + j;
-                        int idx = idxs[j];
-
-                        double elapsedDays = (j * 20.0) / 86400.0;
-                        SetNumber(sheetData, ns, row, 2, elapsedDays);
-
-                        if (idx >= 0)
-                        {
-                            DateTime dt = timestampRangeService.UnixMsToLocalDateTime(tList[idx]);
-                            double timeOfDayDays = dt.TimeOfDay.TotalSeconds / 86400.0;
-                            SetNumber(sheetData, ns, row, 3, timeOfDayDays);
-                        }
-                        else
-                        {
-                            ClearCellValue(sheetData, ns, row, 3);
-                        }
-
-                        for (int c = 0; c < baseRawColumns.Length; c++)
-                        {
-                            ClearCellValue(sheetData, ns, row, baseRawColumns[c]);
-                        }
-
-                        if (idx >= 0)
-                        {
-                            foreach (var kv in KeyToColumn)
-                            {
-                                string code = fixedMap[kv.Key];
-                                if (string.IsNullOrWhiteSpace(code))
-                                {
-                                    continue;
-                                }
-                                if (selectedSet.Count > 0 && !selectedSet.Contains(code))
-                                {
-                                    continue;
-                                }
-
-                                double?[] src;
-                                if (!data.Columns.TryGetValue(code, out src) || idx >= src.Length || !src[idx].HasValue)
-                                {
-                                    continue;
-                                }
-                                SetNumber(sheetData, ns, row, kv.Value, src[idx].Value);
-                            }
-
-                            for (int e = 0; e < extraCodes.Count; e++)
-                            {
-                                int col = extraStartCol + e;
-                                string code = extraCodes[e];
-                                double?[] src;
-                                if (!data.Columns.TryGetValue(code, out src) || idx >= src.Length || !src[idx].HasValue)
-                                {
-                                    ClearCellValue(sheetData, ns, row, col);
-                                    continue;
-                                }
-                                SetNumber(sheetData, ns, row, col, src[idx].Value);
-                            }
-                        }
-                        else
-                        {
-                            for (int e = 0; e < extraCodes.Count; e++)
-                            {
-                                ClearCellValue(sheetData, ns, row, extraStartCol + e);
-                            }
-                        }
-
-                        ApplyTranslatedFormulas(sheetData, ns, patternFormulas, startRow, row);
-                        ApplyPatternStyles(sheetData, ns, patternStyles, patternRowStyle, row);
-                    }
+                    XElement patternRowTemplate = FindRow(sheetData, ns, startRow);
 
                     for (int e = 0; e < extraCodes.Count; e++)
                     {
@@ -216,14 +135,31 @@ namespace JSQViewer.Export
                         SetInlineString(sheetData, ns, headerRow, col, BuildTemplateHeader(code, data.Channels));
                     }
 
+                    if (profile)
+                    {
+                        templateLoadMs = stageTimer.ElapsedMilliseconds;
+                        stageTimer.Restart();
+                    }
+
                     if (idxs.Count > 0)
                     {
                         ApplyConditionalFormatting(package, worksheet, ns, startRow, startRow + idxs.Count - 1, viewerSettings);
                     }
 
-                    RemoveCalcChain(package);
-                    ForceFullCalcOnLoad(package);
-                    NormalizeSheetData(sheetData, ns);
+                    var streamingContext = new TemplateSheetStreamingContext(
+                        startRow,
+                        idxs,
+                        tList,
+                        fixedMap,
+                        selectedSet,
+                        data,
+                        extraCodes,
+                        extraStartCol,
+                        baseRawColumns,
+                        patternFormulas,
+                        patternStyles,
+                        patternRowStyle,
+                        patternRowTemplate == null ? null : new XElement(patternRowTemplate));
 
                     // Clear caches before writing
                     _rowCache = null;
@@ -231,12 +167,102 @@ namespace JSQViewer.Export
 
                     using (Stream outStream = sheetPart.GetStream(FileMode.Create, FileAccess.Write))
                     {
-                        doc.Save(outStream);
+                        WriteWorksheetWithStreamedSheetData(outStream, doc, ns, sheetData, streamingContext);
+                    }
+
+                    if (profile)
+                    {
+                        worksheetWriteMs = stageTimer.ElapsedMilliseconds;
+                        stageTimer.Restart();
+                    }
+
+                    RemoveCalcChain(package);
+                    ForceFullCalcOnLoad(package);
+                }
+
+                if (profile)
+                {
+                    postProcessMs = stageTimer.ElapsedMilliseconds;
+                    if (profilingSink != null)
+                    {
+                        profilingSink(
+                        "TemplateExporter.Export timing (ms): preparation=" + preparationMs.ToString(CultureInfo.InvariantCulture)
+                        + ", templateLoad=" + templateLoadMs.ToString(CultureInfo.InvariantCulture)
+                        + ", worksheetWrite=" + worksheetWriteMs.ToString(CultureInfo.InvariantCulture)
+                        + ", postProcess=" + postProcessMs.ToString(CultureInfo.InvariantCulture)
+                        + ", total=" + totalTimer.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture));
                     }
                 }
 
                 return ms.ToArray();
             }
+        }
+
+        internal static Dictionary<string, string> ResolveFixedChannelMap(string[] cols, IEnumerable<string> selectedChannels)
+        {
+            var selectedSet = new HashSet<string>(selectedChannels ?? new string[0], StringComparer.OrdinalIgnoreCase);
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string key in KeyToColumn.Keys)
+            {
+                map[key] = ResolveForSelection(key, cols ?? new string[0], selectedSet);
+            }
+
+            return map;
+        }
+
+        internal static List<string> ResolveExtraChannelCodes(string[] cols, IEnumerable<string> selectedChannels, ISet<string> fixedCodes)
+        {
+            var selectedSet = new HashSet<string>(selectedChannels ?? new string[0], StringComparer.OrdinalIgnoreCase);
+            List<string> candidates = selectedSet.Count > 0
+                ? (cols ?? new string[0]).Where(c => selectedSet.Contains(c)).ToList()
+                : (cols ?? new string[0]).ToList();
+
+            if (fixedCodes == null || fixedCodes.Count == 0)
+            {
+                return candidates;
+            }
+
+            return candidates.Where(c => !fixedCodes.Contains(c)).ToList();
+        }
+
+        internal static TimeGridPreparationResult BuildTimeGridAndIndices(long[] timestamps, long? rangeStartMs = null, long? rangeEndMs = null)
+        {
+            var gridMs = new List<long>();
+            var idxs = new List<int>();
+            if (timestamps == null || timestamps.Length == 0)
+            {
+                return new TimeGridPreparationResult(gridMs, idxs);
+            }
+
+            var timestampRangeService = new TimestampRangeService();
+            long startMs = rangeStartMs.HasValue ? rangeStartMs.Value : timestamps[0];
+            long endMs = rangeEndMs.HasValue ? rangeEndMs.Value : timestamps[timestamps.Length - 1];
+            if (startMs > endMs)
+            {
+                long tmp = startMs;
+                startMs = endMs;
+                endMs = tmp;
+            }
+
+            for (long g = startMs; g <= endMs; g += 20000)
+            {
+                gridMs.Add(g);
+            }
+
+            for (int i = 0; i < gridMs.Count; i++)
+            {
+                int idx = timestampRangeService.NearestIndex(timestamps, gridMs[i]);
+                if (idx < 0 || Math.Abs(timestamps[idx] - gridMs[i]) > 30000)
+                {
+                    idxs.Add(-1);
+                }
+                else
+                {
+                    idxs.Add(idx);
+                }
+            }
+
+            return new TimeGridPreparationResult(gridMs, idxs);
         }
 
         private static string ResolveForSelection(string key, string[] cols, HashSet<string> selected)
@@ -300,6 +326,19 @@ namespace JSQViewer.Export
             }
 
             return matches[0];
+        }
+
+        internal sealed class TimeGridPreparationResult
+        {
+            public TimeGridPreparationResult(List<long> gridMs, List<int> indices)
+            {
+                GridMs = gridMs ?? new List<long>();
+                Indices = indices ?? new List<int>();
+            }
+
+            public List<long> GridMs { get; }
+
+            public List<int> Indices { get; }
         }
 
         private static Dictionary<int, string> ReadPatternFormulas(XElement sheetData, XNamespace ns, int patternRow)
@@ -825,6 +864,587 @@ namespace JSQViewer.Export
                 return name;
             }
             return code;
+        }
+
+        private static void WriteWorksheetWithStreamedSheetData(
+            Stream outputStream,
+            XDocument worksheetDocument,
+            XNamespace ns,
+            XElement templateSheetData,
+            TemplateSheetStreamingContext context)
+        {
+            if (outputStream == null)
+            {
+                throw new ArgumentNullException("outputStream");
+            }
+            if (worksheetDocument == null || worksheetDocument.Root == null)
+            {
+                throw new InvalidDataException("worksheet xml is missing.");
+            }
+            if (templateSheetData == null)
+            {
+                throw new InvalidDataException("sheetData node is missing.");
+            }
+
+            XElement worksheet = worksheetDocument.Root;
+            var streamedWorksheet = new XStreamingElement(
+                worksheet.Name,
+                worksheet.Attributes(),
+                StreamWorksheetNodes(worksheet, templateSheetData, ns, context));
+
+            var settings = new XmlWriterSettings
+            {
+                Encoding = new UTF8Encoding(false),
+                OmitXmlDeclaration = worksheetDocument.Declaration == null,
+                CloseOutput = false
+            };
+
+            using (XmlWriter writer = XmlWriter.Create(outputStream, settings))
+            {
+                if (worksheetDocument.Declaration != null)
+                {
+                    writer.WriteStartDocument();
+                }
+
+                streamedWorksheet.WriteTo(writer);
+                writer.Flush();
+            }
+        }
+
+        private static IEnumerable<object> StreamWorksheetNodes(
+            XElement worksheet,
+            XElement templateSheetData,
+            XNamespace ns,
+            TemplateSheetStreamingContext context)
+        {
+            foreach (XNode node in worksheet.Nodes())
+            {
+                XElement element = node as XElement;
+                if (element != null)
+                {
+                    if (object.ReferenceEquals(element, templateSheetData))
+                    {
+                        yield return new XStreamingElement(
+                            templateSheetData.Name,
+                            templateSheetData.Attributes(),
+                            StreamSheetDataRows(templateSheetData, ns, context));
+                    }
+                    else
+                    {
+                        yield return new XElement(element);
+                    }
+
+                    continue;
+                }
+
+                XNode cloned = CloneNodeForStreaming(node);
+                if (cloned != null)
+                {
+                    yield return cloned;
+                }
+            }
+        }
+
+        private static XNode CloneNodeForStreaming(XNode node)
+        {
+            if (node == null)
+            {
+                return null;
+            }
+
+            var text = node as XText;
+            if (text != null)
+            {
+                return new XText(text.Value);
+            }
+
+            var cdata = node as XCData;
+            if (cdata != null)
+            {
+                return new XCData(cdata.Value);
+            }
+
+            var comment = node as XComment;
+            if (comment != null)
+            {
+                return new XComment(comment.Value);
+            }
+
+            var pi = node as XProcessingInstruction;
+            if (pi != null)
+            {
+                return new XProcessingInstruction(pi.Target, pi.Data);
+            }
+
+            var doctype = node as XDocumentType;
+            if (doctype != null)
+            {
+                return new XDocumentType(doctype.Name, doctype.PublicId, doctype.SystemId, doctype.InternalSubset);
+            }
+
+            return null;
+        }
+
+        private static IEnumerable<object> StreamSheetDataRows(
+            XElement templateSheetData,
+            XNamespace ns,
+            TemplateSheetStreamingContext context)
+        {
+            int generatedStartRow = context.StartRow;
+            int generatedEndRow = context.GeneratedRowCount > 0
+                ? context.StartRow + context.GeneratedRowCount - 1
+                : context.StartRow - 1;
+            bool generatedRowsInserted = false;
+
+            foreach (XNode node in templateSheetData.Nodes())
+            {
+                XElement row = node as XElement;
+                if (row != null && row.Name == ns + "row")
+                {
+                    int rowIndex;
+                    if (TryParseRowIndex(row, out rowIndex))
+                    {
+                        if (rowIndex < generatedStartRow)
+                        {
+                            yield return new XElement(row);
+                        }
+                        else if (rowIndex > generatedEndRow)
+                        {
+                            if (!generatedRowsInserted)
+                            {
+                                for (int rowOffset = 0; rowOffset < context.GeneratedRowCount; rowOffset++)
+                                {
+                                    yield return BuildGeneratedRow(ns, context, rowOffset);
+                                }
+
+                                generatedRowsInserted = true;
+                            }
+
+                            yield return new XElement(row);
+                        }
+
+                        continue;
+                    }
+
+                    yield return new XElement(row);
+                    continue;
+                }
+
+                XNode clone = CloneNodeForStreaming(node);
+                if (clone != null)
+                {
+                    yield return clone;
+                }
+            }
+
+            if (!generatedRowsInserted)
+            {
+                for (int rowOffset = 0; rowOffset < context.GeneratedRowCount; rowOffset++)
+                {
+                    yield return BuildGeneratedRow(ns, context, rowOffset);
+                }
+            }
+        }
+
+        private static XElement BuildGeneratedRow(XNamespace ns, TemplateSheetStreamingContext context, int rowOffset)
+        {
+            int rowIndex = context.StartRow + rowOffset;
+            int sourceIndex = context.SampleIndices[rowOffset];
+            XElement row = ClonePatternRowForTarget(ns, context.PatternRowTemplate, context.StartRow, rowIndex, context.PatternFormulas);
+            var cells = BuildCellMap(row, ns);
+
+            double elapsedDays = (rowOffset * 20.0) / 86400.0;
+            SetNumericCellValue(row, cells, ns, rowIndex, 2, elapsedDays, context.PatternStyles);
+
+            if (sourceIndex >= 0)
+            {
+                DateTime dt = context.TimestampRangeService.UnixMsToLocalDateTime(context.Timestamps[sourceIndex]);
+                double timeOfDayDays = dt.TimeOfDay.TotalSeconds / 86400.0;
+                SetNumericCellValue(row, cells, ns, rowIndex, 3, timeOfDayDays, context.PatternStyles);
+            }
+            else
+            {
+                ClearCellValue(row, cells, ns, rowIndex, 3, context.PatternStyles);
+            }
+
+            for (int i = 0; i < context.BaseRawColumns.Length; i++)
+            {
+                ClearCellValue(row, cells, ns, rowIndex, context.BaseRawColumns[i], context.PatternStyles);
+            }
+
+            if (sourceIndex >= 0)
+            {
+                foreach (KeyValuePair<string, int> keyPair in KeyToColumn)
+                {
+                    string code;
+                    if (!context.FixedMap.TryGetValue(keyPair.Key, out code) || string.IsNullOrWhiteSpace(code))
+                    {
+                        continue;
+                    }
+                    if (context.SelectedSet.Count > 0 && !context.SelectedSet.Contains(code))
+                    {
+                        continue;
+                    }
+
+                    double?[] sourceValues;
+                    if (!context.Data.Columns.TryGetValue(code, out sourceValues)
+                        || sourceIndex >= sourceValues.Length
+                        || !sourceValues[sourceIndex].HasValue)
+                    {
+                        continue;
+                    }
+
+                    SetNumericCellValue(row, cells, ns, rowIndex, keyPair.Value, sourceValues[sourceIndex].Value, context.PatternStyles);
+                }
+
+                for (int i = 0; i < context.ExtraCodes.Count; i++)
+                {
+                    int col = context.ExtraStartColumn + i;
+                    string code = context.ExtraCodes[i];
+                    double?[] sourceValues;
+                    if (!context.Data.Columns.TryGetValue(code, out sourceValues)
+                        || sourceIndex >= sourceValues.Length
+                        || !sourceValues[sourceIndex].HasValue)
+                    {
+                        ClearCellValue(row, cells, ns, rowIndex, col, context.PatternStyles);
+                        continue;
+                    }
+
+                    SetNumericCellValue(row, cells, ns, rowIndex, col, sourceValues[sourceIndex].Value, context.PatternStyles);
+                }
+            }
+            else
+            {
+                for (int i = 0; i < context.ExtraCodes.Count; i++)
+                {
+                    ClearCellValue(row, cells, ns, rowIndex, context.ExtraStartColumn + i, context.PatternStyles);
+                }
+            }
+
+            foreach (KeyValuePair<int, string> formulaPair in context.PatternFormulas)
+            {
+                int col = formulaPair.Key;
+                XElement cell = EnsureCell(row, cells, ns, rowIndex, col, context.PatternStyles);
+                XElement formulaNode = cell.Element(ns + "f");
+                if (formulaNode == null)
+                {
+                    formulaNode = new XElement(ns + "f");
+                    cell.AddFirst(formulaNode);
+                }
+                formulaNode.Value = TranslateFormula(formulaPair.Value, context.StartRow, rowIndex);
+
+                XElement cachedValue = cell.Element(ns + "v");
+                if (cachedValue != null)
+                {
+                    cachedValue.Remove();
+                }
+            }
+
+            UpdateRowSpansAttribute(row, ns);
+            return row;
+        }
+
+        private static XElement ClonePatternRowForTarget(
+            XNamespace ns,
+            XElement patternRowTemplate,
+            int patternRowIndex,
+            int rowIndex,
+            Dictionary<int, string> patternFormulas = null)
+        {
+            if (patternRowTemplate == null)
+            {
+                return new XElement(
+                    ns + "row",
+                    new XAttribute("r", rowIndex.ToString(CultureInfo.InvariantCulture)));
+            }
+
+            XElement row = new XElement(patternRowTemplate);
+            row.SetAttributeValue("r", rowIndex.ToString(CultureInfo.InvariantCulture));
+
+            foreach (XElement cell in row.Elements(ns + "c"))
+            {
+                XAttribute cellRefAttribute = cell.Attribute("r");
+                int columnIndex = ParseColumnIndexFromCellRef(cellRefAttribute == null ? string.Empty : cellRefAttribute.Value);
+                if (columnIndex > 0)
+                {
+                    cell.SetAttributeValue("r", ColumnName(columnIndex) + rowIndex.ToString(CultureInfo.InvariantCulture));
+                }
+
+                XElement formulaNode = cell.Element(ns + "f");
+                if (formulaNode == null)
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(formulaNode.Value))
+                {
+                    formulaNode.Value = TranslateFormula(formulaNode.Value, patternRowIndex, rowIndex);
+                }
+                else if (patternFormulas != null)
+                {
+                    int formulaColumn = ParseColumnIndexFromCellRef(cellRefAttribute == null ? string.Empty : cellRefAttribute.Value);
+                    string patternFormula;
+                    if (formulaColumn > 0 && patternFormulas.TryGetValue(formulaColumn, out patternFormula))
+                    {
+                        formulaNode.Value = TranslateFormula(patternFormula, patternRowIndex, rowIndex);
+                    }
+                }
+
+                XAttribute formulaRef = formulaNode.Attribute("ref");
+                if (formulaRef != null && !string.IsNullOrWhiteSpace(formulaRef.Value))
+                {
+                    formulaNode.SetAttributeValue(formulaRef.Name, TranslateFormula(formulaRef.Value, patternRowIndex, rowIndex));
+                }
+
+                if (rowIndex != patternRowIndex)
+                {
+                    XAttribute formulaType = formulaNode.Attribute("t");
+                    if (formulaType != null && string.Equals(formulaType.Value, "shared", StringComparison.OrdinalIgnoreCase))
+                    {
+                        formulaType.Remove();
+                        XAttribute sharedIndex = formulaNode.Attribute("si");
+                        if (sharedIndex != null)
+                        {
+                            sharedIndex.Remove();
+                        }
+                        XAttribute translatedRef = formulaNode.Attribute("ref");
+                        if (translatedRef != null)
+                        {
+                            translatedRef.Remove();
+                        }
+                    }
+                }
+
+                XElement cachedValue = cell.Element(ns + "v");
+                if (cachedValue != null)
+                {
+                    cachedValue.Remove();
+                }
+            }
+
+            return row;
+        }
+
+        private static Dictionary<int, XElement> BuildCellMap(XElement row, XNamespace ns)
+        {
+            var cells = new Dictionary<int, XElement>();
+            foreach (XElement cell in row.Elements(ns + "c"))
+            {
+                XAttribute cellRef = cell.Attribute("r");
+                int columnIndex = ParseColumnIndexFromCellRef(cellRef == null ? string.Empty : cellRef.Value);
+                if (columnIndex > 0)
+                {
+                    cells[columnIndex] = cell;
+                }
+            }
+
+            return cells;
+        }
+
+        private static XElement EnsureCell(
+            XElement row,
+            Dictionary<int, XElement> cells,
+            XNamespace ns,
+            int rowIndex,
+            int colIndex,
+            Dictionary<int, string> patternStyles)
+        {
+            XElement cell;
+            if (cells.TryGetValue(colIndex, out cell))
+            {
+                return cell;
+            }
+
+            string cellRef = ColumnName(colIndex) + rowIndex.ToString(CultureInfo.InvariantCulture);
+            cell = new XElement(ns + "c", new XAttribute("r", cellRef));
+
+            string style;
+            if (patternStyles != null
+                && patternStyles.TryGetValue(colIndex, out style)
+                && !string.IsNullOrWhiteSpace(style))
+            {
+                cell.SetAttributeValue("s", style);
+            }
+
+            InsertCellInOrder(row, ns, cell, colIndex);
+            cells[colIndex] = cell;
+            return cell;
+        }
+
+        private static void ClearCellValue(
+            XElement row,
+            Dictionary<int, XElement> cells,
+            XNamespace ns,
+            int rowIndex,
+            int colIndex,
+            Dictionary<int, string> patternStyles)
+        {
+            XElement cell = EnsureCell(row, cells, ns, rowIndex, colIndex, patternStyles);
+            cell.SetAttributeValue("t", null);
+
+            XElement inline = cell.Element(ns + "is");
+            if (inline != null)
+            {
+                inline.Remove();
+            }
+
+            XElement valueNode = cell.Element(ns + "v");
+            if (valueNode != null)
+            {
+                valueNode.Remove();
+            }
+        }
+
+        private static void SetNumericCellValue(
+            XElement row,
+            Dictionary<int, XElement> cells,
+            XNamespace ns,
+            int rowIndex,
+            int colIndex,
+            double value,
+            Dictionary<int, string> patternStyles)
+        {
+            XElement cell = EnsureCell(row, cells, ns, rowIndex, colIndex, patternStyles);
+            cell.SetAttributeValue("t", null);
+
+            XElement inline = cell.Element(ns + "is");
+            if (inline != null)
+            {
+                inline.Remove();
+            }
+
+            XElement formula = cell.Element(ns + "f");
+            if (formula != null)
+            {
+                formula.Remove();
+            }
+
+            XElement valueNode = cell.Element(ns + "v");
+            if (valueNode == null)
+            {
+                valueNode = new XElement(ns + "v");
+                cell.Add(valueNode);
+            }
+            valueNode.Value = value.ToString("G17", CultureInfo.InvariantCulture);
+        }
+
+        private static bool TryParseRowIndex(XElement row, out int rowIndex)
+        {
+            rowIndex = -1;
+            if (row == null)
+            {
+                return false;
+            }
+
+            XAttribute rowAttr = row.Attribute("r");
+            return rowAttr != null
+                && int.TryParse(rowAttr.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out rowIndex);
+        }
+
+        private static void UpdateRowSpansAttribute(XElement row, XNamespace ns)
+        {
+            if (row == null)
+            {
+                return;
+            }
+
+            int minCol = int.MaxValue;
+            int maxCol = int.MinValue;
+            foreach (XElement cell in row.Elements(ns + "c"))
+            {
+                XAttribute cellRef = cell.Attribute("r");
+                int col = ParseColumnIndexFromCellRef(cellRef == null ? string.Empty : cellRef.Value);
+                if (col <= 0)
+                {
+                    continue;
+                }
+
+                if (col < minCol)
+                {
+                    minCol = col;
+                }
+                if (col > maxCol)
+                {
+                    maxCol = col;
+                }
+            }
+
+            if (minCol == int.MaxValue || maxCol == int.MinValue)
+            {
+                row.SetAttributeValue("spans", null);
+                return;
+            }
+
+            row.SetAttributeValue(
+                "spans",
+                minCol.ToString(CultureInfo.InvariantCulture) + ":" + maxCol.ToString(CultureInfo.InvariantCulture));
+        }
+
+        private sealed class TemplateSheetStreamingContext
+        {
+            public TemplateSheetStreamingContext(
+                int startRow,
+                IList<int> sampleIndices,
+                long[] timestamps,
+                Dictionary<string, string> fixedMap,
+                ISet<string> selectedSet,
+                TestData data,
+                IList<string> extraCodes,
+                int extraStartColumn,
+                int[] baseRawColumns,
+                Dictionary<int, string> patternFormulas,
+                Dictionary<int, string> patternStyles,
+                string patternRowStyle,
+                XElement patternRowTemplate)
+            {
+                StartRow = startRow;
+                SampleIndices = sampleIndices ?? new List<int>();
+                Timestamps = timestamps ?? new long[0];
+                FixedMap = fixedMap ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                SelectedSet = selectedSet ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                Data = data ?? new TestData();
+                ExtraCodes = extraCodes ?? new List<string>();
+                ExtraStartColumn = extraStartColumn;
+                BaseRawColumns = baseRawColumns ?? new int[0];
+                PatternFormulas = patternFormulas ?? new Dictionary<int, string>();
+                PatternStyles = patternStyles ?? new Dictionary<int, string>();
+                PatternRowStyle = patternRowStyle;
+                PatternRowTemplate = patternRowTemplate;
+                TimestampRangeService = new TimestampRangeService();
+            }
+
+            public int StartRow { get; }
+
+            public IList<int> SampleIndices { get; }
+
+            public long[] Timestamps { get; }
+
+            public Dictionary<string, string> FixedMap { get; }
+
+            public ISet<string> SelectedSet { get; }
+
+            public TestData Data { get; }
+
+            public IList<string> ExtraCodes { get; }
+
+            public int ExtraStartColumn { get; }
+
+            public int[] BaseRawColumns { get; }
+
+            public Dictionary<int, string> PatternFormulas { get; }
+
+            public Dictionary<int, string> PatternStyles { get; }
+
+            public string PatternRowStyle { get; }
+
+            public XElement PatternRowTemplate { get; }
+
+            public TimestampRangeService TimestampRangeService { get; }
+
+            public int GeneratedRowCount
+            {
+                get { return SampleIndices.Count; }
+            }
         }
 
         // Cached row/cell lookup for performance — avoids O(n) linear scan per access

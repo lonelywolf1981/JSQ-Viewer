@@ -6,7 +6,7 @@ namespace JSQViewer.Application.Exporting
 {
     public sealed class ExportTemplateRequest
     {
-        public string TemplatePath { get; set; }
+        public ProtocolTemplateMode TemplateMode { get; set; }
 
         public string LoadedFolder { get; set; }
 
