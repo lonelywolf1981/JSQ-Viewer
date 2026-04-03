@@ -213,7 +213,36 @@ namespace JSQViewer.Tests
             Assert.AreEqual("Label", ChannelWorkspaceTestHarness.GetString(sourceA, "SortMode"));
             Assert.AreEqual("A-0", ChannelWorkspaceTestHarness.GetString(sourceB, "FilterText"));
             Assert.IsTrue(ChannelWorkspaceTestHarness.GetBoolean(sourceB, "SelectedOnly"));
-            Assert.AreEqual("Code", ChannelWorkspaceTestHarness.GetString(sourceB, "SortMode"));
+            Assert.AreEqual("User", ChannelWorkspaceTestHarness.GetString(sourceB, "SortMode"));
+        }
+
+        [TestMethod]
+        public void BindData_NewSourceWindows_DefaultToUserSortEvenWhenMainSortDiffers()
+        {
+            object presenter = ChannelWorkspaceTestHarness.CreatePresenter();
+
+            ChannelWorkspaceTestHarness.Invoke(presenter, "Initialize", string.Empty, "Code", false);
+            ChannelWorkspaceTestHarness.Invoke(
+                presenter,
+                "BindData",
+                ChannelWorkspaceTestData.CreateMultiSourceData(
+                    new Dictionary<string, string[]>
+                    {
+                        ["C:\\srcA"] = new[] { "C:\\srcA::A-01" },
+                        ["C:\\srcB"] = new[] { "C:\\srcB::B-01" },
+                        ["C:\\srcC"] = new[] { "C:\\srcC::C-01" }
+                    }),
+                null,
+                null,
+                false);
+
+            object sourceA = ChannelWorkspaceTestHarness.Invoke(presenter, "GetSourceWindow", "C:\\srcA");
+            object sourceB = ChannelWorkspaceTestHarness.Invoke(presenter, "GetSourceWindow", "C:\\srcB");
+            object sourceC = ChannelWorkspaceTestHarness.Invoke(presenter, "GetSourceWindow", "C:\\srcC");
+
+            Assert.AreEqual("User", ChannelWorkspaceTestHarness.GetString(sourceA, "SortMode"));
+            Assert.AreEqual("User", ChannelWorkspaceTestHarness.GetString(sourceB, "SortMode"));
+            Assert.AreEqual("User", ChannelWorkspaceTestHarness.GetString(sourceC, "SortMode"));
         }
     }
 

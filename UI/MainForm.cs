@@ -571,6 +571,86 @@ namespace JSQViewer.UI
             RefreshSourceWindowLists();
         }
 
+        private bool RequiresFullChannelViewRefreshAfterSelectionChange()
+        {
+            if (CheckedListSelectionPresenter.RequiresFullRebuildAfterSelectionChange(_selectedOnlyCheck.Checked, GetSelectedSortKey()))
+            {
+                return true;
+            }
+
+            foreach (var kv in _sourceWindows)
+            {
+                SourceWindowState state = kv.Value;
+                if (state == null)
+                {
+                    continue;
+                }
+
+                bool selectedOnly = state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked;
+                string sortMode = GetSelectedSortKey(state.SortModeBox);
+                if (CheckedListSelectionPresenter.RequiresFullRebuildAfterSelectionChange(selectedOnly, sortMode))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void RefreshSelectionViewsAfterSelectionChange()
+        {
+            if (RequiresFullChannelViewRefreshAfterSelectionChange())
+            {
+                RefreshChannelViews();
+                return;
+            }
+
+            _checkedCodes.Clear();
+            foreach (string code in _channelWorkspacePresenter.GetSelectedCodes())
+            {
+                _checkedCodes.Add(code);
+            }
+
+            SyncCheckedListSelection(_channelsList, _checkedCodes, ref _syncingMainChannelSelection);
+
+            foreach (var kv in _sourceWindows)
+            {
+                SourceWindowState state = kv.Value;
+                if (state != null)
+                {
+                    SyncCheckedListSelection(state.List, _checkedCodes, ref _syncingSourceChannelSelection);
+                }
+            }
+        }
+
+        private static void SyncCheckedListSelection(CheckedListBox list, HashSet<string> checkedCodes, ref bool syncingFlag)
+        {
+            if (list == null || list.IsDisposed)
+            {
+                return;
+            }
+
+            syncingFlag = true;
+            try
+            {
+                for (int i = 0; i < list.Items.Count; i++)
+                {
+                    string code = CheckedListSelectionPresenter.GetDeferredItemCode(list.Items[i]);
+                    bool shouldBeChecked = !string.IsNullOrWhiteSpace(code)
+                        && checkedCodes != null
+                        && checkedCodes.Contains(code);
+                    if (list.GetItemChecked(i) != shouldBeChecked)
+                    {
+                        list.SetItemChecked(i, shouldBeChecked);
+                    }
+                }
+            }
+            finally
+            {
+                syncingFlag = false;
+            }
+        }
+
         private void LangButtonOnClick(object sender, EventArgs e)
         {
             Loc.Current = Loc.Current == AppLanguage.Ru ? AppLanguage.En : AppLanguage.Ru;
@@ -2031,6 +2111,10 @@ namespace JSQViewer.UI
             if (_syncingSourceChannelSelection) return;
             var list = sender as CheckedListBox;
             if (list == null) return;
+            string itemCode = e.Index >= 0 && e.Index < list.Items.Count
+                ? CheckedListSelectionPresenter.GetDeferredItemCode(list.Items[e.Index])
+                : null;
+            bool isSelected = CheckedListSelectionPresenter.IsSelectedAfterItemCheck(e.NewValue);
 
             BeginInvoke((Action)(delegate
             {
@@ -2038,13 +2122,9 @@ namespace JSQViewer.UI
                 _syncingSourceChannelSelection = true;
                 try
                 {
-                    if (e.Index >= 0 && e.Index < list.Items.Count)
+                    if (!string.IsNullOrWhiteSpace(itemCode))
                     {
-                        var item = list.Items[e.Index] as ChannelListItemViewModel;
-                        if (item != null)
-                        {
-                            _channelWorkspacePresenter.SetChannelSelected(item.Code, CheckedListSelectionPresenter.IsSelectedAfterItemCheck(e.NewValue));
-                        }
+                        _channelWorkspacePresenter.SetChannelSelected(itemCode, isSelected);
                     }
                 }
                 finally
@@ -2052,7 +2132,7 @@ namespace JSQViewer.UI
                     _syncingSourceChannelSelection = false;
                 }
 
-                RefreshChannelViews();
+                RefreshSelectionViewsAfterSelectionChange();
                 UpdateSelectionInfo();
                 RedrawChartIfRequested();
             }));
@@ -2149,19 +2229,19 @@ namespace JSQViewer.UI
         private void ChannelsListOnItemCheck(object sender, ItemCheckEventArgs e)
         {
             if (_syncingMainChannelSelection) return;
+            string itemCode = e.Index >= 0 && e.Index < _channelsList.Items.Count
+                ? CheckedListSelectionPresenter.GetDeferredItemCode(_channelsList.Items[e.Index])
+                : null;
+            bool isSelected = CheckedListSelectionPresenter.IsSelectedAfterItemCheck(e.NewValue);
             BeginInvoke((Action)(delegate
             {
                 if (_syncingMainChannelSelection) return;
-                if (e.Index >= 0 && e.Index < _channelsList.Items.Count)
+                if (!string.IsNullOrWhiteSpace(itemCode))
                 {
-                    var item = _channelsList.Items[e.Index] as ChannelListItemViewModel;
-                    if (item != null)
-                    {
-                        _channelWorkspacePresenter.SetChannelSelected(item.Code, CheckedListSelectionPresenter.IsSelectedAfterItemCheck(e.NewValue));
-                    }
+                    _channelWorkspacePresenter.SetChannelSelected(itemCode, isSelected);
                 }
 
-                RefreshChannelViews();
+                RefreshSelectionViewsAfterSelectionChange();
                 UpdateSelectionInfo();
                 RedrawChartIfRequested();
             }));

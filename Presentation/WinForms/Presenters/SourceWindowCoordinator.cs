@@ -34,6 +34,7 @@ namespace JSQViewer.Presentation.WinForms.Presenters
         {
             string[] incoming = roots == null ? new string[0] : roots.ToArray();
             bool canRefreshInPlace = preserveExistingLayout && HaveSameRoots(incoming);
+            string normalizedDefaultSortMode = NormalizeSortMode(defaultSortMode);
 
             if (!canRefreshInPlace)
             {
@@ -53,9 +54,13 @@ namespace JSQViewer.Presentation.WinForms.Presenters
                     _states[root] = state;
                 }
 
-                if (!canRefreshInPlace || string.IsNullOrWhiteSpace(state.SortMode))
+                if (!canRefreshInPlace)
                 {
-                    state.SortMode = NormalizeSortMode(defaultSortMode);
+                    state.SortMode = "User";
+                }
+                else if (string.IsNullOrWhiteSpace(state.SortMode))
+                {
+                    state.SortMode = normalizedDefaultSortMode;
                 }
             }
 
