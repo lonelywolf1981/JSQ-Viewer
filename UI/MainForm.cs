@@ -216,7 +216,7 @@ namespace JSQViewer.UI
             _chartDisplayPresenter = new ChartDisplayPresenter();
 
             Font = new Font("Microsoft Sans Serif", 10f);
-            Text = Loc.Get("AppTitle");
+            Text = Loc.Get("AppTitle") + " " + GetAppVersion();
             try
             {
                 string exePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
@@ -274,19 +274,19 @@ namespace JSQViewer.UI
             _compareOverlayCheck = new CheckBox(); _compareOverlayCheck.Text = Loc.Get("CompareOverlayMode"); _compareOverlayCheck.AutoSize = true; _compareOverlayCheck.Padding = new Padding(12, 2, 0, 0); _compareOverlayCheck.Enabled = false; _compareOverlayCheck.CheckedChanged += CompareOverlayCheckOnCheckedChanged; stepRow.Controls.Add(_compareOverlayCheck);
 
             var axisRow = NewRow(); axisRow.WrapContents = true; left.Controls.Add(axisRow, 0, 6);
-            _manualXAxisCheck = new CheckBox(); _manualXAxisCheck.Text = "X axis"; _manualXAxisCheck.AutoSize = true; _manualXAxisCheck.CheckedChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualXAxisCheck);
-            axisRow.Controls.Add(CreateAxisValueLabel("min"));
+            _manualXAxisCheck = new CheckBox(); _manualXAxisCheck.Text = "Ось X"; _manualXAxisCheck.AutoSize = true; _manualXAxisCheck.CheckedChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualXAxisCheck);
+            axisRow.Controls.Add(CreateAxisValueLabel("мин"));
             _manualXAxisMinBox = CreateAxisValueTextBox(); _manualXAxisMinBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualXAxisMinBox);
-            axisRow.Controls.Add(CreateAxisValueLabel("max"));
+            axisRow.Controls.Add(CreateAxisValueLabel("макс"));
             _manualXAxisMaxBox = CreateAxisValueTextBox(); _manualXAxisMaxBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualXAxisMaxBox);
-            axisRow.Controls.Add(CreateAxisValueLabel("step"));
+            axisRow.Controls.Add(CreateAxisValueLabel("шаг"));
             _manualXAxisStepBox = CreateAxisValueTextBox(); _manualXAxisStepBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualXAxisStepBox);
-            _manualYAxisCheck = new CheckBox(); _manualYAxisCheck.Text = "Y axis"; _manualYAxisCheck.AutoSize = true; _manualYAxisCheck.Padding = new Padding(12, 2, 0, 0); _manualYAxisCheck.CheckedChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualYAxisCheck);
-            axisRow.Controls.Add(CreateAxisValueLabel("min"));
+            _manualYAxisCheck = new CheckBox(); _manualYAxisCheck.Text = "Ось Y"; _manualYAxisCheck.AutoSize = true; _manualYAxisCheck.Padding = new Padding(12, 2, 0, 0); _manualYAxisCheck.CheckedChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualYAxisCheck);
+            axisRow.Controls.Add(CreateAxisValueLabel("мин"));
             _manualYAxisMinBox = CreateAxisValueTextBox(); _manualYAxisMinBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualYAxisMinBox);
-            axisRow.Controls.Add(CreateAxisValueLabel("max"));
+            axisRow.Controls.Add(CreateAxisValueLabel("макс"));
             _manualYAxisMaxBox = CreateAxisValueTextBox(); _manualYAxisMaxBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualYAxisMaxBox);
-            axisRow.Controls.Add(CreateAxisValueLabel("step"));
+            axisRow.Controls.Add(CreateAxisValueLabel("шаг"));
             _manualYAxisStepBox = CreateAxisValueTextBox(); _manualYAxisStepBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualYAxisStepBox);
 
             var channelsHeaderRow = NewRow(); left.Controls.Add(channelsHeaderRow, 0, 7);
@@ -682,7 +682,7 @@ namespace JSQViewer.UI
 
         private void ApplyLocalization()
         {
-            Text = Loc.Get("AppTitle");
+            Text = Loc.Get("AppTitle") + " " + GetAppVersion();
             _browseButton.Text = Loc.Get("Browse");
             _addDataButton.Text = Loc.Get("AddData");
             _refreshButton.Text = Loc.Get("Refresh");
@@ -771,10 +771,10 @@ namespace JSQViewer.UI
             _toolTip.SetToolTip(_targetPointsBox, Loc.Get("TipTarget"));
             _toolTip.SetToolTip(_manualStepUpDown, Loc.Get("TipManualStep"));
             _toolTip.SetToolTip(_compareOverlayCheck, Loc.Get("TipCompareOverlayMode"));
-            _toolTip.SetToolTip(_manualYAxisCheck, "Manual Y axis");
-            _toolTip.SetToolTip(_manualYAxisMinBox, "Manual Y axis minimum");
-            _toolTip.SetToolTip(_manualYAxisMaxBox, "Manual Y axis maximum");
-            _toolTip.SetToolTip(_manualYAxisStepBox, "Manual Y axis step");
+            _toolTip.SetToolTip(_manualYAxisCheck, "Ручное задание диапазона оси Y (значения канала).");
+            _toolTip.SetToolTip(_manualYAxisMinBox, "Минимальное значение оси Y.");
+            _toolTip.SetToolTip(_manualYAxisMaxBox, "Максимальное значение оси Y.");
+            _toolTip.SetToolTip(_manualYAxisStepBox, "Шаг делений оси Y.");
             _toolTip.SetToolTip(_channelFilterBox, Loc.Get("TipFilter"));
             _toolTip.SetToolTip(_sortModeBox, Loc.Get("TipSort"));
             _toolTip.SetToolTip(_selectedOnlyCheck, Loc.Get("TipSelectedOnly"));
@@ -807,23 +807,29 @@ namespace JSQViewer.UI
             _toolTip.SetToolTip(_manualXAxisStepBox, GetManualXAxisStepHint(overlayMode));
         }
 
+        private static string GetAppVersion()
+        {
+            var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            return ver != null ? string.Format("{0}.{1}.{2}", ver.Major, ver.Minor, ver.Build) : string.Empty;
+        }
+
         private static string GetManualXAxisCaption(bool overlayMode)
         {
-            return overlayMode ? "X axis (hours)" : "X axis (date/time)";
+            return overlayMode ? "Ось X (часы)" : "Ось X (дата/время)";
         }
 
         private static string GetManualXAxisBoundsHint(bool overlayMode)
         {
             return overlayMode
-                ? "Manual X axis bounds in overlay hours."
-                : "Manual X axis bounds in local date/time, for example dd.MM.yyyy HH:mm.";
+                ? "Ручное задание диапазона оси X в часах (режим наложения)."
+                : "Ручное задание диапазона оси X в дате/времени, например 31.12.2024 14:30.";
         }
 
         private static string GetManualXAxisStepHint(bool overlayMode)
         {
             return overlayMode
-                ? "Manual X axis step in hours."
-                : "Manual X axis step in minutes.";
+                ? "Шаг делений оси X в часах."
+                : "Шаг делений оси X в минутах.";
         }
 
         private void ConfigureMainAsControlPanel()
