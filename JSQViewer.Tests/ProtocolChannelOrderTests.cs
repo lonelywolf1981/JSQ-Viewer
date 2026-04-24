@@ -50,6 +50,20 @@ namespace JSQViewer.Tests
             Assert.AreEqual("X1", result[1]);
         }
 
+        [TestMethod]
+        public void Build_AllFixedKeys_OrderedCorrectly()
+        {
+            // Все 17 фиксированных ключей присутствуют, порядок должен совпадать с KeyToColumn
+            string[] cols = new[] { "W", "V", "F", "I", "T7", "T6", "T5", "T4", "T3", "T2", "T1", "Te", "Tc", "UR-sie", "T-sie", "Pe", "Pc" };
+            string[] expected = new[] { "Pc", "Pe", "T-sie", "UR-sie", "Tc", "Te", "T1", "T2", "T3", "T4", "T5", "T6", "T7", "I", "F", "V", "W" };
+            var result = ProtocolChannelOrder.Build(cols, null);
+            Assert.AreEqual(expected.Length, result.Count);
+            for (int i = 0; i < expected.Length; i++)
+            {
+                Assert.AreEqual(expected[i], result[i], $"Position {i}: expected {expected[i]}, got {result[i]}");
+            }
+        }
+
         // ── suffix resolution ─────────────────────────────────────────────
 
         [TestMethod]
