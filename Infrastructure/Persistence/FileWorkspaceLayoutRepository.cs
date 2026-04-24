@@ -19,12 +19,16 @@ namespace JSQViewer.Infrastructure.Persistence
 
         public WorkspaceLayoutState Load(string workspaceKey)
         {
-            return JsonHelper.LoadFromFile(GetFilePath(workspaceKey), new WorkspaceLayoutState());
+            WorkspaceLayoutState state = JsonHelper.LoadFromFile(GetFilePath(workspaceKey), new WorkspaceLayoutState()) ?? new WorkspaceLayoutState();
+            state.EnsureInitialized();
+            return state;
         }
 
         public bool Save(string workspaceKey, WorkspaceLayoutState state)
         {
-            return JsonHelper.SaveToFile(GetFilePath(workspaceKey), state ?? new WorkspaceLayoutState());
+            WorkspaceLayoutState payload = state ?? new WorkspaceLayoutState();
+            payload.EnsureInitialized();
+            return JsonHelper.SaveToFile(GetFilePath(workspaceKey), payload);
         }
 
         private string GetFilePath(string workspaceKey)

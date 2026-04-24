@@ -149,6 +149,17 @@ namespace JSQViewer.Application.Channels
             return result;
         }
 
+        public IReadOnlyList<string> GetEffectiveOrderForSource(string sourceRoot)
+        {
+            List<ChannelWorkspaceEntry> sourceItems;
+            if (!_sourceOrders.TryGetValue(sourceRoot ?? string.Empty, out sourceItems))
+            {
+                return new string[0];
+            }
+
+            return sourceItems.Select(entry => entry.Code).ToArray();
+        }
+
         public void ReplaceSelectedCodes(IEnumerable<string> checkedCodes)
         {
             _selectedCodes.Clear();
@@ -344,6 +355,11 @@ namespace JSQViewer.Application.Channels
             }
 
             _sourceOrders[sourceRoot ?? string.Empty] = reordered;
+        }
+
+        public void ApplyEffectiveOrderToSource(string sourceRoot, IEnumerable<string> order)
+        {
+            ApplyOrderToSource(sourceRoot, order);
         }
 
         public void ApplyOrder(string firstCode, string secondCode, string thirdCode)

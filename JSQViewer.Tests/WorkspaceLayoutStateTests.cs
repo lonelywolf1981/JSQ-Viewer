@@ -24,7 +24,7 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
-        public void SaveAndLoad_RoundTripsWorkspaceScopedOrderSelections()
+        public void SaveAndLoad_RoundTripsWorkspaceScopedOrderSelectionsAndEffectiveSourceOrders()
         {
             string root = Path.Combine(Path.GetTempPath(), "jsqviewer-layout-tests", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
@@ -36,8 +36,13 @@ namespace JSQViewer.Tests
                     MainSelectedOrderKey = "main-order",
                     SourceSelectedOrderKeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                     {
-                        ["C:\\srcA"] = "order-a",
-                        ["C:\\srcB"] = "order-b"
+                        ["C:/srcA/"] = "order-a",
+                        ["C:\\srcB\\\\"] = "order-b"
+                    },
+                    SourceEffectiveOrders = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["C:/srcA/"] = new List<string> { "C:\\srcA::A-02", "C:\\srcA::A-01", string.Empty },
+                        ["C:\\srcB\\\\"] = new List<string> { "C:\\srcB::B-01", "C:\\srcB::B-01" }
                     }
                 };
 
@@ -48,6 +53,12 @@ namespace JSQViewer.Tests
                 Assert.AreEqual("main-order", loaded.MainSelectedOrderKey);
                 Assert.AreEqual("order-a", loaded.SourceSelectedOrderKeys["C:\\srcA"]);
                 Assert.AreEqual("order-b", loaded.SourceSelectedOrderKeys["C:\\srcB"]);
+                CollectionAssert.AreEqual(
+                    new[] { "C:\\srcA::A-02", "C:\\srcA::A-01" },
+                    loaded.SourceEffectiveOrders["C:\\srcA"]);
+                CollectionAssert.AreEqual(
+                    new[] { "C:\\srcB::B-01" },
+                    loaded.SourceEffectiveOrders["C:\\srcB"]);
             }
             finally
             {

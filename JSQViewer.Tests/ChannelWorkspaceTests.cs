@@ -133,6 +133,34 @@ namespace JSQViewer.Tests
                     "User",
                     false)));
         }
+
+        [TestMethod]
+        public void ApplyEffectiveOrderToSource_DegradesSafelyWhenChannelsDifferAfterReload()
+        {
+            object workspace = ChannelWorkspaceTestHarness.CreateWorkspaceModel();
+
+            ChannelWorkspaceTestHarness.Invoke(
+                workspace,
+                "Load",
+                ChannelWorkspaceTestData.CreateMultiSourceData(
+                    new Dictionary<string, string[]>
+                    {
+                        ["C:\\srcA"] = new[] { "C:\\srcA::A-01", "C:\\srcA::A-02", "C:\\srcA::A-03" },
+                        ["C:\\srcB"] = new[] { "C:\\srcB::B-01" }
+                    }),
+                null,
+                null);
+
+            ChannelWorkspaceTestHarness.Invoke(
+                workspace,
+                "ApplyEffectiveOrderToSource",
+                "C:\\srcA",
+                new[] { "C:\\srcA::A-02", "C:\\srcA::A-99", "C:\\srcA::A-01" });
+
+            CollectionAssert.AreEqual(
+                new[] { "C:\\srcA::A-02", "C:\\srcA::A-01", "C:\\srcA::A-03" },
+                ChannelWorkspaceTestHarness.ToCodeList(ChannelWorkspaceTestHarness.Invoke(workspace, "GetEffectiveOrderForSource", "C:\\srcA")));
+        }
     }
 
     [TestClass]
@@ -243,6 +271,31 @@ namespace JSQViewer.Tests
             Assert.AreEqual("User", ChannelWorkspaceTestHarness.GetString(sourceA, "SortMode"));
             Assert.AreEqual("User", ChannelWorkspaceTestHarness.GetString(sourceB, "SortMode"));
             Assert.AreEqual("User", ChannelWorkspaceTestHarness.GetString(sourceC, "SortMode"));
+        }
+
+        [TestMethod]
+        public void GetEffectiveOrderForSource_ReturnsSourceScopedRuntimeOrder()
+        {
+            object presenter = ChannelWorkspaceTestHarness.CreatePresenter();
+
+            ChannelWorkspaceTestHarness.Invoke(presenter, "Initialize", string.Empty, "User", false);
+            ChannelWorkspaceTestHarness.Invoke(
+                presenter,
+                "BindData",
+                ChannelWorkspaceTestData.CreateMultiSourceData(),
+                null,
+                null,
+                false);
+
+            ChannelWorkspaceTestHarness.Invoke(
+                presenter,
+                "ApplyEffectiveOrderToSource",
+                "C:\\srcA",
+                new[] { "C:\\srcA::A-02", "C:\\srcA::A-01" });
+
+            CollectionAssert.AreEqual(
+                new[] { "C:\\srcA::A-02", "C:\\srcA::A-01" },
+                ChannelWorkspaceTestHarness.ToCodeList(ChannelWorkspaceTestHarness.Invoke(presenter, "GetEffectiveOrderForSource", "C:\\srcA")));
         }
     }
 

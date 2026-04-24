@@ -125,6 +125,11 @@ namespace JSQViewer.Presentation.WinForms.Presenters
             _workspace.ApplyOrderToSource(sourceRoot, order);
         }
 
+        public void ApplyEffectiveOrderToSource(string sourceRoot, IEnumerable<string> order)
+        {
+            _workspace.ApplyEffectiveOrderToSource(sourceRoot, order);
+        }
+
         public IReadOnlyList<string> GetSelectedCodes()
         {
             return _workspace.GetSelectedCodes();
@@ -138,6 +143,11 @@ namespace JSQViewer.Presentation.WinForms.Presenters
         public IReadOnlyList<string> GetCurrentOrderForSource(string sourceRoot)
         {
             return _workspace.GetCurrentOrderForSource(sourceRoot);
+        }
+
+        public IReadOnlyList<string> GetEffectiveOrderForSource(string sourceRoot)
+        {
+            return _workspace.GetEffectiveOrderForSource(sourceRoot);
         }
 
         public ChannelListViewModel GetMainChannelList()
