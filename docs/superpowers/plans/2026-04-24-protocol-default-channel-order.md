@@ -8,6 +8,10 @@
 
 **Tech Stack:** C# / .NET 4.8, MSTest, проект `JSQViewer.Tests`
 
+**Status:** Выполнено 2026-04-24
+
+**Implemented in commits:** `fb4bf17`, `11bd537`, `6816cc1`, `cf4e4e5`, `b8618b0`
+
 ---
 
 ## File Map
@@ -25,7 +29,7 @@
 **Files:**
 - Create: `JSQViewer.Tests/ProtocolChannelOrderTests.cs`
 
-- [ ] **Шаг 1: Написать файл с тестами**
+- [x] **Шаг 1: Написать файл с тестами**
 
 Создать `JSQViewer.Tests/ProtocolChannelOrderTests.cs`:
 
@@ -180,7 +184,7 @@ namespace JSQViewer.Tests
 }
 ```
 
-- [ ] **Шаг 2: Убедиться что тесты не компилируются (класс не существует)**
+- [x] **Шаг 2: Убедиться что тесты не компилируются (класс не существует)**
 
 ```
 dotnet build JSQViewer.Tests
@@ -195,7 +199,7 @@ dotnet build JSQViewer.Tests
 **Files:**
 - Create: `Application/Channels/ProtocolChannelOrder.cs`
 
-- [ ] **Шаг 1: Создать файл реализации**
+- [x] **Шаг 1: Создать файл реализации**
 
 Создать `Application/Channels/ProtocolChannelOrder.cs`:
 
@@ -313,7 +317,7 @@ namespace JSQViewer.Application.Channels
 }
 ```
 
-- [ ] **Шаг 2: Запустить тесты**
+- [x] **Шаг 2: Запустить тесты**
 
 ```
 dotnet test JSQViewer.Tests --filter "ProtocolChannelOrderTests"
@@ -321,12 +325,14 @@ dotnet test JSQViewer.Tests --filter "ProtocolChannelOrderTests"
 
 Ожидаемо: все тесты зелёные.
 
-- [ ] **Шаг 3: Коммит**
+- [x] **Шаг 3: Коммит**
 
 ```bash
 git add Application/Channels/ProtocolChannelOrder.cs JSQViewer.Tests/ProtocolChannelOrderTests.cs
 git commit -m "feat: add ProtocolChannelOrder for protocol-based default channel ordering"
 ```
+
+Фактическая реализация была затем дополнительно приведена к общему компаратору в коммите `cf4e4e5`.
 
 ---
 
@@ -335,7 +341,7 @@ git commit -m "feat: add ProtocolChannelOrder for protocol-based default channel
 **Files:**
 - Modify: `UI/MainForm.cs` (~строка 1834, метод `BindLoadedData`)
 
-- [ ] **Шаг 1: Изменить `BindLoadedData`**
+- [x] **Шаг 1: Изменить `BindLoadedData`**
 
 Найти в `UI/MainForm.cs` блок (строки ~1834–1838):
 
@@ -363,7 +369,7 @@ git commit -m "feat: add ProtocolChannelOrder for protocol-based default channel
                 preserveSourceWindowsLayout);
 ```
 
-- [ ] **Шаг 2: Добавить using в начало файла (если нет)**
+- [x] **Шаг 2: Добавить using в начало файла (если нет)**
 
 Убедиться что в `UI/MainForm.cs` есть строка:
 
@@ -378,7 +384,7 @@ grep -n "using JSQViewer.Application.Channels" UI/MainForm.cs
 
 Если нет — добавить в блок using-ов вверху файла.
 
-- [ ] **Шаг 3: Собрать проект**
+- [x] **Шаг 3: Собрать проект**
 
 ```
 dotnet build JSQViewer.csproj
@@ -386,7 +392,7 @@ dotnet build JSQViewer.csproj
 
 Ожидаемо: 0 ошибок, 0 предупреждений.
 
-- [ ] **Шаг 4: Запустить все тесты**
+- [x] **Шаг 4: Запустить все тесты**
 
 ```
 dotnet test JSQViewer.Tests
@@ -394,7 +400,7 @@ dotnet test JSQViewer.Tests
 
 Ожидаемо: все 56+ тестов зелёные.
 
-- [ ] **Шаг 5: Коммит**
+- [x] **Шаг 5: Коммит**
 
 ```bash
 git add UI/MainForm.cs
