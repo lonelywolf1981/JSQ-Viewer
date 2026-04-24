@@ -50,7 +50,41 @@ namespace JSQViewer.Presentation.WinForms.Charting
                     Start = ConvertBound(result.SelectedRangeStart, result.OverlayMode),
                     End = ConvertBound(result.SelectedRangeEnd, result.OverlayMode)
                 },
+                XAxis = CreateXAxis(result.XAxis, result.OverlayMode),
+                YAxis = CreateYAxis(result.YAxis),
                 Series = series
+            };
+        }
+
+        private ChartAxisSettingsViewModel CreateXAxis(ChartAxisSettings axis, bool overlayMode)
+        {
+            if (axis == null || !axis.IsManualEnabled)
+            {
+                return new ChartAxisSettingsViewModel();
+            }
+
+            return new ChartAxisSettingsViewModel
+            {
+                IsManualEnabled = true,
+                Minimum = ConvertNullableBound(axis.Minimum, overlayMode),
+                Maximum = ConvertNullableBound(axis.Maximum, overlayMode),
+                Interval = ConvertXAxisInterval(axis.Interval, overlayMode)
+            };
+        }
+
+        private static ChartAxisSettingsViewModel CreateYAxis(ChartAxisSettings axis)
+        {
+            if (axis == null || !axis.IsManualEnabled)
+            {
+                return new ChartAxisSettingsViewModel();
+            }
+
+            return new ChartAxisSettingsViewModel
+            {
+                IsManualEnabled = true,
+                Minimum = axis.Minimum,
+                Maximum = axis.Maximum,
+                Interval = axis.Interval
             };
         }
 
@@ -68,6 +102,31 @@ namespace JSQViewer.Presentation.WinForms.Charting
             }
 
             return target;
+        }
+
+        private double? ConvertNullableBound(double? value, bool overlayMode)
+        {
+            if (!value.HasValue)
+            {
+                return null;
+            }
+
+            return ConvertBound(value.Value, overlayMode);
+        }
+
+        private static double? ConvertXAxisInterval(double? interval, bool overlayMode)
+        {
+            if (!interval.HasValue || double.IsNaN(interval.Value) || double.IsInfinity(interval.Value) || interval.Value <= 0d)
+            {
+                return null;
+            }
+
+            if (overlayMode)
+            {
+                return interval.Value;
+            }
+
+            return TimeSpan.FromMilliseconds(interval.Value).TotalDays;
         }
 
         private double ConvertBound(double value, bool overlayMode)

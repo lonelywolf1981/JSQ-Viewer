@@ -22,8 +22,6 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 ChartArea area = chart.ChartAreas[0];
                 area.AxisX.LabelStyle.Format = viewModel.XAxisLabelFormat ?? string.Empty;
                 area.AxisX.Title = viewModel.XAxisTitle ?? string.Empty;
-                area.AxisX.Minimum = viewModel.Range != null && viewModel.Range.IsActive ? viewModel.Range.Start : double.NaN;
-                area.AxisX.Maximum = viewModel.Range != null && viewModel.Range.IsActive ? viewModel.Range.End : double.NaN;
             }
 
             chart.BeginInit();
@@ -47,7 +45,10 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 chart.ResetAutoValues();
                 if (chart.ChartAreas.Count > 0)
                 {
-                    chart.ChartAreas[0].RecalculateAxesScale();
+                    ChartArea area = chart.ChartAreas[0];
+                    area.RecalculateAxesScale();
+                    ApplyXAxis(area, viewModel);
+                    ApplyAxis(area.AxisY, viewModel.YAxis);
                 }
             }
             finally
@@ -57,6 +58,74 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 chart.Invalidate();
                 chart.Update();
             }
+        }
+
+        private static void ApplyXAxis(ChartArea area, ChartViewModel viewModel)
+        {
+            if (area == null)
+            {
+                return;
+            }
+
+            ChartRangeViewModel range = viewModel == null ? null : viewModel.Range;
+            ChartAxisSettingsViewModel axis = viewModel == null ? null : viewModel.XAxis;
+            bool manualAxisEnabled = axis != null && axis.IsManualEnabled;
+            double minimum = manualAxisEnabled
+                ? ResolveMinimum(axis)
+                : range != null && range.IsActive
+                    ? range.Start
+                    : double.NaN;
+            double maximum = manualAxisEnabled
+                ? ResolveMaximum(axis)
+                : range != null && range.IsActive
+                    ? range.End
+                    : double.NaN;
+
+            area.AxisX.Minimum = minimum;
+            area.AxisX.Maximum = maximum;
+            area.AxisX.Interval = ResolveInterval(axis);
+        }
+
+        private static void ApplyAxis(Axis axis, ChartAxisSettingsViewModel settings)
+        {
+            if (axis == null)
+            {
+                return;
+            }
+
+            axis.Minimum = ResolveMinimum(settings);
+            axis.Maximum = ResolveMaximum(settings);
+            axis.Interval = ResolveInterval(settings);
+        }
+
+        private static double ResolveMinimum(ChartAxisSettingsViewModel settings)
+        {
+            if (settings == null || !settings.IsManualEnabled || !settings.Minimum.HasValue)
+            {
+                return double.NaN;
+            }
+
+            return settings.Minimum.Value;
+        }
+
+        private static double ResolveMaximum(ChartAxisSettingsViewModel settings)
+        {
+            if (settings == null || !settings.IsManualEnabled || !settings.Maximum.HasValue)
+            {
+                return double.NaN;
+            }
+
+            return settings.Maximum.Value;
+        }
+
+        private static double ResolveInterval(ChartAxisSettingsViewModel settings)
+        {
+            if (settings == null || !settings.IsManualEnabled || !settings.Interval.HasValue)
+            {
+                return 0d;
+            }
+
+            return settings.Interval.Value;
         }
     }
 }

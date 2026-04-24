@@ -132,6 +132,80 @@ namespace JSQViewer.Tests
             Assert.AreEqual(1, cache.SetCount);
             Assert.IsTrue(cache.HitCount >= 1);
         }
+
+        [TestMethod]
+        public void Execute_PropagatesManualXAxisSettings_WhenEnabled()
+        {
+            var service = new ChartPipelineService(new SeriesSliceService(new MemorySeriesSliceCache(), new TimestampRangeService()));
+            var request = ChartPipelineRequest.ForChart(
+                SessionAndChartingTestData.CreateData(new long[] { 0L, 1000L, 2000L, 3000L }),
+                new[] { "A-01" },
+                overlayMode: true,
+                dataVersion: 1,
+                autoStepEnabled: false,
+                manualStep: 1,
+                targetPoints: 5000,
+                selectedChannelCount: 1,
+                xAxisSettings: ChartAxisSettings.ForManual(minimum: 0.5, maximum: 2.5, interval: 0.25));
+
+            ChartPipelineResult result = service.Execute(request);
+
+            Assert.IsTrue(result.XAxis.IsManualEnabled);
+            Assert.AreEqual(0.5, result.XAxis.Minimum.GetValueOrDefault(), 1e-9);
+            Assert.AreEqual(2.5, result.XAxis.Maximum.GetValueOrDefault(), 1e-9);
+            Assert.AreEqual(0.25, result.XAxis.Interval.GetValueOrDefault(), 1e-9);
+        }
+
+        [TestMethod]
+        public void Execute_PropagatesManualYAxisSettings_WhenEnabled()
+        {
+            var service = new ChartPipelineService(new SeriesSliceService(new MemorySeriesSliceCache(), new TimestampRangeService()));
+            var request = ChartPipelineRequest.ForChart(
+                SessionAndChartingTestData.CreateData(new long[] { 0L, 1000L, 2000L, 3000L }),
+                new[] { "A-01" },
+                overlayMode: false,
+                dataVersion: 1,
+                autoStepEnabled: false,
+                manualStep: 1,
+                targetPoints: 5000,
+                selectedChannelCount: 1,
+                yAxisSettings: ChartAxisSettings.ForManual(minimum: 10.0, maximum: 40.0, interval: 5.0));
+
+            ChartPipelineResult result = service.Execute(request);
+
+            Assert.IsTrue(result.YAxis.IsManualEnabled);
+            Assert.AreEqual(10.0, result.YAxis.Minimum.GetValueOrDefault(), 1e-9);
+            Assert.AreEqual(40.0, result.YAxis.Maximum.GetValueOrDefault(), 1e-9);
+            Assert.AreEqual(5.0, result.YAxis.Interval.GetValueOrDefault(), 1e-9);
+        }
+
+        [TestMethod]
+        public void Execute_KeepsAutomaticAxisBehavior_WhenManualAxisModeIsDisabled()
+        {
+            var service = new ChartPipelineService(new SeriesSliceService(new MemorySeriesSliceCache(), new TimestampRangeService()));
+            var request = ChartPipelineRequest.ForChart(
+                SessionAndChartingTestData.CreateData(new long[] { 0L, 1000L, 2000L, 3000L }),
+                new[] { "A-01" },
+                overlayMode: false,
+                dataVersion: 1,
+                autoStepEnabled: false,
+                manualStep: 1,
+                targetPoints: 5000,
+                selectedChannelCount: 1,
+                xAxisSettings: ChartAxisSettings.ForManual(minimum: 1.0, maximum: 2.0, interval: 0.5).Disable(),
+                yAxisSettings: ChartAxisSettings.ForManual(minimum: 10.0, maximum: 20.0, interval: 1.0).Disable());
+
+            ChartPipelineResult result = service.Execute(request);
+
+            Assert.IsFalse(result.XAxis.IsManualEnabled);
+            Assert.IsFalse(result.XAxis.Minimum.HasValue);
+            Assert.IsFalse(result.XAxis.Maximum.HasValue);
+            Assert.IsFalse(result.XAxis.Interval.HasValue);
+            Assert.IsFalse(result.YAxis.IsManualEnabled);
+            Assert.IsFalse(result.YAxis.Minimum.HasValue);
+            Assert.IsFalse(result.YAxis.Maximum.HasValue);
+            Assert.IsFalse(result.YAxis.Interval.HasValue);
+        }
     }
 
     internal sealed class CountingSeriesSliceCache : ISeriesSliceCache

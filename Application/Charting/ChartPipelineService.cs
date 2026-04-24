@@ -68,6 +68,8 @@ namespace JSQViewer.Application.Charting
             long[] timestamps = slice.Timestamps;
             bool overlayMode = request.OverlayMode;
             bool showLegend = codesToRender.Count <= 20;
+            ChartAxisSettings effectiveXAxis = NormalizeAxis(request.XAxis);
+            ChartAxisSettings effectiveYAxis = NormalizeAxis(request.YAxis);
 
             long maxOverlayDurationMs = 0L;
             var series = new List<ChartPipelineSeries>(codesToRender.Count);
@@ -155,8 +157,51 @@ namespace JSQViewer.Application.Charting
                 SelectedRangeStart = request.SelectedRangeStart,
                 SelectedRangeEnd = request.SelectedRangeEnd,
                 MaxOverlayDurationMs = maxOverlayDurationMs,
+                XAxis = effectiveXAxis,
+                YAxis = effectiveYAxis,
                 Series = series
             };
+        }
+
+        private static ChartAxisSettings NormalizeAxis(ChartAxisSettings settings)
+        {
+            if (settings == null || !settings.IsManualEnabled)
+            {
+                return ChartAxisSettings.Automatic();
+            }
+
+            double? minimum = NormalizeFinite(settings.Minimum);
+            double? maximum = NormalizeFinite(settings.Maximum);
+            double? interval = NormalizePositive(settings.Interval);
+
+            if (minimum.HasValue && maximum.HasValue && maximum.Value <= minimum.Value)
+            {
+                minimum = null;
+                maximum = null;
+            }
+
+            return ChartAxisSettings.ForManual(minimum, maximum, interval);
+        }
+
+        private static double? NormalizeFinite(double? value)
+        {
+            if (!value.HasValue || double.IsNaN(value.Value) || double.IsInfinity(value.Value))
+            {
+                return null;
+            }
+
+            return value.Value;
+        }
+
+        private static double? NormalizePositive(double? value)
+        {
+            double? normalized = NormalizeFinite(value);
+            if (!normalized.HasValue || normalized.Value <= 0d)
+            {
+                return null;
+            }
+
+            return normalized.Value;
         }
 
         private static List<string> NormalizeCodes(IEnumerable<string> selectedCodes)
