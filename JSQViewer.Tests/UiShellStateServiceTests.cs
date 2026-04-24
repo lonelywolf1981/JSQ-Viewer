@@ -25,6 +25,15 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void LoadRecentFolders_NullFromRepository_ReturnsEmptyList()
+        {
+            var recentRepo = new FakeRecentFoldersRepository { LoadedFolders = null };
+            var service = new UiShellStateService(recentRepo, new FakeUiStateRepository());
+            List<string> result = service.LoadRecentFolders();
+            Assert.AreEqual(0, result.Count);
+        }
+
+        [TestMethod]
         public void AddRecentFolder_AddsToFront_DedupsCaseInsensitive_MaxTwelve()
         {
             var recentRepo = new FakeRecentFoldersRepository();

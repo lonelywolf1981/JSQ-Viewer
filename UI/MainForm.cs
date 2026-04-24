@@ -3761,10 +3761,6 @@ namespace JSQViewer.UI
 
             List<string> folders = _uiShellStateService.AddRecentFolder(currentList, folder);
 
-            if (folders.Count == currentList.Count &&
-                (folder == null || (folder ?? string.Empty).Trim().Length == 0))
-                return;
-
             _recentFoldersBox.Items.Clear();
             for (int i = 0; i < folders.Count; i++) _recentFoldersBox.Items.Add(folders[i]);
             UpdateRecentDropDownWidth();
