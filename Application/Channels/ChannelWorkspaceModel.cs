@@ -1,15 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using JSQViewer.Core;
 
 namespace JSQViewer.Application.Channels
 {
     public sealed class ChannelWorkspaceModel
     {
-        private static readonly Regex NaturalSplitRegex = new Regex("(\\d+)", RegexOptions.Compiled);
-
         private readonly List<ChannelWorkspaceEntry> _channels = new List<ChannelWorkspaceEntry>();
         private readonly Dictionary<string, ChannelWorkspaceEntry> _channelsByCode = new Dictionary<string, ChannelWorkspaceEntry>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _selectedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -379,7 +376,7 @@ namespace JSQViewer.Application.Channels
             }
             else if (string.Equals(mode, "Natural code", StringComparison.Ordinal))
             {
-                items = items.OrderBy(entry => entry.Code, new NaturalStringComparer());
+                items = items.OrderBy(entry => entry.Code, NaturalStringComparer.Instance);
             }
             else if (string.Equals(mode, "Label", StringComparison.Ordinal))
             {
@@ -393,7 +390,7 @@ namespace JSQViewer.Application.Channels
             else if (string.Equals(mode, "Priority A/C", StringComparison.Ordinal))
             {
                 items = items.OrderBy(entry => PrefixPriority(entry.Code))
-                    .ThenBy(entry => entry.Code, new NaturalStringComparer());
+                    .ThenBy(entry => entry.Code, NaturalStringComparer.Instance);
             }
             else if (string.Equals(mode, "Selected first", StringComparison.Ordinal))
             {
@@ -520,37 +517,5 @@ namespace JSQViewer.Application.Channels
             public string Unit { get; private set; }
         }
 
-        private sealed class NaturalStringComparer : IComparer<string>
-        {
-            public int Compare(string x, string y)
-            {
-                string[] a = NaturalSplitRegex.Split(x ?? string.Empty);
-                string[] b = NaturalSplitRegex.Split(y ?? string.Empty);
-                int count = Math.Max(a.Length, b.Length);
-                for (int i = 0; i < count; i++)
-                {
-                    if (i >= a.Length) return -1;
-                    if (i >= b.Length) return 1;
-
-                    int ai;
-                    int bi;
-                    bool aIsNumber = int.TryParse(a[i], out ai);
-                    bool bIsNumber = int.TryParse(b[i], out bi);
-                    int compare;
-                    if (aIsNumber && bIsNumber)
-                    {
-                        compare = ai.CompareTo(bi);
-                    }
-                    else
-                    {
-                        compare = string.Compare(a[i], b[i], StringComparison.OrdinalIgnoreCase);
-                    }
-
-                    if (compare != 0) return compare;
-                }
-
-                return 0;
-            }
-        }
     }
 }

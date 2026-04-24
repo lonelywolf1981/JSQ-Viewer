@@ -1,15 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using JSQViewer.Core;
 
 namespace JSQViewer.Application.Channels
 {
     public static class ProtocolChannelOrder
     {
-        private static readonly Regex NaturalSplitRegex = new Regex("(\\d+)", RegexOptions.Compiled);
-
         private static readonly string[] FixedKeys = new[]
         {
             "Pc", "Pe", "T-sie", "UR-sie", "Tc", "Te",
@@ -38,8 +35,8 @@ namespace JSQViewer.Application.Channels
 
             var extras = cols
                 .Where(c => !string.IsNullOrWhiteSpace(c) && !used.Contains(c))
-                .OrderBy(c => GetDisplayName(c, channelMap), new NaturalComparer())
-                .ThenBy(c => c, new NaturalComparer())
+                .OrderBy(c => GetDisplayName(c, channelMap), NaturalStringComparer.Instance)
+                .ThenBy(c => c, NaturalStringComparer.Instance)
                 .ToList();
 
             result.AddRange(extras);
@@ -83,29 +80,6 @@ namespace JSQViewer.Application.Channels
                 if (!string.IsNullOrWhiteSpace(ch.Label)) return ch.Label.Trim();
             }
             return code ?? string.Empty;
-        }
-
-        private sealed class NaturalComparer : IComparer<string>
-        {
-            public int Compare(string x, string y)
-            {
-                string[] a = NaturalSplitRegex.Split(x ?? string.Empty);
-                string[] b = NaturalSplitRegex.Split(y ?? string.Empty);
-                int count = Math.Max(a.Length, b.Length);
-                for (int i = 0; i < count; i++)
-                {
-                    if (i >= a.Length) return -1;
-                    if (i >= b.Length) return 1;
-                    int ai, bi;
-                    bool aIsNum = int.TryParse(a[i], out ai);
-                    bool bIsNum = int.TryParse(b[i], out bi);
-                    int cmp = (aIsNum && bIsNum)
-                        ? ai.CompareTo(bi)
-                        : string.Compare(a[i], b[i], StringComparison.OrdinalIgnoreCase);
-                    if (cmp != 0) return cmp;
-                }
-                return 0;
-            }
         }
     }
 }
