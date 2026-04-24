@@ -1776,24 +1776,12 @@ namespace JSQViewer.UI
         {
             try
             {
-                List<string> folders = ParseFolderSpec(folder);
-                if (folders.Count == 0)
+                if (!IsValidFolderSpec(folder))
                 {
                     NotifyError(Loc.Get("SelectFolder"));
                     return;
                 }
-                if (folders.Count > WorkspaceFolderSpecParser.MaxFolderCount)
-                {
-                    NotifyError(Loc.Get("TooManyFolders"));
-                    return;
-                }
-                for (int i = 0; i < folders.Count; i++)
-                {
-                    if (!_fileSystem.DirectoryExists(folders[i]))
-                    {
-                        throw new DirectoryNotFoundException("Folder not found: " + folders[i]);
-                    }
-                }
+                List<string> folders = ParseFolderSpec(folder);
 
                 string spec = JoinFolderSpec(folders);
                 _folderBox.Text = spec;

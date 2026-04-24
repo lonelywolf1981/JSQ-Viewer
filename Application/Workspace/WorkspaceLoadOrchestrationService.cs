@@ -23,7 +23,7 @@ namespace JSQViewer.Application.Workspace
             return _parser.Parse(spec);
         }
 
-        public string JoinSpec(System.Collections.Generic.IEnumerable<string> folders)
+        public string JoinSpec(IEnumerable<string> folders)
         {
             return _parser.Join(folders);
         }
@@ -52,7 +52,7 @@ namespace JSQViewer.Application.Workspace
             return new WorkspaceLoadRequest(normalizedSpec, true);
         }
 
-        public string BuildWorkspaceKey(System.Collections.Generic.IEnumerable<string> folders)
+        public string BuildWorkspaceKey(IEnumerable<string> folders)
         {
             return _parser.BuildWorkspaceKey(folders);
         }

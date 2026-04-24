@@ -43,14 +43,15 @@ namespace JSQViewer.Tests
         [TestMethod]
         public void IsValidSpec_ReturnsFalse_WhenTooManyFolders()
         {
+            int tooMany = WorkspaceFolderSpecParser.MaxFolderCount + 1;
             var fs = new FakeFileSystem();
-            for (int i = 0; i < 7; i++)
+            for (int i = 0; i < tooMany; i++)
             {
                 fs.ExistingDirectories.Add("Folder" + i);
             }
 
             var service = CreateService(fs);
-            string spec = string.Join(";", Enumerable.Range(0, 7).Select(i => "Folder" + i));
+            string spec = string.Join(";", Enumerable.Range(0, tooMany).Select(i => "Folder" + i));
 
             bool result = service.IsValidSpec(spec);
 
