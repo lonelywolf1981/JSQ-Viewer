@@ -1831,9 +1831,15 @@ namespace JSQViewer.UI
             string[] preferredCheckedCodes = _pendingCheckedCodes.Count == 0 ? null : _pendingCheckedCodes.ToArray();
             _pendingCheckedCodes.Clear();
 
+            List<string> initialOrder = LoadSavedOrder();
+            if (initialOrder.Count == 0 && data != null)
+            {
+                initialOrder = ProtocolChannelOrder.Build(data.ColumnNames, data.Channels);
+            }
+
             SourceWindowRefreshPlan refreshPlan = _channelWorkspacePresenter.BindData(
                 data,
-                LoadSavedOrder(),
+                initialOrder,
                 preferredCheckedCodes,
                 preserveSourceWindowsLayout);
 
@@ -3367,9 +3373,18 @@ namespace JSQViewer.UI
                 return;
             }
 
+            bool anyOrderApplied = false;
+
             if (!string.IsNullOrWhiteSpace(_workspaceLayoutState.MainSelectedOrderKey))
             {
                 SelectOrderByKey(_workspaceLayoutState.MainSelectedOrderKey);
+                ChannelOrderModel mainOrder = _orderRepository.Load(_workspaceLayoutState.MainSelectedOrderKey);
+                if (mainOrder != null && mainOrder.order != null && mainOrder.order.Count > 0)
+                {
+                    _channelWorkspacePresenter.SetAllSortModes("User");
+                    _channelWorkspacePresenter.ApplyOrder(mainOrder.order);
+                    anyOrderApplied = true;
+                }
             }
 
             foreach (var kv in _sourceWindows)
@@ -3388,6 +3403,27 @@ namespace JSQViewer.UI
                 }
 
                 BindOrderControlsForSource(state);
+
+                if (!string.IsNullOrWhiteSpace(state.SelectedOrderKey))
+                {
+                    ChannelOrderModel sourceOrder = _orderRepository.Load(state.SelectedOrderKey);
+                    if (sourceOrder != null && sourceOrder.order != null && sourceOrder.order.Count > 0)
+                    {
+                        _channelWorkspacePresenter.UpdateSourceWindowOptions(
+                            state.SourceRoot,
+                            state.FilterBox == null ? string.Empty : state.FilterBox.Text,
+                            "User",
+                            state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked);
+                        _channelWorkspacePresenter.ApplyOrderToSource(state.SourceRoot, sourceOrder.order);
+                        anyOrderApplied = true;
+                    }
+                }
+            }
+
+            if (anyOrderApplied)
+            {
+                ApplyPresenterOptionsToControls();
+                RefreshChannelViews();
             }
         }
 
