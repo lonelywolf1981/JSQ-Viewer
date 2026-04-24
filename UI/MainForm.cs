@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using JSQViewer.Application.Abstractions;
 using JSQViewer.Application.Channels;
 using JSQViewer.Application.Charting;
+using JSQViewer.Application.UiState;
 using JSQViewer.Application.Charting.UseCases;
 using JSQViewer.Application.Exporting;
 using JSQViewer.Application.Session;
@@ -45,6 +46,14 @@ namespace JSQViewer.UI
         private readonly CheckBox _autoStepCheck;
         private readonly ComboBox _targetPointsBox;
         private readonly NumericUpDown _manualStepUpDown;
+        private readonly CheckBox _manualXAxisCheck;
+        private readonly TextBox _manualXAxisMinBox;
+        private readonly TextBox _manualXAxisMaxBox;
+        private readonly TextBox _manualXAxisStepBox;
+        private readonly CheckBox _manualYAxisCheck;
+        private readonly TextBox _manualYAxisMinBox;
+        private readonly TextBox _manualYAxisMaxBox;
+        private readonly TextBox _manualYAxisStepBox;
         private readonly CheckBox _includeExtraCheck;
         private readonly ComboBox _refrigerantBox;
         private readonly ComboBox _templateModeBox;
@@ -87,6 +96,7 @@ namespace JSQViewer.UI
         private double _rangeStartOa = double.NaN;
         private double _rangeEndOa = double.NaN;
         private readonly List<RangeTrackBar> _detachedRangeBars = new List<RangeTrackBar>();
+        private readonly List<DetachedChartState> _detachedCharts = new List<DetachedChartState>();
         private bool _syncingRange;
 
         private int _dragIndex = -1;
@@ -112,9 +122,8 @@ namespace JSQViewer.UI
         private readonly ILogger _logger;
         private readonly IMainFormNotificationService _notificationService;
         private readonly IExternalProcessLauncher _externalProcessLauncher;
-        private readonly IRecentFoldersRepository _recentFoldersRepository;
-        private readonly IUiStateRepository _uiStateRepository;
-        private readonly IWorkspaceLayoutRepository _workspaceLayoutRepository;
+        private readonly UiShellStateService _uiShellStateService;
+        private readonly WorkspaceLayoutStateService _workspaceLayoutStateService;
         private readonly IPresetRepository _presetRepository;
         private readonly IOrderRepository _orderRepository;
         private readonly IViewerSettingsRepository _viewerSettingsRepository;
@@ -132,6 +141,7 @@ namespace JSQViewer.UI
         private WorkspaceLayoutState _workspaceLayoutState;
         private string _currentWorkspaceKey;
         private ViewerSettingsModel _viewerSettings;
+        private ChartViewModel _lastChartViewModel;
         private static readonly Regex NaturalSplitRegex = new Regex("(\\d+)", RegexOptions.Compiled);
 
         public MainForm(
@@ -140,9 +150,8 @@ namespace JSQViewer.UI
             ILogger logger,
             IMainFormNotificationService notificationService,
             IExternalProcessLauncher externalProcessLauncher,
-            IRecentFoldersRepository recentFoldersRepository,
-            IUiStateRepository uiStateRepository,
-            IWorkspaceLayoutRepository workspaceLayoutRepository,
+            UiShellStateService uiShellStateService,
+            WorkspaceLayoutStateService workspaceLayoutStateService,
             IPresetRepository presetRepository,
             IOrderRepository orderRepository,
             IViewerSettingsRepository viewerSettingsRepository,
@@ -163,9 +172,8 @@ namespace JSQViewer.UI
             if (logger == null) throw new ArgumentNullException(nameof(logger));
             if (notificationService == null) throw new ArgumentNullException(nameof(notificationService));
             if (externalProcessLauncher == null) throw new ArgumentNullException(nameof(externalProcessLauncher));
-            if (recentFoldersRepository == null) throw new ArgumentNullException(nameof(recentFoldersRepository));
-            if (uiStateRepository == null) throw new ArgumentNullException(nameof(uiStateRepository));
-            if (workspaceLayoutRepository == null) throw new ArgumentNullException(nameof(workspaceLayoutRepository));
+            if (uiShellStateService == null) throw new ArgumentNullException(nameof(uiShellStateService));
+            if (workspaceLayoutStateService == null) throw new ArgumentNullException(nameof(workspaceLayoutStateService));
             if (presetRepository == null) throw new ArgumentNullException(nameof(presetRepository));
             if (orderRepository == null) throw new ArgumentNullException(nameof(orderRepository));
             if (viewerSettingsRepository == null) throw new ArgumentNullException(nameof(viewerSettingsRepository));
@@ -186,9 +194,8 @@ namespace JSQViewer.UI
             _logger = logger;
             _notificationService = notificationService;
             _externalProcessLauncher = externalProcessLauncher;
-            _recentFoldersRepository = recentFoldersRepository;
-            _uiStateRepository = uiStateRepository;
-            _workspaceLayoutRepository = workspaceLayoutRepository;
+            _uiShellStateService = uiShellStateService;
+            _workspaceLayoutStateService = workspaceLayoutStateService;
             _presetRepository = presetRepository;
             _orderRepository = orderRepository;
             _viewerSettingsRepository = viewerSettingsRepository;
@@ -234,9 +241,9 @@ namespace JSQViewer.UI
             var left = new TableLayoutPanel();
             left.Dock = DockStyle.Fill;
             left.ColumnCount = 1;
-            left.RowCount = 14;
-            for (int i = 0; i < 14; i++) left.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            left.RowStyles[7] = new RowStyle(SizeType.Percent, 100);
+            left.RowCount = 15;
+            for (int i = 0; i < 15; i++) left.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            left.RowStyles[8] = new RowStyle(SizeType.Percent, 100);
             _splitMain.Panel1.Controls.Add(left);
 
             var smallFont = new Font("Microsoft Sans Serif", 8.25f);
@@ -266,7 +273,23 @@ namespace JSQViewer.UI
             _manualStepUpDown = new NumericUpDown(); _manualStepUpDown.Width = 70; _manualStepUpDown.Minimum = 1; _manualStepUpDown.Maximum = 100000; _manualStepUpDown.Value = 1; _manualStepUpDown.Enabled = false; _manualStepUpDown.ValueChanged += StepControlsOnChanged; stepRow.Controls.Add(_manualStepUpDown);
             _compareOverlayCheck = new CheckBox(); _compareOverlayCheck.Text = Loc.Get("CompareOverlayMode"); _compareOverlayCheck.AutoSize = true; _compareOverlayCheck.Padding = new Padding(12, 2, 0, 0); _compareOverlayCheck.Enabled = false; _compareOverlayCheck.CheckedChanged += CompareOverlayCheckOnCheckedChanged; stepRow.Controls.Add(_compareOverlayCheck);
 
-            var channelsHeaderRow = NewRow(); left.Controls.Add(channelsHeaderRow, 0, 6);
+            var axisRow = NewRow(); axisRow.WrapContents = true; left.Controls.Add(axisRow, 0, 6);
+            _manualXAxisCheck = new CheckBox(); _manualXAxisCheck.Text = "X axis"; _manualXAxisCheck.AutoSize = true; _manualXAxisCheck.CheckedChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualXAxisCheck);
+            axisRow.Controls.Add(CreateAxisValueLabel("min"));
+            _manualXAxisMinBox = CreateAxisValueTextBox(); _manualXAxisMinBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualXAxisMinBox);
+            axisRow.Controls.Add(CreateAxisValueLabel("max"));
+            _manualXAxisMaxBox = CreateAxisValueTextBox(); _manualXAxisMaxBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualXAxisMaxBox);
+            axisRow.Controls.Add(CreateAxisValueLabel("step"));
+            _manualXAxisStepBox = CreateAxisValueTextBox(); _manualXAxisStepBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualXAxisStepBox);
+            _manualYAxisCheck = new CheckBox(); _manualYAxisCheck.Text = "Y axis"; _manualYAxisCheck.AutoSize = true; _manualYAxisCheck.Padding = new Padding(12, 2, 0, 0); _manualYAxisCheck.CheckedChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualYAxisCheck);
+            axisRow.Controls.Add(CreateAxisValueLabel("min"));
+            _manualYAxisMinBox = CreateAxisValueTextBox(); _manualYAxisMinBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualYAxisMinBox);
+            axisRow.Controls.Add(CreateAxisValueLabel("max"));
+            _manualYAxisMaxBox = CreateAxisValueTextBox(); _manualYAxisMaxBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualYAxisMaxBox);
+            axisRow.Controls.Add(CreateAxisValueLabel("step"));
+            _manualYAxisStepBox = CreateAxisValueTextBox(); _manualYAxisStepBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualYAxisStepBox);
+
+            var channelsHeaderRow = NewRow(); left.Controls.Add(channelsHeaderRow, 0, 7);
             _channelsHeader = new Label(); _channelsHeader.Text = Loc.Get("Channels"); _channelsHeader.AutoSize = true; _channelsHeader.Padding = new Padding(4, 6, 2, 0); channelsHeaderRow.Controls.Add(_channelsHeader);
             _channelFilterBox = new TextBox(); _channelFilterBox.Width = 130; _channelFilterBox.TextChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_channelFilterBox);
             _sortModeBox = new ComboBox(); _sortModeBox.Width = 160; _sortModeBox.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -275,10 +298,10 @@ namespace JSQViewer.UI
             _selectedOnlyCheck = new CheckBox(); _selectedOnlyCheck.Text = Loc.Get("SelectedOnly"); _selectedOnlyCheck.AutoSize = true; _selectedOnlyCheck.CheckedChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_selectedOnlyCheck);
             _selectAllChannelsButton = new Button(); _selectAllChannelsButton.Text = Loc.Get("SelectAll"); _selectAllChannelsButton.AutoSize = true; _selectAllChannelsButton.Click += SelectAllChannelsButtonOnClick; channelsHeaderRow.Controls.Add(_selectAllChannelsButton);
             _clearChannelsButton = new Button(); _clearChannelsButton.Text = Loc.Get("Clear"); _clearChannelsButton.AutoSize = true; _clearChannelsButton.Click += ClearChannelsButtonOnClick; channelsHeaderRow.Controls.Add(_clearChannelsButton);
-            _channelsList = new CheckedListBox(); _channelsList.Dock = DockStyle.Fill; _channelsList.CheckOnClick = true; _channelsList.AllowDrop = true; _channelsList.ItemCheck += ChannelsListOnItemCheck; _channelsList.MouseDown += ChannelsListOnMouseDown; _channelsList.MouseMove += ChannelsListOnMouseMove; _channelsList.DragOver += ChannelsListOnDragOver; _channelsList.DragDrop += ChannelsListOnDragDrop; left.Controls.Add(_channelsList, 0, 7);
+            _channelsList = new CheckedListBox(); _channelsList.Dock = DockStyle.Fill; _channelsList.CheckOnClick = true; _channelsList.AllowDrop = true; _channelsList.ItemCheck += ChannelsListOnItemCheck; _channelsList.MouseDown += ChannelsListOnMouseDown; _channelsList.MouseMove += ChannelsListOnMouseMove; _channelsList.DragOver += ChannelsListOnDragOver; _channelsList.DragDrop += ChannelsListOnDragDrop; left.Controls.Add(_channelsList, 0, 8);
             _channelsList.IntegralHeight = false;
 
-            var templateOptionsRow = NewRow(); left.Controls.Add(templateOptionsRow, 0, 8);
+            var templateOptionsRow = NewRow(); left.Controls.Add(templateOptionsRow, 0, 9);
             _includeExtraCheck = new CheckBox(); _includeExtraCheck.Text = Loc.Get("IncludeExtra"); _includeExtraCheck.Checked = true; _includeExtraCheck.AutoSize = true; templateOptionsRow.Controls.Add(_includeExtraCheck);
             _refrigLabel = new Label(); _refrigLabel.Text = Loc.Get("Refrigerant"); _refrigLabel.AutoSize = true; _refrigLabel.Padding = new Padding(8, 5, 2, 0); templateOptionsRow.Controls.Add(_refrigLabel);
             _refrigerantBox = new ComboBox(); _refrigerantBox.DropDownStyle = ComboBoxStyle.DropDownList; _refrigerantBox.Width = 90; _refrigerantBox.Items.Add("R290"); _refrigerantBox.Items.Add("R600a"); _refrigerantBox.SelectedIndex = 0; templateOptionsRow.Controls.Add(_refrigerantBox);
@@ -286,21 +309,21 @@ namespace JSQViewer.UI
             _templateModeBox = new ComboBox(); _templateModeBox.DropDownStyle = ComboBoxStyle.DropDownList; _templateModeBox.Width = 130; templateOptionsRow.Controls.Add(_templateModeBox);
             RefreshTemplateModeItems();
 
-            var exportButtonsRow = NewRow(); left.Controls.Add(exportButtonsRow, 0, 9);
+            var exportButtonsRow = NewRow(); left.Controls.Add(exportButtonsRow, 0, 10);
             _exportTemplateButton = new Button(); _exportTemplateButton.Text = Loc.Get("ExportTemplate"); _exportTemplateButton.AutoSize = true; _exportTemplateButton.Enabled = false; _exportTemplateButton.Click += ExportTemplateButtonOnClick; exportButtonsRow.Controls.Add(_exportTemplateButton);
             _showChartButton = new Button(); _showChartButton.Text = Loc.Get("ShowChart"); _showChartButton.AutoSize = true; _showChartButton.Enabled = false; _showChartButton.Click += ShowChartButtonOnClick; exportButtonsRow.Controls.Add(_showChartButton);
             _settingsButton = new Button(); _settingsButton.Text = Loc.Get("Styles"); _settingsButton.AutoSize = true; _settingsButton.Click += SettingsButtonOnClick; exportButtonsRow.Controls.Add(_settingsButton);
 
-            var presetSaveRow = NewRow(); left.Controls.Add(presetSaveRow, 0, 10);
+            var presetSaveRow = NewRow(); left.Controls.Add(presetSaveRow, 0, 11);
             _presetNameBox = new TextBox(); _presetNameBox.Width = 200; _presetNameBox.Text = Loc.Get("PresetName"); presetSaveRow.Controls.Add(_presetNameBox);
             _savePresetButton = new Button(); _savePresetButton.Text = Loc.Get("SavePreset"); _savePresetButton.AutoSize = true; _savePresetButton.Enabled = false; _savePresetButton.Click += SavePresetButtonOnClick; presetSaveRow.Controls.Add(_savePresetButton);
 
-            var presetLoadRow = NewRow(); left.Controls.Add(presetLoadRow, 0, 11);
+            var presetLoadRow = NewRow(); left.Controls.Add(presetLoadRow, 0, 12);
             _presetsBox = new ComboBox(); _presetsBox.Width = 240; _presetsBox.DropDownStyle = ComboBoxStyle.DropDownList; presetLoadRow.Controls.Add(_presetsBox);
             _loadPresetButton = new Button(); _loadPresetButton.Text = Loc.Get("Load"); _loadPresetButton.AutoSize = true; _loadPresetButton.Enabled = false; _loadPresetButton.Click += LoadPresetButtonOnClick; presetLoadRow.Controls.Add(_loadPresetButton);
             _deletePresetButton = new Button(); _deletePresetButton.Text = Loc.Get("Delete"); _deletePresetButton.AutoSize = true; _deletePresetButton.Enabled = false; _deletePresetButton.Click += DeletePresetButtonOnClick; presetLoadRow.Controls.Add(_deletePresetButton);
 
-            var orderRow = NewRow(); left.Controls.Add(orderRow, 0, 12);
+            var orderRow = NewRow(); left.Controls.Add(orderRow, 0, 13);
             _orderNameBox = new TextBox(); _orderNameBox.Width = 150; _orderNameBox.Text = Loc.Get("OrderName"); orderRow.Controls.Add(_orderNameBox);
             _saveOrderButton = new Button(); _saveOrderButton.Text = Loc.Get("SaveOrder"); _saveOrderButton.AutoSize = true; _saveOrderButton.Enabled = false; _saveOrderButton.Click += SaveOrderButtonOnClick; orderRow.Controls.Add(_saveOrderButton);
             _ordersBox = new ComboBox(); _ordersBox.Width = 200; _ordersBox.DropDownStyle = ComboBoxStyle.DropDownList; orderRow.Controls.Add(_ordersBox);
@@ -308,7 +331,7 @@ namespace JSQViewer.UI
             _loadOrderButton = new Button(); _loadOrderButton.Text = Loc.Get("Load"); _loadOrderButton.AutoSize = true; _loadOrderButton.Enabled = false; _loadOrderButton.Click += LoadOrderButtonOnClick; orderRow.Controls.Add(_loadOrderButton);
             _deleteOrderButton = new Button(); _deleteOrderButton.Text = Loc.Get("Delete"); _deleteOrderButton.AutoSize = true; _deleteOrderButton.Enabled = false; _deleteOrderButton.Click += DeleteOrderButtonOnClick; orderRow.Controls.Add(_deleteOrderButton);
 
-            _statusLabel = new Label(); _statusLabel.Font = smallFont; _statusLabel.AutoSize = true; _statusLabel.Padding = new Padding(4, 6, 4, 8); _statusLabel.Text = Loc.Get("Ready"); left.Controls.Add(_statusLabel, 0, 13);
+            _statusLabel = new Label(); _statusLabel.Font = smallFont; _statusLabel.AutoSize = true; _statusLabel.Padding = new Padding(4, 6, 4, 8); _statusLabel.Text = Loc.Get("Ready"); left.Controls.Add(_statusLabel, 0, 14);
 
             _chart = BuildChart();
             _chart.MouseMove += ChartOnMouseMove;
@@ -422,6 +445,7 @@ namespace JSQViewer.UI
             Loc.LanguageChanged += ApplyLocalization;
             LoadUiState();
             SyncPresenterFromMainControls();
+            AxisControlsOnChanged(this, EventArgs.Empty);
             StepControlsOnChanged(this, EventArgs.Empty);
             ConfigureMainAsControlPanel();
             EnsureChartHostForm();
@@ -734,6 +758,8 @@ namespace JSQViewer.UI
 
         private void ApplyTooltips()
         {
+            bool overlayMode = IsOverlayCompareModeActive();
+            UpdateManualXAxisUiHints(overlayMode);
             _toolTip.SetToolTip(_folderBox, Loc.Get("TipFolder"));
             _toolTip.SetToolTip(_browseButton, Loc.Get("TipBrowse"));
             _toolTip.SetToolTip(_addDataButton, Loc.Get("TipAddData"));
@@ -745,6 +771,10 @@ namespace JSQViewer.UI
             _toolTip.SetToolTip(_targetPointsBox, Loc.Get("TipTarget"));
             _toolTip.SetToolTip(_manualStepUpDown, Loc.Get("TipManualStep"));
             _toolTip.SetToolTip(_compareOverlayCheck, Loc.Get("TipCompareOverlayMode"));
+            _toolTip.SetToolTip(_manualYAxisCheck, "Manual Y axis");
+            _toolTip.SetToolTip(_manualYAxisMinBox, "Manual Y axis minimum");
+            _toolTip.SetToolTip(_manualYAxisMaxBox, "Manual Y axis maximum");
+            _toolTip.SetToolTip(_manualYAxisStepBox, "Manual Y axis step");
             _toolTip.SetToolTip(_channelFilterBox, Loc.Get("TipFilter"));
             _toolTip.SetToolTip(_sortModeBox, Loc.Get("TipSort"));
             _toolTip.SetToolTip(_selectedOnlyCheck, Loc.Get("TipSelectedOnly"));
@@ -766,6 +796,34 @@ namespace JSQViewer.UI
             _toolTip.SetToolTip(_ordersBox, Loc.Get("TipOrders"));
             _toolTip.SetToolTip(_loadOrderButton, Loc.Get("TipLoadOrder"));
             _toolTip.SetToolTip(_deleteOrderButton, Loc.Get("TipDeleteOrder"));
+        }
+
+        private void UpdateManualXAxisUiHints(bool overlayMode)
+        {
+            _manualXAxisCheck.Text = GetManualXAxisCaption(overlayMode);
+            _toolTip.SetToolTip(_manualXAxisCheck, GetManualXAxisBoundsHint(overlayMode));
+            _toolTip.SetToolTip(_manualXAxisMinBox, GetManualXAxisBoundsHint(overlayMode));
+            _toolTip.SetToolTip(_manualXAxisMaxBox, GetManualXAxisBoundsHint(overlayMode));
+            _toolTip.SetToolTip(_manualXAxisStepBox, GetManualXAxisStepHint(overlayMode));
+        }
+
+        private static string GetManualXAxisCaption(bool overlayMode)
+        {
+            return overlayMode ? "X axis (hours)" : "X axis (date/time)";
+        }
+
+        private static string GetManualXAxisBoundsHint(bool overlayMode)
+        {
+            return overlayMode
+                ? "Manual X axis bounds in overlay hours."
+                : "Manual X axis bounds in local date/time, for example dd.MM.yyyy HH:mm.";
+        }
+
+        private static string GetManualXAxisStepHint(bool overlayMode)
+        {
+            return overlayMode
+                ? "Manual X axis step in hours."
+                : "Manual X axis step in minutes.";
         }
 
         private void ConfigureMainAsControlPanel()
@@ -946,6 +1004,22 @@ namespace JSQViewer.UI
             row.AutoSize = true;
             row.WrapContents = false;
             return row;
+        }
+
+        private static Label CreateAxisValueLabel(string text)
+        {
+            var label = new Label();
+            label.Text = text ?? string.Empty;
+            label.AutoSize = true;
+            label.Padding = new Padding(8, 5, 2, 0);
+            return label;
+        }
+
+        private static TextBox CreateAxisValueTextBox()
+        {
+            var box = new TextBox();
+            box.Width = 60;
+            return box;
         }
 
         private static Chart BuildChart()
@@ -1320,34 +1394,6 @@ namespace JSQViewer.UI
             try { form.Icon = Icon; } catch { }
 
             var detachedChart = BuildChart();
-            if (detachedChart.ChartAreas.Count > 0)
-            {
-                ChartArea detachedArea = detachedChart.ChartAreas[0];
-                detachedArea.AxisX.LabelStyle.Format = overlayMode ? "0.##" : "HH:mm\ndd.MM";
-                detachedArea.AxisX.Title = overlayMode ? Loc.Get("OverlayXAxisTitle") : string.Empty;
-            }
-            detachedChart.SuspendLayout();
-            try
-            {
-                foreach (Series src in _chart.Series)
-                {
-                    var s = new Series(src.Name);
-                    s.ChartType = src.ChartType;
-                    s.XValueType = src.XValueType;
-                    s.BorderWidth = src.BorderWidth;
-                    s.Color = src.Color;
-                    s.LegendText = src.LegendText;
-                    foreach (DataPoint dp in src.Points)
-                    {
-                        s.Points.AddXY(dp.XValue, dp.YValues[0]);
-                    }
-                    detachedChart.Series.Add(s);
-                }
-            }
-            finally
-            {
-                detachedChart.ResumeLayout();
-            }
 
             // Add a range track bar to the detached window
             var detachedRangeBar = new RangeTrackBar();
@@ -1383,13 +1429,23 @@ namespace JSQViewer.UI
             };
 
             _detachedRangeBars.Add(detachedRangeBar);
-            form.FormClosed += delegate { _detachedRangeBars.Remove(detachedRangeBar); };
-
-            // Apply current range to detached chart
-            if (!double.IsNaN(_rangeStartOa) && !double.IsNaN(_rangeEndOa) && detachedChart.ChartAreas.Count > 0)
+            var state = new DetachedChartState
             {
-                detachedChart.ChartAreas[0].AxisX.Minimum = _rangeStartOa;
-                detachedChart.ChartAreas[0].AxisX.Maximum = _rangeEndOa;
+                Form = form,
+                Chart = detachedChart,
+                RangeBar = detachedRangeBar
+            };
+            _detachedCharts.Add(state);
+            form.FormClosed += delegate
+            {
+                _detachedRangeBars.Remove(detachedRangeBar);
+                _detachedCharts.Remove(state);
+            };
+
+            if (_lastChartViewModel != null)
+            {
+                SyncDetachedChartState(state, _lastChartViewModel);
+                _chartRenderer.Render(detachedChart, _lastChartViewModel);
             }
 
             AttachChartInteractivity(detachedChart, form, overlayMode);
@@ -1758,7 +1814,7 @@ namespace JSQViewer.UI
                 });
                 spec = result.NormalizedFolderSpec;
                 _currentWorkspaceKey = _workspaceFolderSpecParser.BuildWorkspaceKey(result.Folders);
-                _workspaceLayoutState = _workspaceLayoutRepository.Load(_currentWorkspaceKey) ?? new WorkspaceLayoutState();
+                _workspaceLayoutState = _workspaceLayoutStateService.Load(_currentWorkspaceKey);
                 TestData data = result.Data;
                 _folderBox.Text = spec;
                 _viewerSession.SetData(spec, data);
@@ -2152,6 +2208,35 @@ namespace JSQViewer.UI
             RedrawChartIfRequested();
         }
 
+        private void AxisControlsOnChanged(object sender, EventArgs e)
+        {
+            UpdateAxisControlStates();
+            UpdateManualXAxisUiHints(IsOverlayCompareModeActive());
+            RedrawChartIfRequested();
+        }
+
+        private void UpdateAxisControlStates()
+        {
+            SetAxisInputState(_manualXAxisCheck.Checked, _manualXAxisMinBox, _manualXAxisMaxBox, _manualXAxisStepBox);
+            SetAxisInputState(_manualYAxisCheck.Checked, _manualYAxisMinBox, _manualYAxisMaxBox, _manualYAxisStepBox);
+        }
+
+        private static void SetAxisInputState(bool enabled, params TextBox[] boxes)
+        {
+            if (boxes == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < boxes.Length; i++)
+            {
+                if (boxes[i] != null)
+                {
+                    boxes[i].Enabled = enabled;
+                }
+            }
+        }
+
         private void CompareOverlayCheckOnCheckedChanged(object sender, EventArgs e)
         {
             TestData data = _viewerSession.Data;
@@ -2302,6 +2387,7 @@ namespace JSQViewer.UI
             {
                 RebuildSourceWindowList(state);
                 state.List.SelectedIndex = targetIndex;
+                SaveWorkspaceLayoutEffectiveOrderForSource(state);
             }
         }
 
@@ -2368,11 +2454,13 @@ namespace JSQViewer.UI
             if (data == null || data.RowCount == 0)
             {
                 _chart.Series.Clear();
+                _lastChartViewModel = null;
                 HideChartHost();
                 return;
             }
 
             bool overlayMode = IsOverlayCompareModeActive();
+            UpdateManualXAxisUiHints(overlayMode);
             List<string> selectedCodes = GetSelectedCodes();
             if (selectedCodes.Count == 0 && _lastSelectedCodes.Count > 0)
             {
@@ -2380,6 +2468,7 @@ namespace JSQViewer.UI
             }
             if (selectedCodes.Count == 0)
             {
+                _lastChartViewModel = null;
                 HideChartHost();
                 return;
             }
@@ -2397,21 +2486,26 @@ namespace JSQViewer.UI
             {
                 ShowChartHost();
             }
-            var request = ChartPipelineRequest.ForChart(
-                data,
-                selectedCodes,
-                overlayMode,
-                _viewerSession.DataVersion,
-                _autoStepCheck.Checked,
-                (int)_manualStepUpDown.Value,
-                ParseTargetPoints(),
-                _channelWorkspacePresenter.SelectedChannelCount,
-                ConvertTrackRangeToChartSpaceStart(overlayMode),
-                ConvertTrackRangeToChartSpaceEnd(overlayMode));
-            ChartPipelineResult chartState = _buildChartViewUseCase.Execute(request);
-            ChartViewModel viewModel = _chartViewModelFactory.Create(chartState, Loc.Get("OverlayXAxisTitle"));
-            _chartRenderer.Render(_chart, viewModel);
-            ApplyChartViewToRangeControls(viewModel);
+              ChartAxisSettings xAxisSettings = BuildManualXAxisSettings(overlayMode);
+              var request = ChartPipelineRequest.ForChart(
+                  data,
+                  selectedCodes,
+                  overlayMode,
+                  _viewerSession.DataVersion,
+                  _autoStepCheck.Checked,
+                  (int)_manualStepUpDown.Value,
+                  ParseTargetPoints(),
+                  _channelWorkspacePresenter.SelectedChannelCount,
+                  xAxisSettings.IsManualEnabled ? double.NaN : ConvertTrackRangeToChartSpaceStart(overlayMode),
+                  xAxisSettings.IsManualEnabled ? double.NaN : ConvertTrackRangeToChartSpaceEnd(overlayMode),
+                  xAxisSettings,
+                  BuildYAxisSettingsViewModel().ToChartAxisSettings());
+              ChartPipelineResult chartState = _buildChartViewUseCase.Execute(request);
+              ChartViewModel viewModel = _chartViewModelFactory.Create(chartState, Loc.Get("OverlayXAxisTitle"));
+              _chartRenderer.Render(_chart, viewModel);
+              ApplyChartViewToRangeControls(viewModel);
+              _lastChartViewModel = viewModel;
+              RenderDetachedCharts(viewModel);
 
             if (overlayMode)
             {
@@ -2457,6 +2551,45 @@ namespace JSQViewer.UI
                     }
                 });
             }
+        }
+
+        private void RenderDetachedCharts(ChartViewModel viewModel)
+        {
+            for (int i = _detachedCharts.Count - 1; i >= 0; i--)
+            {
+                DetachedChartState state = _detachedCharts[i];
+                if (state == null
+                    || state.Form == null
+                    || state.Form.IsDisposed
+                    || state.Chart == null
+                    || state.Chart.IsDisposed
+                    || state.RangeBar == null
+                    || state.RangeBar.IsDisposed)
+                {
+                    _detachedCharts.RemoveAt(i);
+                    continue;
+                }
+
+                SyncDetachedChartState(state, viewModel);
+                _chartRenderer.Render(state.Chart, viewModel);
+            }
+        }
+
+        private void SyncDetachedChartState(DetachedChartState state, ChartViewModel viewModel)
+        {
+            if (state == null || state.RangeBar == null || state.RangeBar.IsDisposed)
+            {
+                return;
+            }
+
+            RunWithoutRangeSync(delegate
+            {
+                state.RangeBar.Minimum = _rangeTrackBar.Minimum;
+                state.RangeBar.Maximum = _rangeTrackBar.Maximum;
+                state.RangeBar.LowerValue = _rangeTrackBar.LowerValue;
+                state.RangeBar.UpperValue = _rangeTrackBar.UpperValue;
+            });
+            state.RangeBar.ValueLabelFormatter = CreateRangeTrackBarLabelFormatter(viewModel != null && viewModel.OverlayMode);
         }
 
         private double ConvertTrackRangeToChartSpaceStart(bool overlayMode)
@@ -2787,6 +2920,122 @@ namespace JSQViewer.UI
             }
 
             return target;
+        }
+
+        private ChartAxisSettings BuildManualXAxisSettings(bool overlayMode)
+        {
+            return BuildManualXAxisSettings(
+                overlayMode,
+                _manualXAxisCheck.Checked,
+                _manualXAxisMinBox.Text,
+                _manualXAxisMaxBox.Text,
+                _manualXAxisStepBox.Text);
+        }
+
+        private static ChartAxisSettings BuildManualXAxisSettings(bool overlayMode, bool isManualEnabled, string minimumText, string maximumText, string intervalText)
+        {
+            if (!isManualEnabled)
+            {
+                return ChartAxisSettings.Automatic();
+            }
+
+            if (overlayMode)
+            {
+                return ChartAxisSettings.ForManual(
+                    ParseAxisValue(minimumText),
+                    ParseAxisValue(maximumText),
+                    ParseAxisValue(intervalText));
+            }
+
+            return ChartAxisSettings.ForManual(
+                ParseDateTimeAxisValue(minimumText),
+                ParseDateTimeAxisValue(maximumText),
+                ParseDateTimeAxisInterval(intervalText));
+        }
+
+        private static double? ParseDateTimeAxisValue(string text)
+        {
+            string normalized = (text ?? string.Empty).Trim();
+            if (normalized.Length == 0)
+            {
+                return null;
+            }
+
+            DateTime value;
+            string[] formats =
+            {
+                "dd.MM.yyyy HH:mm",
+                "dd.MM.yyyy H:mm",
+                "dd.MM.yy HH:mm",
+                "dd.MM.yy H:mm",
+                "yyyy-MM-dd HH:mm",
+                "yyyy-MM-dd H:mm"
+            };
+            if (DateTime.TryParseExact(normalized, formats, CultureInfo.CurrentCulture, DateTimeStyles.AssumeLocal, out value)
+                || DateTime.TryParse(normalized, CultureInfo.CurrentCulture, DateTimeStyles.AssumeLocal, out value)
+                || DateTime.TryParse(normalized, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out value))
+            {
+                return new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Local)).ToUnixTimeMilliseconds();
+            }
+
+            return null;
+        }
+
+        private static double? ParseDateTimeAxisInterval(string text)
+        {
+            double? minutes = ParseAxisValue(text);
+            if (minutes.HasValue && minutes.Value > 0d)
+            {
+                return TimeSpan.FromMinutes(minutes.Value).TotalMilliseconds;
+            }
+
+            string normalized = (text ?? string.Empty).Trim();
+            if (normalized.Length == 0)
+            {
+                return null;
+            }
+
+            TimeSpan value;
+            if (TimeSpan.TryParse(normalized, CultureInfo.CurrentCulture, out value)
+                || TimeSpan.TryParse(normalized, CultureInfo.InvariantCulture, out value))
+            {
+                return value.TotalMilliseconds > 0d ? value.TotalMilliseconds : (double?)null;
+            }
+
+            return null;
+        }
+
+        private ChartAxisSettingsViewModel BuildYAxisSettingsViewModel()
+        {
+            return new ChartAxisSettingsViewModel
+            {
+                IsManualEnabled = _manualYAxisCheck.Checked,
+                Minimum = ParseAxisValue(_manualYAxisMinBox.Text),
+                Maximum = ParseAxisValue(_manualYAxisMaxBox.Text),
+                Interval = ParseAxisValue(_manualYAxisStepBox.Text)
+            };
+        }
+
+        private static double? ParseAxisValue(string text)
+        {
+            string normalized = (text ?? string.Empty).Trim();
+            if (normalized.Length == 0)
+            {
+                return null;
+            }
+
+            double value;
+            if (double.TryParse(normalized, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out value))
+            {
+                return value;
+            }
+
+            if (double.TryParse(normalized, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.CurrentCulture, out value))
+            {
+                return value;
+            }
+
+            return null;
         }
 
         private void SavePresetFromSource(SourceWindowState state)
@@ -3166,7 +3415,9 @@ namespace JSQViewer.UI
             string selectedKey = state.SelectedOrderKey;
             if (string.IsNullOrWhiteSpace(selectedKey) && _workspaceLayoutState != null && _workspaceLayoutState.SourceSelectedOrderKeys != null)
             {
-                _workspaceLayoutState.SourceSelectedOrderKeys.TryGetValue(state.SourceRoot ?? string.Empty, out selectedKey);
+                _workspaceLayoutState.SourceSelectedOrderKeys.TryGetValue(
+                    WorkspaceLayoutState.NormalizeSourceRoot(state.SourceRoot),
+                    out selectedKey);
             }
             if (!string.IsNullOrWhiteSpace(selectedKey))
             {
@@ -3375,14 +3626,14 @@ namespace JSQViewer.UI
 
             bool anyOrderApplied = false;
 
-            if (!string.IsNullOrWhiteSpace(_workspaceLayoutState.MainSelectedOrderKey))
+            WorkspaceLayoutRestoreSelection mainSelection = _workspaceLayoutStateService.GetMainRestoreSelection(_workspaceLayoutState);
+            if (!string.IsNullOrWhiteSpace(mainSelection.SelectedOrderKey))
             {
-                SelectOrderByKey(_workspaceLayoutState.MainSelectedOrderKey);
-                ChannelOrderModel mainOrder = _orderRepository.Load(_workspaceLayoutState.MainSelectedOrderKey);
-                if (mainOrder != null && mainOrder.order != null && mainOrder.order.Count > 0)
+                SelectOrderByKey(mainSelection.SelectedOrderKey);
+                if (mainSelection.Order.Count > 0)
                 {
                     _channelWorkspacePresenter.SetAllSortModes("User");
-                    _channelWorkspacePresenter.ApplyOrder(mainOrder.order);
+                    _channelWorkspacePresenter.ApplyOrder(mainSelection.Order);
                     anyOrderApplied = true;
                 }
             }
@@ -3395,28 +3646,20 @@ namespace JSQViewer.UI
                     continue;
                 }
 
-                string selectedKey;
-                if (_workspaceLayoutState.SourceSelectedOrderKeys != null
-                    && _workspaceLayoutState.SourceSelectedOrderKeys.TryGetValue(state.SourceRoot ?? string.Empty, out selectedKey))
-                {
-                    state.SelectedOrderKey = selectedKey;
-                }
+                WorkspaceLayoutRestoreSelection sourceSelection = _workspaceLayoutStateService.GetSourceRestoreSelection(_workspaceLayoutState, state.SourceRoot);
+                state.SelectedOrderKey = sourceSelection.SelectedOrderKey;
 
                 BindOrderControlsForSource(state);
 
-                if (!string.IsNullOrWhiteSpace(state.SelectedOrderKey))
+                if (sourceSelection.Order.Count > 0)
                 {
-                    ChannelOrderModel sourceOrder = _orderRepository.Load(state.SelectedOrderKey);
-                    if (sourceOrder != null && sourceOrder.order != null && sourceOrder.order.Count > 0)
-                    {
-                        _channelWorkspacePresenter.UpdateSourceWindowOptions(
-                            state.SourceRoot,
-                            state.FilterBox == null ? string.Empty : state.FilterBox.Text,
-                            "User",
-                            state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked);
-                        _channelWorkspacePresenter.ApplyOrderToSource(state.SourceRoot, sourceOrder.order);
-                        anyOrderApplied = true;
-                    }
+                    _channelWorkspacePresenter.UpdateSourceWindowOptions(
+                        state.SourceRoot,
+                        state.FilterBox == null ? string.Empty : state.FilterBox.Text,
+                        "User",
+                        state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked);
+                    _channelWorkspacePresenter.ApplyEffectiveOrderToSource(state.SourceRoot, sourceSelection.Order);
+                    anyOrderApplied = true;
                 }
             }
 
@@ -3436,8 +3679,10 @@ namespace JSQViewer.UI
 
             EnsureWorkspaceLayoutState();
             var item = _ordersBox.SelectedItem as OrderItem;
-            _workspaceLayoutState.MainSelectedOrderKey = item == null ? null : item.Key;
-            _workspaceLayoutRepository.Save(_currentWorkspaceKey, _workspaceLayoutState);
+            _workspaceLayoutState = _workspaceLayoutStateService.SaveMainSelectedOrderKey(
+                _currentWorkspaceKey,
+                _workspaceLayoutState,
+                item == null ? null : item.Key);
         }
 
         private void SaveWorkspaceLayoutSelectionForSource(SourceWindowState state)
@@ -3454,8 +3699,30 @@ namespace JSQViewer.UI
             EnsureWorkspaceLayoutState();
             var item = state.OrdersBox == null ? null : state.OrdersBox.SelectedItem as OrderItem;
             state.SelectedOrderKey = item == null ? null : item.Key;
-            _workspaceLayoutState.SourceSelectedOrderKeys[state.SourceRoot ?? string.Empty] = state.SelectedOrderKey;
-            _workspaceLayoutRepository.Save(_currentWorkspaceKey, _workspaceLayoutState);
+            _workspaceLayoutState = _workspaceLayoutStateService.SaveSourceSelectedOrderKey(
+                _currentWorkspaceKey,
+                _workspaceLayoutState,
+                state.SourceRoot,
+                state.SelectedOrderKey);
+        }
+
+        private void SaveWorkspaceLayoutEffectiveOrderForSource(SourceWindowState state)
+        {
+            if (state == null)
+            {
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(_currentWorkspaceKey))
+            {
+                return;
+            }
+
+            EnsureWorkspaceLayoutState();
+            _workspaceLayoutState = _workspaceLayoutStateService.SaveSourceEffectiveOrder(
+                _currentWorkspaceKey,
+                _workspaceLayoutState,
+                state.SourceRoot,
+                _channelWorkspacePresenter.GetEffectiveOrderForSource(state.SourceRoot));
         }
 
         private void EnsureWorkspaceLayoutState()
@@ -3465,10 +3732,7 @@ namespace JSQViewer.UI
                 _workspaceLayoutState = new WorkspaceLayoutState();
             }
 
-            if (_workspaceLayoutState.SourceSelectedOrderKeys == null)
-            {
-                _workspaceLayoutState.SourceSelectedOrderKeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            }
+            _workspaceLayoutState.EnsureInitialized();
         }
 
         private List<string> LoadSavedOrder()
@@ -3483,28 +3747,28 @@ namespace JSQViewer.UI
         private void LoadRecentFolders()
         {
             _recentFoldersBox.Items.Clear();
-            List<string> folders = _recentFoldersRepository.Load();
-            for (int i = 0; i < folders.Count; i++) if (!string.IsNullOrWhiteSpace(folders[i])) _recentFoldersBox.Items.Add(folders[i]);
+            List<string> folders = _uiShellStateService.LoadRecentFolders();
+            for (int i = 0; i < folders.Count; i++) _recentFoldersBox.Items.Add(folders[i]);
             UpdateRecentDropDownWidth();
             if (_recentFoldersBox.Items.Count > 0) _recentFoldersBox.SelectedIndex = 0;
         }
 
         private void AddRecentFolder(string folder)
         {
-            string path = (folder ?? string.Empty).Trim();
-            if (path.Length == 0) return;
-            var folders = new List<string>(); folders.Add(path);
+            var currentList = new List<string>();
             for (int i = 0; i < _recentFoldersBox.Items.Count; i++)
-            {
-                string existing = _recentFoldersBox.Items[i].ToString();
-                if (!string.Equals(existing, path, StringComparison.OrdinalIgnoreCase)) folders.Add(existing);
-            }
-            while (folders.Count > 12) folders.RemoveAt(folders.Count - 1);
+                currentList.Add(_recentFoldersBox.Items[i].ToString());
+
+            List<string> folders = _uiShellStateService.AddRecentFolder(currentList, folder);
+
+            if (folders.Count == currentList.Count &&
+                (folder == null || (folder ?? string.Empty).Trim().Length == 0))
+                return;
+
             _recentFoldersBox.Items.Clear();
             for (int i = 0; i < folders.Count; i++) _recentFoldersBox.Items.Add(folders[i]);
             UpdateRecentDropDownWidth();
             if (_recentFoldersBox.Items.Count > 0) _recentFoldersBox.SelectedIndex = 0;
-            _recentFoldersRepository.Save(folders);
         }
 
         private void UpdateRecentDropDownWidth()
@@ -3555,7 +3819,7 @@ namespace JSQViewer.UI
                 state.refrigerant = _refrigerantBox.SelectedItem == null ? "R290" : _refrigerantBox.SelectedItem.ToString();
                 state.splitter_distance = _splitMain.SplitterDistance;
                 state.checked_channels = GetSelectedCodes();
-                _uiStateRepository.Save(state);
+                _uiShellStateService.SaveUiState(state);
             }
             catch { }
         }
@@ -3564,7 +3828,7 @@ namespace JSQViewer.UI
         {
             try
             {
-                UiStateModel state = _uiStateRepository.Load();
+                UiStateModel state = _uiShellStateService.LoadUiState();
                 if (state == null)
                 {
                     return;
@@ -3676,6 +3940,13 @@ namespace JSQViewer.UI
             public Label StatusLabel { get; set; }
             public CheckedListBox List { get; set; }
             public List<ChannelItem> Items { get; set; }
+        }
+
+        private sealed class DetachedChartState
+        {
+            public Form Form { get; set; }
+            public Chart Chart { get; set; }
+            public RangeTrackBar RangeBar { get; set; }
         }
 
         private sealed class SortModeItem

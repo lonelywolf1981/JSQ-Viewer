@@ -2,7 +2,9 @@ using System;
 using System.Threading;
 using System.Windows.Forms;
 using JSQViewer.Application.Abstractions;
+using JSQViewer.Application.Channels;
 using JSQViewer.Application.Charting;
+using JSQViewer.Application.UiState;
 using JSQViewer.Application.Charting.UseCases;
 using JSQViewer.Application.Exporting;
 using JSQViewer.Application.Session;
@@ -43,6 +45,8 @@ namespace JSQViewer
             IWorkspaceLayoutRepository workspaceLayoutRepository = new FileWorkspaceLayoutRepository(appPaths);
             IPresetRepository presetRepository = new FilePresetRepository(appPaths);
             IOrderRepository orderRepository = new FileOrderRepository(appPaths);
+            var workspaceLayoutStateService = new WorkspaceLayoutStateService(workspaceLayoutRepository, orderRepository);
+            var uiShellStateService = new UiShellStateService(recentFoldersRepository, uiStateRepository);
             IViewerSettingsRepository viewerSettingsRepository = new FileViewerSettingsRepository(appPaths);
             ISeriesSliceCache seriesSliceCache = new MemorySeriesSliceCache();
             var timestampRangeService = new TimestampRangeService();
@@ -75,9 +79,8 @@ namespace JSQViewer
                 _logger,
                 _mainFormNotificationService,
                 _externalProcessLauncher,
-                recentFoldersRepository,
-                uiStateRepository,
-                workspaceLayoutRepository,
+                uiShellStateService,
+                workspaceLayoutStateService,
                 presetRepository,
                 orderRepository,
                 viewerSettingsRepository,
