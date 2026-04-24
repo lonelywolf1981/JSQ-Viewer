@@ -65,6 +65,7 @@ namespace JSQViewer
             SeriesCache.Configure(seriesSliceService);
             WorkspaceFolderSpecParser workspaceFolderSpecParser = WorkspaceLoadingComposition.CreateFolderSpecParser();
             var loadWorkspaceDataUseCase = WorkspaceLoadingComposition.CreateLoadWorkspaceDataUseCase(workspaceFolderSpecParser);
+            var workspaceLoadOrchestrationService = new WorkspaceLoadOrchestrationService(workspaceFolderSpecParser, fileSystem);
             Loc.Initialize(localizationService);
 
             WinFormsApplication.ThreadException += OnThreadException;
@@ -93,7 +94,7 @@ namespace JSQViewer
                 exportTemplateUseCase,
                 exportSettingsPresenter,
                 viewerSettingsSanitizer,
-                workspaceFolderSpecParser,
+                workspaceLoadOrchestrationService,
                 loadWorkspaceDataUseCase));
         }
 

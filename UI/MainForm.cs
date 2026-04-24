@@ -136,7 +136,7 @@ namespace JSQViewer.UI
         private readonly ExportTemplateUseCase _exportTemplateUseCase;
         private readonly ExportSettingsPresenter _exportSettingsPresenter;
         private readonly ViewerSettingsSanitizer _viewerSettingsSanitizer;
-        private readonly WorkspaceFolderSpecParser _workspaceFolderSpecParser;
+        private readonly WorkspaceLoadOrchestrationService _workspaceLoadOrchestrationService;
         private readonly LoadWorkspaceDataUseCase _loadWorkspaceDataUseCase;
         private WorkspaceLayoutState _workspaceLayoutState;
         private string _currentWorkspaceKey;
@@ -164,7 +164,7 @@ namespace JSQViewer.UI
             ExportTemplateUseCase exportTemplateUseCase,
             ExportSettingsPresenter exportSettingsPresenter,
             ViewerSettingsSanitizer viewerSettingsSanitizer,
-            WorkspaceFolderSpecParser workspaceFolderSpecParser,
+            WorkspaceLoadOrchestrationService workspaceLoadOrchestrationService,
             LoadWorkspaceDataUseCase loadWorkspaceDataUseCase)
         {
             if (appPaths == null) throw new ArgumentNullException(nameof(appPaths));
@@ -186,7 +186,7 @@ namespace JSQViewer.UI
             if (exportTemplateUseCase == null) throw new ArgumentNullException(nameof(exportTemplateUseCase));
             if (exportSettingsPresenter == null) throw new ArgumentNullException(nameof(exportSettingsPresenter));
             if (viewerSettingsSanitizer == null) throw new ArgumentNullException(nameof(viewerSettingsSanitizer));
-            if (workspaceFolderSpecParser == null) throw new ArgumentNullException(nameof(workspaceFolderSpecParser));
+            if (workspaceLoadOrchestrationService == null) throw new ArgumentNullException(nameof(workspaceLoadOrchestrationService));
             if (loadWorkspaceDataUseCase == null) throw new ArgumentNullException(nameof(loadWorkspaceDataUseCase));
 
             _appPaths = appPaths;
@@ -208,7 +208,7 @@ namespace JSQViewer.UI
             _exportTemplateUseCase = exportTemplateUseCase;
             _exportSettingsPresenter = exportSettingsPresenter;
             _viewerSettingsSanitizer = viewerSettingsSanitizer;
-            _workspaceFolderSpecParser = workspaceFolderSpecParser;
+            _workspaceLoadOrchestrationService = workspaceLoadOrchestrationService;
             _loadWorkspaceDataUseCase = loadWorkspaceDataUseCase;
             _viewerSettings = _viewerSettingsRepository.Load();
             _workspaceLayoutState = new WorkspaceLayoutState();
@@ -1810,10 +1810,10 @@ namespace JSQViewer.UI
                 Cursor = Cursors.WaitCursor;
                 WorkspaceLoadResult result = await Task.Run(() =>
                 {
-                    return _loadWorkspaceDataUseCase.Execute(new WorkspaceLoadRequest(spec, true));
+                    return _loadWorkspaceDataUseCase.Execute(_workspaceLoadOrchestrationService.CreateLoadRequest(spec));
                 });
                 spec = result.NormalizedFolderSpec;
-                _currentWorkspaceKey = _workspaceFolderSpecParser.BuildWorkspaceKey(result.Folders);
+                _currentWorkspaceKey = _workspaceLoadOrchestrationService.BuildWorkspaceKey(result.Folders);
                 _workspaceLayoutState = _workspaceLayoutStateService.Load(_currentWorkspaceKey);
                 TestData data = result.Data;
                 _folderBox.Text = spec;
@@ -1842,23 +1842,17 @@ namespace JSQViewer.UI
 
         private List<string> ParseFolderSpec(string spec)
         {
-            return _workspaceFolderSpecParser.Parse(spec).ToList();
+            return _workspaceLoadOrchestrationService.ParseSpec(spec).ToList();
         }
 
         private string JoinFolderSpec(List<string> folders)
         {
-            return _workspaceFolderSpecParser.Join(folders);
+            return _workspaceLoadOrchestrationService.JoinSpec(folders);
         }
 
         private bool IsValidFolderSpec(string spec)
         {
-            List<string> folders = ParseFolderSpec(spec);
-            if (folders.Count == 0 || folders.Count > WorkspaceFolderSpecParser.MaxFolderCount) return false;
-            for (int i = 0; i < folders.Count; i++)
-            {
-                if (!_fileSystem.DirectoryExists(folders[i])) return false;
-            }
-            return true;
+            return _workspaceLoadOrchestrationService.IsValidSpec(spec);
         }
 
         private static string NormalizeChannelCodeForDisplay(string code)
