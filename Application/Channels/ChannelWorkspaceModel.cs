@@ -84,12 +84,13 @@ namespace JSQViewer.Application.Channels
                 string sourceRoot = pair.Key ?? string.Empty;
                 _sourceRoots.Add(sourceRoot);
 
-                var sourceSet = new HashSet<string>(pair.Value ?? new string[0], StringComparer.OrdinalIgnoreCase);
-                var orderedItems = new List<ChannelWorkspaceEntry>();
-                for (int i = 0; i < _channels.Count; i++)
+                string[] sourceCols = pair.Value ?? new string[0];
+                List<string> sourceOrder = ProtocolChannelOrder.Build(sourceCols, data.Channels);
+                var orderedItems = new List<ChannelWorkspaceEntry>(sourceOrder.Count);
+                foreach (string code in sourceOrder)
                 {
-                    ChannelWorkspaceEntry entry = _channels[i];
-                    if (sourceSet.Contains(entry.Code))
+                    ChannelWorkspaceEntry entry;
+                    if (_channelsByCode.TryGetValue(code, out entry))
                     {
                         orderedItems.Add(entry);
                     }

@@ -158,5 +158,83 @@ namespace JSQViewer.Tests
             var result = ProtocolChannelOrder.Build(cols, null);
             Assert.AreEqual(cols.Length, result.Count);
         }
+
+        // ── multi-source prefixed codes (source::code) ────────────────────
+
+        [TestMethod]
+        public void Build_PrefixedCols_FixedKeysStillMatchedFirst()
+        {
+            // При загрузке нескольких записей ВСЕ экземпляры каждого фиксированного ключа
+            // должны быть в зоне фиксированных ключей (не в extras)
+            string[] cols = new[] { "srcB::W", "srcA::T1", "srcB::T1", "srcA::Pc", "srcB::Pc" };
+            var result = ProtocolChannelOrder.Build(cols, null);
+
+            int idxPcA = result.IndexOf("srcA::Pc");
+            int idxPcB = result.IndexOf("srcB::Pc");
+            int idxT1A = result.IndexOf("srcA::T1");
+            int idxT1B = result.IndexOf("srcB::T1");
+            int idxW   = result.IndexOf("srcB::W");
+
+            Assert.AreEqual(cols.Length, result.Count, "Количество каналов не должно измениться");
+            Assert.IsTrue(idxPcA >= 0 && idxPcB >= 0 && idxT1A >= 0 && idxT1B >= 0 && idxW >= 0,
+                "Все каналы должны присутствовать");
+
+            // Оба Pc должны идти раньше обоих T1 (шаблонный порядок: Pc < T1 < W)
+            Assert.IsTrue(idxPcA < idxT1A, "srcA::Pc должен быть перед srcA::T1");
+            Assert.IsTrue(idxPcA < idxT1B, "srcA::Pc должен быть перед srcB::T1");
+            Assert.IsTrue(idxPcB < idxT1A, "srcB::Pc должен быть перед srcA::T1");
+            Assert.IsTrue(idxPcB < idxT1B, "srcB::Pc должен быть перед srcB::T1");
+
+            // Оба T1 должны идти раньше W
+            Assert.IsTrue(idxT1A < idxW, "srcA::T1 должен быть перед srcB::W");
+            Assert.IsTrue(idxT1B < idxW, "srcB::T1 должен быть перед srcB::W");
+        }
+
+        [TestMethod]
+        public void Build_MultiSource_SecondSourceChannelsInProtocolOrder()
+        {
+            // Воспроизводит баг: при загрузке двух записей каналы второго источника
+            // должны быть упорядочены по шаблону, а не попадать в extras
+            string[] cols = new[] { "src1::Pc", "src2::Pc", "src1::T1", "src2::T1", "src1::F", "src2::F" };
+            var result = ProtocolChannelOrder.Build(cols, null);
+
+            // T1 перед F в шаблоне — это должно быть верно для ОБОИХ источников
+            Assert.IsTrue(result.IndexOf("src1::T1") < result.IndexOf("src1::F"),
+                "src1::T1 должен быть перед src1::F");
+            Assert.IsTrue(result.IndexOf("src2::T1") < result.IndexOf("src2::F"),
+                "src2::T1 должен быть перед src2::F (баг: src2::T1 попадал в extras после src2::F)");
+
+            Assert.AreEqual(cols.Length, result.Count, "Все каналы должны присутствовать");
+        }
+
+        [TestMethod]
+        public void Build_PrefixedCols_APrefixPriorityStillWorks()
+        {
+            // Два источника, оба с A-Pc; A-приоритет должен работать через префикс
+            string[] cols = new[] { "srcB::A-Pc", "srcA::A-Pc", "srcA::X1" };
+            var result = ProtocolChannelOrder.Build(cols, null);
+            // Первый из A-Pc кандидатов выбирается для слота Pc
+            Assert.IsTrue(result[0] == "srcB::A-Pc" || result[0] == "srcA::A-Pc",
+                "Первым должен быть один из A-Pc вариантов");
+        }
+
+        [TestMethod]
+        public void Build_PrefixedCols_HashSuffixStripped()
+        {
+            // При дублировании в рамках одного источника добавляется #2
+            string[] cols = new[] { "Pc#2", "T1", "X1" };
+            var result = ProtocolChannelOrder.Build(cols, null);
+            Assert.AreEqual("Pc#2", result[0]); // Pc#2 → базовый "Pc" → фиксированный ключ
+            Assert.AreEqual("T1",   result[1]);
+        }
+
+        [TestMethod]
+        public void Build_AllColsIncluded_WithPrefixes_NoLostChannels()
+        {
+            string[] cols = new[] { "srcA::Pc", "srcB::Pc", "srcA::T1", "srcB::T1" };
+            var result = ProtocolChannelOrder.Build(cols, null);
+            Assert.AreEqual(cols.Length, result.Count);
+            CollectionAssert.AreEquivalent(cols, result);
+        }
     }
 }

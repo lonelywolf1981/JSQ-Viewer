@@ -76,6 +76,7 @@ namespace JSQViewer.Application.Workspace.UseCases
             var channels = new Dictionary<string, ChannelInfo>(StringComparer.OrdinalIgnoreCase);
             var codeSources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var columnSetOrder = new List<string>();
             var columnSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             int totalRows = 0;
             var sourceStartMs = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
@@ -146,7 +147,8 @@ namespace JSQViewer.Application.Workspace.UseCases
                         mergedCode = originalCode;
                     }
 
-                    columnSet.Add(mergedCode);
+                    if (columnSet.Add(mergedCode))
+                        columnSetOrder.Add(mergedCode);
                     if (!codeSources.ContainsKey(mergedCode))
                     {
                         codeSources[mergedCode] = source;
@@ -154,7 +156,7 @@ namespace JSQViewer.Application.Workspace.UseCases
                 }
             }
 
-            string[] columnNames = columnSet.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
+            string[] columnNames = columnSetOrder.ToArray();
             long[] compactTimestamps = new long[totalRows];
             var compactColumns = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase);
             foreach (string column in columnNames)

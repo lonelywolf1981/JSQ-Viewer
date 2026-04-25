@@ -25,8 +25,7 @@ namespace JSQViewer.Application.Channels
 
             foreach (string key in FixedKeys)
             {
-                string matched = ResolveKey(key, cols, used);
-                if (!string.IsNullOrEmpty(matched))
+                foreach (string matched in ResolveKey(key, cols, used))
                 {
                     result.Add(matched);
                     used.Add(matched);
@@ -43,7 +42,15 @@ namespace JSQViewer.Application.Channels
             return result;
         }
 
-        private static string ResolveKey(string key, string[] cols, HashSet<string> used)
+        private static string StripMergeDecorations(string code)
+        {
+            int colonIndex = code.IndexOf("::", StringComparison.Ordinal);
+            string result = colonIndex >= 0 ? code.Substring(colonIndex + 2) : code;
+            int hashIndex = result.IndexOf('#');
+            return hashIndex > 0 ? result.Substring(0, hashIndex) : result;
+        }
+
+        private static List<string> ResolveKey(string key, string[] cols, HashSet<string> used)
         {
             var exact = new List<string>();
             var suffix = new List<string>();
@@ -52,23 +59,51 @@ namespace JSQViewer.Application.Channels
             foreach (string c in cols)
             {
                 if (used.Contains(c)) continue;
-                if (string.Equals(c, key, StringComparison.OrdinalIgnoreCase))
+                string baseCode = StripMergeDecorations(c);
+                if (string.Equals(baseCode, key, StringComparison.OrdinalIgnoreCase))
                     exact.Add(c);
-                else if (c.EndsWith(suf, StringComparison.OrdinalIgnoreCase))
+                else if (baseCode.EndsWith(suf, StringComparison.OrdinalIgnoreCase))
                     suffix.Add(c);
             }
 
             var candidates = exact.Concat(suffix).ToList();
-            if (candidates.Count == 0) return string.Empty;
+            if (candidates.Count == 0) return new List<string>();
 
-            foreach (string pref in new[] { "A-", "C-" })
+            // Группируем по тегу источника (часть до "::", либо "" для одиночного источника).
+            // Внутри каждой группы применяем приоритет A-/C-префикса и выбираем одного победителя.
+            // Это гарантирует: при одном источнике — один канал на слот (старое поведение),
+            // при нескольких источниках — по одному каналу от каждого источника.
+            var bySource = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            var sourceOrder = new List<string>();
+            foreach (string c in candidates)
             {
-                string byPref = candidates.FirstOrDefault(
-                    c => c.StartsWith(pref, StringComparison.OrdinalIgnoreCase));
-                if (byPref != null) return byPref;
+                int sep = c.IndexOf("::", StringComparison.Ordinal);
+                string tag = sep >= 0 ? c.Substring(0, sep) : string.Empty;
+                if (!bySource.ContainsKey(tag))
+                {
+                    bySource[tag] = new List<string>();
+                    sourceOrder.Add(tag);
+                }
+                bySource[tag].Add(c);
             }
 
-            return candidates[0];
+            var result = new List<string>(sourceOrder.Count);
+            foreach (string tag in sourceOrder)
+            {
+                result.Add(SelectBest(bySource[tag]));
+            }
+            return result;
+        }
+
+        private static string SelectBest(List<string> group)
+        {
+            foreach (string pref in new[] { "A-", "C-" })
+            {
+                string byPref = group.FirstOrDefault(
+                    c => StripMergeDecorations(c).StartsWith(pref, StringComparison.OrdinalIgnoreCase));
+                if (byPref != null) return byPref;
+            }
+            return group[0];
         }
 
         private static string GetDisplayName(string code, Dictionary<string, ChannelInfo> channels)

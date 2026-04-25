@@ -135,6 +135,40 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Load_MultiSource_NonOverlappingChannels_SourceWindowInProtocolOrder()
+        {
+            // Воспроизводит баг: при трёх записях без перекрытия (A-Pc, B-Pc — разные имена)
+            // source window B получает порядок из extras глобального списка (алфавит),
+            // а не из ProtocolChannelOrder применённого к каналам B отдельно.
+            // B-F < B-Pc < B-T1 алфавитно → неверный порядок; правильный: B-Pc, B-T1, B-F
+            var sourceColumns = new Dictionary<string, string[]>
+            {
+                ["C:\\srcA"] = new[] { "A-Pc", "A-T1", "A-F" },
+                ["C:\\srcB"] = new[] { "B-Pc", "B-T1", "B-F" },
+            };
+            TestData data = ChannelWorkspaceTestData.CreateFromSourceColumns(sourceColumns);
+
+            // В реальном приложении MainForm передаёт savedOrder = ProtocolChannelOrder.Build(mergedCols).
+            // A-приоритет выбирает A-Pc, A-T1, A-F, а B-варианты уходят в extras (алфавит).
+            IEnumerable<string> savedOrder = JSQViewer.Application.Channels.ProtocolChannelOrder.Build(data.ColumnNames, data.Channels);
+
+            object workspace = ChannelWorkspaceTestHarness.CreateWorkspaceModel();
+            ChannelWorkspaceTestHarness.Invoke(workspace, "Load", data, savedOrder, null);
+
+            IList bItems = ChannelWorkspaceTestHarness.ToList(
+                ChannelWorkspaceTestHarness.Invoke(workspace, "BuildSourceList", "C:\\srcB", string.Empty, "User", false));
+            string[] bCodes = ChannelWorkspaceTestHarness.ToCodeList(bItems);
+
+            int pc = System.Array.IndexOf(bCodes, "B-Pc");
+            int t1 = System.Array.IndexOf(bCodes, "B-T1");
+            int f  = System.Array.IndexOf(bCodes, "B-F");
+
+            Assert.IsTrue(pc >= 0 && t1 >= 0 && f >= 0, "Все каналы B должны присутствовать");
+            Assert.IsTrue(pc < t1, $"B-Pc (pos {pc}) должен быть перед B-T1 (pos {t1}) — шаблон: Pc < T1");
+            Assert.IsTrue(t1 < f,  $"B-T1 (pos {t1}) должен быть перед B-F (pos {f}) — шаблон: T1 < F");
+        }
+
+        [TestMethod]
         public void ApplyEffectiveOrderToSource_DegradesSafelyWhenChannelsDifferAfterReload()
         {
             object workspace = ChannelWorkspaceTestHarness.CreateWorkspaceModel();
@@ -388,6 +422,30 @@ namespace JSQViewer.Tests
 
     internal static class ChannelWorkspaceTestData
     {
+        public static TestData CreateFromSourceColumns(Dictionary<string, string[]> sourceColumns)
+        {
+            string[] allCols = sourceColumns.Values.SelectMany(c => c).ToArray();
+            var channels = new Dictionary<string, ChannelInfo>(StringComparer.OrdinalIgnoreCase);
+            var cols = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase);
+            foreach (string code in allCols)
+            {
+                channels[code] = new ChannelInfo { Code = code, Name = code, Unit = string.Empty };
+                cols[code] = new double?[0];
+            }
+
+            return new TestData
+            {
+                Root = "C:\\workspace",
+                RowCount = 0,
+                TimestampsMs = new long[0],
+                ColumnNames = allCols,
+                SourceColumns = new Dictionary<string, string[]>(sourceColumns, StringComparer.OrdinalIgnoreCase),
+                Channels = channels,
+                Columns = cols,
+                Meta = new Dictionary<string, string>()
+            };
+        }
+
         public static TestData CreateMultiSourceData(Dictionary<string, string[]> sourceColumns = null)
         {
             var layout = sourceColumns ?? new Dictionary<string, string[]>
