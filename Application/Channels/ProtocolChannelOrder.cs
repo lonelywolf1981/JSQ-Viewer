@@ -14,6 +14,30 @@ namespace JSQViewer.Application.Channels
             "I", "F", "V", "W"
         };
 
+        private static string FindPriorityPrefix(string[] cols)
+        {
+            // T1-T7 всегда имеют префикс A-, B-, или C-
+            // Найти первый найденный T{1..7} и извлечь его префикс
+            for (int i = 1; i <= 7; i++)
+            {
+                string key = $"T{i}";
+                foreach (string col in cols)
+                {
+                    string baseCode = StripMergeDecorations(col);
+                    if (baseCode.EndsWith("-" + key, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Извлечь префикс (например, "A-T1" → "A-")
+                        int dashIndex = baseCode.IndexOf('-');
+                        if (dashIndex > 0)
+                        {
+                            return baseCode.Substring(0, dashIndex + 1);
+                        }
+                    }
+                }
+            }
+            return null; // Приоритетный префикс не найден
+        }
+
         public static List<string> Build(string[] cols, Dictionary<string, ChannelInfo> channels)
         {
             if (cols == null || cols.Length == 0)
@@ -32,13 +56,44 @@ namespace JSQViewer.Application.Channels
                 }
             }
 
+            // Шаг 2: Остальные каналы (extras) — двухэтапная сортировка
             var extras = cols
                 .Where(c => !string.IsNullOrWhiteSpace(c) && !used.Contains(c))
-                .OrderBy(c => GetDisplayName(c, channelMap), NaturalStringComparer.Instance)
-                .ThenBy(c => c, NaturalStringComparer.Instance)
                 .ToList();
 
-            result.AddRange(extras);
+            // Определить приоритетный префикс по T1-T7
+            string priorityPrefix = FindPriorityPrefix(cols);
+
+            List<string> group1, group2;
+
+            if (!string.IsNullOrEmpty(priorityPrefix))
+            {
+                // Группа 1: каналы с приоритетным префиксом
+                group1 = extras
+                    .Where(c => c.StartsWith(priorityPrefix, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(c => GetDisplayName(c, channelMap), NaturalStringComparer.Instance)
+                    .ThenBy(c => c, NaturalStringComparer.Instance)
+                    .ToList();
+
+                // Группа 2: все остальные
+                group2 = extras
+                    .Where(c => !c.StartsWith(priorityPrefix, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(c => GetDisplayName(c, channelMap), NaturalStringComparer.Instance)
+                    .ThenBy(c => c, NaturalStringComparer.Instance)
+                    .ToList();
+            }
+            else
+            {
+                // Нет приоритетного префикса — все extras одной группой
+                group1 = extras
+                    .OrderBy(c => GetDisplayName(c, channelMap), NaturalStringComparer.Instance)
+                    .ThenBy(c => c, NaturalStringComparer.Instance)
+                    .ToList();
+                group2 = new List<string>();
+            }
+
+            result.AddRange(group1);
+            result.AddRange(group2);
             return result;
         }
 
