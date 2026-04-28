@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using JSQViewer.Application.Channels;
 using JSQViewer.Core;
@@ -235,6 +236,97 @@ namespace JSQViewer.Tests
             var result = ProtocolChannelOrder.Build(cols, null);
             Assert.AreEqual(cols.Length, result.Count);
             CollectionAssert.AreEquivalent(cols, result);
+        }
+
+        // ── priority prefix group sorting ─────────────────────────────────
+
+        [TestMethod]
+        public void Build_PriorityPrefixA_DetectedFromT1T7_GroupsExtrasByPrefix()
+        {
+            // Arrange: T1-T7 use A- prefix
+            var cols = new[]
+            {
+                "Pc", "Pe", "T-sie", "UR-sie", "Tc", "Te",
+                "A-T1", "A-T2", "A-T3", "A-T4", "A-T5", "A-T6", "A-T7",
+                "I", "F", "V", "W",
+                "A-Pressure", "A-X1", "B-Temperature", "C-Flow", "Pressure", "X2"
+            };
+            var channels = new Dictionary<string, ChannelInfo>(System.StringComparer.OrdinalIgnoreCase);
+
+            // Act
+            var result = ProtocolChannelOrder.Build(cols, channels);
+
+            // Assert: Fixed keys first
+            Assert.AreEqual("Pc", result[0]);
+            Assert.AreEqual("W", result[17]); // Last fixed key
+
+            // Group 1 (A-*): A-Pressure, A-X1 (natural sort)
+            var group1Start = 18;
+            Assert.AreEqual("A-Pressure", result[group1Start]);
+            Assert.AreEqual("A-X1", result[group1Start + 1]);
+
+            // Group 2 (others): B-Temperature, C-Flow, Pressure, X2 (natural sort)
+            var group2Start = 20;
+            Assert.AreEqual("B-Temperature", result[group2Start]);
+            Assert.AreEqual("C-Flow", result[group2Start + 1]);
+            Assert.AreEqual("Pressure", result[group2Start + 2]);
+            Assert.AreEqual("X2", result[group2Start + 3]);
+        }
+
+        [TestMethod]
+        public void Build_PriorityPrefixC_DetectedFromT1T7_GroupsExtrasByPrefix()
+        {
+            // Arrange: T1-T7 use C- prefix
+            var cols = new[]
+            {
+                "Pc", "Pe", "T-sie", "UR-sie", "Tc", "Te",
+                "C-T1", "C-T2", "C-T3", "C-T4", "C-T5", "C-T6", "C-T7",
+                "I", "F", "V", "W",
+                "C-Pressure", "C-X1", "A-Temperature", "B-Flow", "Pressure"
+            };
+            var channels = new Dictionary<string, ChannelInfo>(System.StringComparer.OrdinalIgnoreCase);
+
+            // Act
+            var result = ProtocolChannelOrder.Build(cols, channels);
+
+            // Assert: Fixed keys first
+            Assert.AreEqual("Pc", result[0]);
+            Assert.AreEqual("W", result[17]); // Last fixed key
+
+            // Group 1 (C-*): C-Pressure, C-X1 (natural sort)
+            var group1Start = 18;
+            Assert.AreEqual("C-Pressure", result[group1Start]);
+            Assert.AreEqual("C-X1", result[group1Start + 1]);
+
+            // Group 2 (others): A-Temperature, B-Flow, Pressure (natural sort)
+            var group2Start = 20;
+            Assert.AreEqual("A-Temperature", result[group2Start]);
+            Assert.AreEqual("B-Flow", result[group2Start + 1]);
+            Assert.AreEqual("Pressure", result[group2Start + 2]);
+        }
+
+        [TestMethod]
+        public void Build_NoPriorityPrefixT1T7_FallbackToNaturalSort()
+        {
+            // Arrange: No T1-T7 with A/B/C prefix in extras (only fixed keys)
+            var cols = new[]
+            {
+                "Pc", "Pe", "T-sie", "UR-sie", "Tc", "Te",
+                "A-T1", "A-T2", "A-T3", "A-T4", "A-T5", "A-T6", "A-T7",
+                "I", "F", "V", "W",
+                "Pressure", "Temperature", "X1", "X2"
+            };
+            var channels = new Dictionary<string, ChannelInfo>(System.StringComparer.OrdinalIgnoreCase);
+
+            // Act
+            var result = ProtocolChannelOrder.Build(cols, channels);
+
+            // Assert: All extras in single natural sort order
+            var extrasStart = 18;
+            Assert.AreEqual("Pressure", result[extrasStart]);
+            Assert.AreEqual("Temperature", result[extrasStart + 1]);
+            Assert.AreEqual("X1", result[extrasStart + 2]);
+            Assert.AreEqual("X2", result[extrasStart + 3]);
         }
     }
 }
