@@ -103,6 +103,35 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void ResolveLegendText_RemovesMergedSourcePrefixFromDisplayCode()
+        {
+            var service = new ChartPipelineService(new SeriesSliceService(new MemorySeriesSliceCache(), new TimestampRangeService()));
+            var data = SessionAndChartingTestData.CreateData(
+                new long[] { 0L, 1000L },
+                new Dictionary<string, double?[]>
+                {
+                    ["source-a::A-01"] = new double?[] { 1d, 2d }
+                });
+            data.SourceColumns["source-a"] = new[] { "source-a::A-01" };
+            data.SourceColumns["source-b"] = new[] { "source-b::A-01" };
+            data.CodeSources["source-a::A-01"] = "C:\\tests\\source-a\\";
+
+            var request = ChartPipelineRequest.ForChart(
+                data,
+                new[] { "source-a::A-01" },
+                overlayMode: false,
+                dataVersion: 1,
+                autoStepEnabled: false,
+                manualStep: 1,
+                targetPoints: 5000,
+                selectedChannelCount: 1);
+
+            ChartPipelineResult result = service.Execute(request);
+
+            Assert.AreEqual("[source-a] A-01", result.Series.Single().LegendText);
+        }
+
+        [TestMethod]
         public void Execute_UsesCachedSeriesSliceService()
         {
             var cache = new CountingSeriesSliceCache();

@@ -341,7 +341,25 @@ namespace JSQViewer.Application.Charting
 
         private static string NormalizeChannelCodeForDisplay(string code)
         {
-            return string.IsNullOrWhiteSpace(code) ? string.Empty : code.Trim();
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                return string.Empty;
+            }
+
+            string result = code.Trim();
+            int sep = result.IndexOf("::", StringComparison.Ordinal);
+            if (sep >= 0)
+            {
+                result = result.Substring(sep + 2);
+            }
+
+            int hash = result.IndexOf('#');
+            if (hash > 0)
+            {
+                result = result.Substring(0, hash);
+            }
+
+            return result;
         }
 
         private static int CountNonNull(double?[] values)
