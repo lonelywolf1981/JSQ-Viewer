@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -89,6 +90,39 @@ namespace JSQViewer.Tests
             Assert.IsTrue(snapshot.RowNumbers.Contains(4));
             Assert.IsTrue(snapshot.RowNumbers.Contains(5));
             Assert.IsTrue(snapshot.RowNumbers.Contains(6));
+        }
+
+        [TestMethod]
+        public void Export_UsesSourceTimestampStepForElapsedTimeAndRows()
+        {
+            byte[] workbook = TemplateExporter.Export(
+                GetTemplatePath(),
+                "C:\\tests\\ten-second-record",
+                CreateData(
+                    new long[] { 0L, 10000L, 20000L, 30000L },
+                    new Dictionary<string, double?[]>
+                    {
+                        ["Pc"] = new double?[] { 11d, 12d, 13d, 14d },
+                        ["Pe"] = new double?[] { 21d, 22d, 23d, 24d },
+                        ["T-sie"] = new double?[] { 31d, 32d, 33d, 34d },
+                        ["UR-sie"] = new double?[] { 41d, 42d, 43d, 44d }
+                    }),
+                new[] { "Pc", "Pe", "T-sie", "UR-sie" },
+                includeExtra: false,
+                refrigerant: "R290",
+                viewerSettings: ViewerSettingsModel.CreateDefault());
+
+            WorkbookSnapshot snapshot = ReadWorkbook(workbook);
+
+            Assert.IsTrue(snapshot.RowNumbers.Contains(7));
+            Assert.AreEqual("11", snapshot.GetNumericValue("D4"));
+            Assert.AreEqual("12", snapshot.GetNumericValue("D5"));
+            Assert.AreEqual("13", snapshot.GetNumericValue("D6"));
+            Assert.AreEqual("14", snapshot.GetNumericValue("D7"));
+            Assert.AreEqual(0d, double.Parse(snapshot.GetNumericValue("B4"), CultureInfo.InvariantCulture), 1e-12);
+            Assert.AreEqual(10d / 86400d, double.Parse(snapshot.GetNumericValue("B5"), CultureInfo.InvariantCulture), 1e-12);
+            Assert.AreEqual(20d / 86400d, double.Parse(snapshot.GetNumericValue("B6"), CultureInfo.InvariantCulture), 1e-12);
+            Assert.AreEqual(30d / 86400d, double.Parse(snapshot.GetNumericValue("B7"), CultureInfo.InvariantCulture), 1e-12);
         }
 
         [TestMethod]

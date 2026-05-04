@@ -164,5 +164,17 @@ namespace JSQViewer.Tests
                 result.GridMs);
             CollectionAssert.AreEqual(new[] { 0, 0, -1, -1, 1, 1 }, result.Indices);
         }
+
+        [TestMethod]
+        public void BuildTimeGridAndIndices_UsesDetectedTimestampStep()
+        {
+            TemplateExporter.TimeGridPreparationResult result = TemplateExporter.BuildTimeGridAndIndices(
+                new long[] { 0L, 10000L, 20000L, 30000L });
+
+            CollectionAssert.AreEqual(
+                new[] { 0L, 10000L, 20000L, 30000L },
+                result.GridMs);
+            CollectionAssert.AreEqual(new[] { 0, 1, 2, 3 }, result.Indices);
+        }
     }
 }

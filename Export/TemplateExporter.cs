@@ -149,6 +149,7 @@ namespace JSQViewer.Export
                     var streamingContext = new TemplateSheetStreamingContext(
                         startRow,
                         idxs,
+                        gridAndIndices.GridMs,
                         tList,
                         fixedMap,
                         selectedSet,
@@ -244,7 +245,8 @@ namespace JSQViewer.Export
                 endMs = tmp;
             }
 
-            for (long g = startMs; g <= endMs; g += 20000)
+            long stepMs = ResolveTimestampStepMs(timestamps);
+            for (long g = startMs; g <= endMs; g += stepMs)
             {
                 gridMs.Add(g);
             }
@@ -263,6 +265,47 @@ namespace JSQViewer.Export
             }
 
             return new TimeGridPreparationResult(gridMs, idxs);
+        }
+
+        private static long ResolveTimestampStepMs(long[] timestamps)
+        {
+            const long fallbackStepMs = 20000L;
+            if (timestamps == null || timestamps.Length < 3)
+            {
+                return fallbackStepMs;
+            }
+
+            var counts = new Dictionary<long, int>();
+            for (int i = 1; i < timestamps.Length; i++)
+            {
+                long delta = timestamps[i] - timestamps[i - 1];
+                if (delta <= 0L)
+                {
+                    continue;
+                }
+
+                int count;
+                counts.TryGetValue(delta, out count);
+                counts[delta] = count + 1;
+            }
+
+            if (counts.Count == 0)
+            {
+                return fallbackStepMs;
+            }
+
+            long bestStep = fallbackStepMs;
+            int bestCount = 0;
+            foreach (KeyValuePair<long, int> pair in counts)
+            {
+                if (pair.Value > bestCount || pair.Value == bestCount && pair.Key < bestStep)
+                {
+                    bestStep = pair.Key;
+                    bestCount = pair.Value;
+                }
+            }
+
+            return bestCount >= 2 ? bestStep : fallbackStepMs;
         }
 
         private static string ResolveForSelection(string key, string[] cols, HashSet<string> selected)
@@ -1053,7 +1096,10 @@ namespace JSQViewer.Export
             XElement row = ClonePatternRowForTarget(ns, context.PatternRowTemplate, context.StartRow, rowIndex, context.PatternFormulas);
             var cells = BuildCellMap(row, ns);
 
-            double elapsedDays = (rowOffset * 20.0) / 86400.0;
+            long elapsedMs = context.GridMs.Count > rowOffset && context.GridMs.Count > 0
+                ? context.GridMs[rowOffset] - context.GridMs[0]
+                : rowOffset * 20000L;
+            double elapsedDays = elapsedMs / 86400000.0;
             SetNumericCellValue(row, cells, ns, rowIndex, 2, elapsedDays, context.PatternStyles);
 
             if (sourceIndex >= 0)
@@ -1385,6 +1431,7 @@ namespace JSQViewer.Export
             public TemplateSheetStreamingContext(
                 int startRow,
                 IList<int> sampleIndices,
+                IList<long> gridMs,
                 long[] timestamps,
                 Dictionary<string, string> fixedMap,
                 ISet<string> selectedSet,
@@ -1399,6 +1446,7 @@ namespace JSQViewer.Export
             {
                 StartRow = startRow;
                 SampleIndices = sampleIndices ?? new List<int>();
+                GridMs = gridMs ?? new List<long>();
                 Timestamps = timestamps ?? new long[0];
                 FixedMap = fixedMap ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 SelectedSet = selectedSet ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1416,6 +1464,8 @@ namespace JSQViewer.Export
             public int StartRow { get; }
 
             public IList<int> SampleIndices { get; }
+
+            public IList<long> GridMs { get; }
 
             public long[] Timestamps { get; }
 
