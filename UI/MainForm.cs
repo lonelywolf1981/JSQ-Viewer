@@ -140,6 +140,7 @@ namespace JSQViewer.UI
         private readonly ViewerSettingsSanitizer _viewerSettingsSanitizer;
         private readonly WorkspaceLoadOrchestrationService _workspaceLoadOrchestrationService;
         private readonly LoadWorkspaceDataUseCase _loadWorkspaceDataUseCase;
+        private readonly RemoveLoadedSourceUseCase _removeLoadedSourceUseCase;
         private WorkspaceLayoutState _workspaceLayoutState;
         private string _currentWorkspaceKey;
         private ViewerSettingsModel _viewerSettings;
@@ -212,6 +213,7 @@ namespace JSQViewer.UI
             _viewerSettingsSanitizer = viewerSettingsSanitizer;
             _workspaceLoadOrchestrationService = workspaceLoadOrchestrationService;
             _loadWorkspaceDataUseCase = loadWorkspaceDataUseCase;
+            _removeLoadedSourceUseCase = new RemoveLoadedSourceUseCase();
             _viewerSettings = _viewerSettingsRepository.Load();
             _workspaceLayoutState = new WorkspaceLayoutState();
             _channelWorkspacePresenter = new ChannelWorkspacePresenter();
@@ -1929,6 +1931,46 @@ namespace JSQViewer.UI
             return _workspaceLoadOrchestrationService.IsValidSpec(spec);
         }
 
+        private void RemoveClosedSourceFromCurrentWorkspace(string sourceRoot, List<string> remainingFolders)
+        {
+            if (remainingFolders == null || remainingFolders.Count == 0)
+            {
+                CloseAllButtonOnClick(null, EventArgs.Empty);
+                return;
+            }
+
+            TestData updatedData = _removeLoadedSourceUseCase.Execute(_viewerSession.Data, sourceRoot);
+            if (updatedData == null)
+            {
+                CloseAllButtonOnClick(null, EventArgs.Empty);
+                return;
+            }
+
+            string spec = JoinFolderSpec(remainingFolders);
+            var availableCodes = new HashSet<string>(
+                updatedData.ColumnNames ?? new string[0],
+                StringComparer.OrdinalIgnoreCase);
+            List<string> currentSelectedCodes = GetSelectedCodes()
+                .Where(code => availableCodes.Contains(code))
+                .ToList();
+            _pendingCheckedCodes.Clear();
+            _checkedCodes.Clear();
+            _lastSelectedCodes.Clear();
+            for (int i = 0; i < currentSelectedCodes.Count; i++)
+            {
+                _pendingCheckedCodes.Add(currentSelectedCodes[i]);
+                _checkedCodes.Add(currentSelectedCodes[i]);
+                _lastSelectedCodes.Add(currentSelectedCodes[i]);
+            }
+
+            _folderBox.Text = spec;
+            _currentWorkspaceKey = _workspaceLoadOrchestrationService.BuildWorkspaceKey(remainingFolders);
+            _workspaceLayoutState = new WorkspaceLayoutState();
+            _viewerSession.SetData(spec, updatedData);
+            ClearChartRangeState();
+            BindLoadedData(updatedData, true, false);
+        }
+
         private static string NormalizeChannelCodeForDisplay(string code)
         {
             if (string.IsNullOrWhiteSpace(code)) return string.Empty;
@@ -1949,7 +1991,7 @@ namespace JSQViewer.UI
             return (displayCode ?? string.Empty) + namePart + unitPart;
         }
 
-        private void BindLoadedData(TestData data, bool preserveSourceWindowsLayout)
+        private void BindLoadedData(TestData data, bool preserveSourceWindowsLayout, bool applyWorkspaceLayoutSelections = true)
         {
             SyncPresenterFromMainControls();
             string[] preferredCheckedCodes = _pendingCheckedCodes.Count == 0 ? null : _pendingCheckedCodes.ToArray();
@@ -1987,7 +2029,10 @@ namespace JSQViewer.UI
             {
                 RebuildSourceChannelWindows(refreshPlan.Windows);
             }
-            ApplyWorkspaceLayoutSelections();
+            if (applyWorkspaceLayoutSelections)
+            {
+                ApplyWorkspaceLayoutSelections();
+            }
             DataSummary summary = _buildWorkspaceSummaryUseCase.Execute(data);
             _summaryLabel.Text = string.Format(Loc.Get("Points"), summary.Points, summary.Start, summary.End);
             if (_chartHostForm != null && !_chartHostForm.IsDisposed)
@@ -2172,7 +2217,7 @@ namespace JSQViewer.UI
                             }
                             else
                             {
-                                LoadFolder(_folderBox.Text, false);
+                                RemoveClosedSourceFromCurrentWorkspace(sourceRoot, folders);
                             }
                         }));
                     }
