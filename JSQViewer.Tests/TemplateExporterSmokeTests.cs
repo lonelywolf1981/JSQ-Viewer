@@ -182,6 +182,47 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Export_MergedSourcesWithSingleSourceSelection_UsesSelectedSourceDuration()
+        {
+            long day50 = 50L * 24L * 60L * 60L * 1000L;
+            TestData data = CreateData(
+                new long[] { 0L, 20000L, 40000L, day50, day50 + 20000L, day50 + 40000L },
+                new Dictionary<string, double?[]>
+                {
+                    ["A-Pc"] = new double?[] { 11d, 12d, 13d, null, null, null },
+                    ["B-Pc"] = new double?[] { null, null, null, 21d, 22d, 23d }
+                });
+            data.Root = "C:\\tests\\source-a ; C:\\tests\\source-b";
+            data.SourceColumns["C:\\tests\\source-a"] = new[] { "A-Pc" };
+            data.SourceColumns["C:\\tests\\source-b"] = new[] { "B-Pc" };
+            data.CodeSources["A-Pc"] = "C:\\tests\\source-a";
+            data.CodeSources["B-Pc"] = "C:\\tests\\source-b";
+            data.SourceStartMs["C:\\tests\\source-a"] = 0L;
+            data.SourceEndMs["C:\\tests\\source-a"] = 40000L;
+            data.SourceStartMs["C:\\tests\\source-b"] = day50;
+            data.SourceEndMs["C:\\tests\\source-b"] = day50 + 40000L;
+
+            byte[] workbook = TemplateExporter.Export(
+                GetTemplatePath(),
+                "C:\\tests\\merged",
+                data,
+                new[] { "B-Pc" },
+                includeExtra: false,
+                refrigerant: "R290",
+                viewerSettings: ViewerSettingsModel.CreateDefault());
+
+            WorkbookSnapshot snapshot = ReadWorkbook(workbook);
+
+            Assert.IsTrue(snapshot.RowNumbers.Contains(4));
+            Assert.IsTrue(snapshot.RowNumbers.Contains(5));
+            Assert.IsTrue(snapshot.RowNumbers.Contains(6));
+            Assert.IsFalse(snapshot.RowNumbers.Contains(7));
+            Assert.AreEqual("21", snapshot.GetNumericValue("D4"));
+            Assert.AreEqual("23", snapshot.GetNumericValue("D6"));
+            Assert.AreEqual(40d / 86400d, double.Parse(snapshot.GetNumericValue("B6"), CultureInfo.InvariantCulture), 1e-12);
+        }
+
+        [TestMethod]
         public void Export_DoubleCabinet_WithLargeDataset_StillProducesWorkbookStructure()
         {
             const int rowCount = 2000;

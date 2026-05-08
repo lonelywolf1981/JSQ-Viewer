@@ -205,5 +205,33 @@ namespace JSQViewer.Tests
                 result.GridMs);
             CollectionAssert.AreEqual(new[] { 0, 1, 2, 3 }, result.Indices);
         }
+
+        [TestMethod]
+        public void BuildTimeGridAndIndices_ClampsRangeToDataBounds()
+        {
+            TemplateExporter.TimeGridPreparationResult result = TemplateExporter.BuildTimeGridAndIndices(
+                new long[] { 1000L, 21000L, 41000L },
+                rangeStartMs: -1000000L,
+                rangeEndMs: 5000000L);
+
+            CollectionAssert.AreEqual(
+                new[] { 1000L, 21000L, 41000L },
+                result.GridMs);
+            CollectionAssert.AreEqual(new[] { 0, 1, 2 }, result.Indices);
+        }
+
+        [TestMethod]
+        public void BuildTimeGridAndIndices_IgnoresRangeOutsideData()
+        {
+            TemplateExporter.TimeGridPreparationResult result = TemplateExporter.BuildTimeGridAndIndices(
+                new long[] { 1000L, 21000L, 41000L },
+                rangeStartMs: 1000000L,
+                rangeEndMs: 1040000L);
+
+            CollectionAssert.AreEqual(
+                new[] { 1000L, 21000L, 41000L },
+                result.GridMs);
+            CollectionAssert.AreEqual(new[] { 0, 1, 2 }, result.Indices);
+        }
     }
 }

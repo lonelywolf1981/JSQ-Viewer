@@ -64,6 +64,7 @@ namespace JSQViewer.Export
             string refrigerantNorm = refrigerant == "R600a" ? "R600a" : "R290";
             string[] cols = data.ColumnNames ?? new string[0];
             long[] tList = data.TimestampsMs;
+            ResolveEffectiveExportRange(data, selectedChannels, ref rangeStartMs, ref rangeEndMs);
             TimeGridPreparationResult gridAndIndices = BuildTimeGridAndIndices(tList, rangeStartMs, rangeEndMs);
             List<int> idxs = gridAndIndices.Indices;
 
@@ -226,6 +227,50 @@ namespace JSQViewer.Export
             return candidates.Where(c => !fixedCodes.Contains(c)).ToList();
         }
 
+        internal static void ResolveEffectiveExportRange(
+            TestData data,
+            IEnumerable<string> selectedChannels,
+            ref long? rangeStartMs,
+            ref long? rangeEndMs)
+        {
+            if (rangeStartMs.HasValue || rangeEndMs.HasValue)
+            {
+                return;
+            }
+
+            if (data == null || data.CodeSources == null || data.SourceStartMs == null || data.SourceEndMs == null)
+            {
+                return;
+            }
+
+            var selectedSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string channel in selectedChannels ?? new string[0])
+            {
+                string source;
+                if (!string.IsNullOrWhiteSpace(channel)
+                    && data.CodeSources.TryGetValue(channel, out source)
+                    && !string.IsNullOrWhiteSpace(source))
+                {
+                    selectedSources.Add(source);
+                }
+            }
+
+            if (selectedSources.Count != 1)
+            {
+                return;
+            }
+
+            string selectedSource = selectedSources.First();
+            long sourceStart;
+            long sourceEnd;
+            if (data.SourceStartMs.TryGetValue(selectedSource, out sourceStart)
+                && data.SourceEndMs.TryGetValue(selectedSource, out sourceEnd))
+            {
+                rangeStartMs = sourceStart;
+                rangeEndMs = sourceEnd;
+            }
+        }
+
         internal static TimeGridPreparationResult BuildTimeGridAndIndices(long[] timestamps, long? rangeStartMs = null, long? rangeEndMs = null)
         {
             var gridMs = new List<long>();
@@ -235,7 +280,6 @@ namespace JSQViewer.Export
                 return new TimeGridPreparationResult(gridMs, idxs);
             }
 
-            var timestampRangeService = new TimestampRangeService();
             long startMs = rangeStartMs.HasValue ? rangeStartMs.Value : timestamps[0];
             long endMs = rangeEndMs.HasValue ? rangeEndMs.Value : timestamps[timestamps.Length - 1];
             if (startMs > endMs)
@@ -245,15 +289,42 @@ namespace JSQViewer.Export
                 endMs = tmp;
             }
 
+            long dataStartMs = timestamps[0];
+            long dataEndMs = timestamps[timestamps.Length - 1];
+            if (endMs < dataStartMs || startMs > dataEndMs)
+            {
+                startMs = dataStartMs;
+                endMs = dataEndMs;
+            }
+            else
+            {
+                startMs = Math.Max(startMs, dataStartMs);
+                endMs = Math.Min(endMs, dataEndMs);
+            }
+
             long stepMs = ResolveTimestampStepMs(timestamps);
             for (long g = startMs; g <= endMs; g += stepMs)
             {
                 gridMs.Add(g);
             }
 
+            BuildNearestIndices(timestamps, gridMs, idxs);
+            return new TimeGridPreparationResult(gridMs, idxs);
+        }
+
+        private static void BuildNearestIndices(long[] timestamps, List<long> gridMs, List<int> idxs)
+        {
+            int cursor = 0;
             for (int i = 0; i < gridMs.Count; i++)
             {
-                int idx = timestampRangeService.NearestIndex(timestamps, gridMs[i]);
+                long target = gridMs[i];
+                while (cursor + 1 < timestamps.Length
+                       && Math.Abs(timestamps[cursor + 1] - target) <= Math.Abs(timestamps[cursor] - target))
+                {
+                    cursor++;
+                }
+
+                int idx = cursor;
                 if (idx < 0 || Math.Abs(timestamps[idx] - gridMs[i]) > 30000)
                 {
                     idxs.Add(-1);
@@ -263,8 +334,6 @@ namespace JSQViewer.Export
                     idxs.Add(idx);
                 }
             }
-
-            return new TimeGridPreparationResult(gridMs, idxs);
         }
 
         private static long ResolveTimestampStepMs(long[] timestamps)
