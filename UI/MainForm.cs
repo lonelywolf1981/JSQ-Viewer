@@ -2163,7 +2163,7 @@ namespace JSQViewer.UI
                 var status = new Label();
                 status.AutoSize = true;
                 status.Padding = new Padding(4, 4, 4, 6);
-                status.Text = _statusLabel.Text;
+                status.Text = Loc.Get("Ready");
                 bottom.Controls.Add(status, 0, 1);
 
                 var state = new SourceWindowState
@@ -3329,14 +3329,14 @@ namespace JSQViewer.UI
                 : (state.OrderNameBox.Text ?? string.Empty).Trim();
             if (name.Length == 0 || string.Equals(name, Loc.Get("OrderName"), StringComparison.OrdinalIgnoreCase))
             {
-                NotifyError(Loc.Get("EnterOrderName"));
+                NotifySourceError(state, Loc.Get("EnterOrderName"));
                 return;
             }
 
             List<string> order = BuildCurrentOrderFromSourceWindow(state);
             if (order.Count == 0)
             {
-                NotifyError(Loc.Get("NoChannelsToSave"));
+                NotifySourceError(state, Loc.Get("NoChannelsToSave"));
                 return;
             }
 
@@ -3353,7 +3353,7 @@ namespace JSQViewer.UI
             SelectOrderByKey(saved.key);
             state.SelectedOrderKey = saved.key;
             SaveWorkspaceLayoutSelectionForSource(state);
-            NotifySuccess(string.Format(existed ? Loc.Get("OrderUpdated") : Loc.Get("OrderSaved"), saved.name));
+            NotifySourceSuccess(state, string.Format(existed ? Loc.Get("OrderUpdated") : Loc.Get("OrderSaved"), saved.name));
 
             _orderNameBox.Text = name;
             if (state.OrderNameBox != null) state.OrderNameBox.Text = name;
@@ -3401,7 +3401,7 @@ namespace JSQViewer.UI
             ChannelOrderModel order = _orderRepository.Load(item.Key);
             if (order == null || order.order == null)
             {
-                NotifyError(Loc.Get("OrderInvalid"));
+                NotifySourceError(state, Loc.Get("OrderInvalid"));
                 return;
             }
 
@@ -3410,7 +3410,7 @@ namespace JSQViewer.UI
             ApplyOrderToSource(state.SourceRoot, order.order);
             state.SelectedOrderKey = item.Key;
             SaveWorkspaceLayoutSelectionForSource(state);
-            NotifySuccess(string.Format(Loc.Get("OrderLoaded"), order.name ?? item.Key));
+            NotifySourceSuccess(state, string.Format(Loc.Get("OrderLoaded"), order.name ?? item.Key));
         }
 
         private void DeleteOrderButtonOnClick(object sender, EventArgs e)
@@ -3428,11 +3428,16 @@ namespace JSQViewer.UI
         private void DeleteOrderFromSource(SourceWindowState state)
         {
             if (state == null || state.OrdersBox == null) return;
-            _ordersBox.SelectedIndex = state.OrdersBox.SelectedIndex;
-            DeleteOrderButtonOnClick(this, EventArgs.Empty);
+            var item = state.OrdersBox.SelectedItem as OrderItem;
+            if (item == null) return;
+            if (MessageBox.Show(this, string.Format(Loc.Get("DeleteOrderQ"), item.Name), Loc.Get("DeleteOrderTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            bool ok = _orderRepository.Delete(item.Key);
+            ReloadOrders();
             state.SelectedOrderKey = null;
             SaveWorkspaceLayoutSelectionForSource(state);
             BindOrderControlsForSource(state);
+            if (ok) NotifySourceSuccess(state, string.Format(Loc.Get("OrderDeleted"), item.Name));
+            else NotifySourceError(state, Loc.Get("OrderDeleteFailed"));
         }
 
         private void ApplyChannelChecks(IList<string> checkedCodes)
@@ -3725,13 +3730,6 @@ namespace JSQViewer.UI
         {
             string value = text ?? string.Empty;
             _statusLabel.Text = value;
-            foreach (var kv in _sourceWindows)
-            {
-                if (kv.Value != null && kv.Value.StatusLabel != null)
-                {
-                    kv.Value.StatusLabel.Text = value;
-                }
-            }
         }
 
         private void NotifySuccess(string text)
@@ -3745,6 +3743,27 @@ namespace JSQViewer.UI
         {
             SetStatus(text);
             _notificationService.ShowErrorToast(this, text);
+        }
+
+        private void SetSourceStatus(SourceWindowState state, string text)
+        {
+            if (state == null || state.StatusLabel == null)
+            {
+                return;
+            }
+
+            state.StatusLabel.Text = text ?? string.Empty;
+        }
+
+        private void NotifySourceSuccess(SourceWindowState state, string text)
+        {
+            SetSourceStatus(state, text);
+            _logger.LogInfo(text);
+        }
+
+        private void NotifySourceError(SourceWindowState state, string text)
+        {
+            SetSourceStatus(state, text);
         }
 
         private void SetBusy(bool busy, string text)
