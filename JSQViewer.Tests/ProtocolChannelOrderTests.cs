@@ -258,15 +258,15 @@ namespace JSQViewer.Tests
 
             // Assert: Fixed keys first
             Assert.AreEqual("Pc", result[0]);
-            Assert.AreEqual("W", result[17]); // Last fixed key
+            Assert.AreEqual("W", result[16]); // Last fixed key
 
             // Group 1 (A-*): A-Pressure, A-X1 (natural sort)
-            var group1Start = 18;
+            var group1Start = 17;
             Assert.AreEqual("A-Pressure", result[group1Start]);
             Assert.AreEqual("A-X1", result[group1Start + 1]);
 
             // Group 2 (others): B-Temperature, C-Flow, Pressure, X2 (natural sort)
-            var group2Start = 20;
+            var group2Start = 19;
             Assert.AreEqual("B-Temperature", result[group2Start]);
             Assert.AreEqual("C-Flow", result[group2Start + 1]);
             Assert.AreEqual("Pressure", result[group2Start + 2]);
@@ -291,15 +291,15 @@ namespace JSQViewer.Tests
 
             // Assert: Fixed keys first
             Assert.AreEqual("Pc", result[0]);
-            Assert.AreEqual("W", result[17]); // Last fixed key
+            Assert.AreEqual("W", result[16]); // Last fixed key
 
             // Group 1 (C-*): C-Pressure, C-X1 (natural sort)
-            var group1Start = 18;
+            var group1Start = 17;
             Assert.AreEqual("C-Pressure", result[group1Start]);
             Assert.AreEqual("C-X1", result[group1Start + 1]);
 
             // Group 2 (others): A-Temperature, B-Flow, Pressure (natural sort)
-            var group2Start = 20;
+            var group2Start = 19;
             Assert.AreEqual("A-Temperature", result[group2Start]);
             Assert.AreEqual("B-Flow", result[group2Start + 1]);
             Assert.AreEqual("Pressure", result[group2Start + 2]);
@@ -322,7 +322,7 @@ namespace JSQViewer.Tests
             var result = ProtocolChannelOrder.Build(cols, channels);
 
             // Assert: All extras in single natural sort order
-            var extrasStart = 18;
+            var extrasStart = 17;
             Assert.AreEqual("Pressure", result[extrasStart]);
             Assert.AreEqual("Temperature", result[extrasStart + 1]);
             Assert.AreEqual("X1", result[extrasStart + 2]);

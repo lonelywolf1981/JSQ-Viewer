@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using JSQViewer.Application.Channels;
@@ -175,7 +176,13 @@ namespace JSQViewer.Presentation.WinForms.Presenters
 
         private static string NormalizeSortMode(string sortMode)
         {
-            return string.IsNullOrWhiteSpace(sortMode) ? "User" : sortMode.Trim();
+            if (string.IsNullOrWhiteSpace(sortMode)) return "User";
+
+            string trimmed = sortMode.Trim();
+            if (string.Equals(trimmed, "Priority A/C", StringComparison.OrdinalIgnoreCase))
+                return "User";
+
+            return trimmed;
         }
 
         private static ChannelListItemViewModel MapItem(ChannelListProjectionItem item)

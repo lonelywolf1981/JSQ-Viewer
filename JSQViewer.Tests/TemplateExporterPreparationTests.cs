@@ -55,6 +55,35 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void ResolveFixedChannelMap_WithSourceQualifiedCodes_PrefersAAndCBaseMatches()
+        {
+            string[] columnNames =
+            {
+                "srcB::B-Pc",
+                "srcA::A-Pc"
+            };
+
+            Dictionary<string, string> fixedChannels = TemplateExporter.ResolveFixedChannelMap(columnNames, null);
+
+            Assert.AreEqual("srcA::A-Pc", fixedChannels["Pc"]);
+        }
+
+        [TestMethod]
+        public void ResolveFixedChannelMap_WithSourceQualifiedUnprefixedCodes_MatchesBaseKey()
+        {
+            string[] columnNames =
+            {
+                "src1::Pc",
+                "src2::Pe"
+            };
+
+            Dictionary<string, string> fixedChannels = TemplateExporter.ResolveFixedChannelMap(columnNames, null);
+
+            Assert.AreEqual("src1::Pc", fixedChannels["Pc"]);
+            Assert.AreEqual("src2::Pe", fixedChannels["Pe"]);
+        }
+
+        [TestMethod]
         public void ResolveFixedChannelMap_WithEmptySelection_StillPrefersAAndCMatches()
         {
             string[] columnNames =

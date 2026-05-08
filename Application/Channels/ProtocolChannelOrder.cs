@@ -14,29 +14,7 @@ namespace JSQViewer.Application.Channels
             "I", "F", "V", "W"
         };
 
-        private static string FindPriorityPrefix(string[] cols)
-        {
-            // T1-T7 всегда имеют префикс A-, B-, или C-
-            // Найти первый найденный T{1..7} и извлечь его префикс
-            for (int i = 1; i <= 7; i++)
-            {
-                string key = $"T{i}";
-                foreach (string col in cols)
-                {
-                    string baseCode = StripMergeDecorations(col);
-                    if (baseCode.EndsWith("-" + key, StringComparison.OrdinalIgnoreCase))
-                    {
-                        // Извлечь префикс (например, "A-T1" → "A-")
-                        int dashIndex = baseCode.IndexOf('-');
-                        if (dashIndex > 0)
-                        {
-                            return baseCode.Substring(0, dashIndex + 1);
-                        }
-                    }
-                }
-            }
-            return null; // Приоритетный префикс не найден
-        }
+        private static readonly string[] AllowedPrefixes = new[] { "A-", "B-", "C-" };
 
         public static List<string> Build(string[] cols, Dictionary<string, ChannelInfo> channels)
         {
@@ -46,130 +24,196 @@ namespace JSQViewer.Application.Channels
             var channelMap = channels ?? new Dictionary<string, ChannelInfo>(StringComparer.OrdinalIgnoreCase);
             var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var result = new List<string>(cols.Length);
+            string priorityPrefix = FindPriorityPrefix(cols);
 
+            // 1. FixedKeys: Pc, Pe, T-sie, UR-sie, Tc, Te, T1..T7, I, F, V, W.
+            // Для T1..T7, а также для остальных prefixed fixed keys, берем канал с тем
+            // A-/B-/C-префиксом, который найден у T1..T7.
             foreach (string key in FixedKeys)
             {
-                foreach (string matched in ResolveKey(key, cols, used))
+                foreach (string matched in ResolveFixedKey(key, cols, used, priorityPrefix))
                 {
                     result.Add(matched);
                     used.Add(matched);
                 }
             }
 
-            // Шаг 2: Остальные каналы (extras) — двухэтапная сортировка
+            // 2. extras = все каналы, не вошедшие в FixedKeys.
             var extras = cols
                 .Where(c => !string.IsNullOrWhiteSpace(c) && !used.Contains(c))
                 .ToList();
 
-            // Определить приоритетный префикс по T1-T7
-            string priorityPrefix = FindPriorityPrefix(cols);
+            // 3-5. Group1 = каналы с приоритетным префиксом, Group2 = остальные.
+            // Внутри групп — натуральная сортировка по display name.
+            var group1 = extras
+                .Where(c => HasPrefix(c, priorityPrefix))
+                .OrderBy(c => GetDisplaySortName(c, channelMap), NaturalStringComparer.Instance)
+                .ThenBy(c => GetBaseCode(c), NaturalStringComparer.Instance)
+                .ThenBy(c => c, NaturalStringComparer.Instance)
+                .ToList();
 
-            List<string> group1, group2;
-
-            if (!string.IsNullOrEmpty(priorityPrefix))
-            {
-                // Группа 1: каналы с приоритетным префиксом
-                group1 = extras
-                    .Where(c => c.StartsWith(priorityPrefix, StringComparison.OrdinalIgnoreCase))
-                    .OrderBy(c => GetDisplayName(c, channelMap), NaturalStringComparer.Instance)
-                    .ThenBy(c => c, NaturalStringComparer.Instance)
-                    .ToList();
-
-                // Группа 2: все остальные
-                group2 = extras
-                    .Where(c => !c.StartsWith(priorityPrefix, StringComparison.OrdinalIgnoreCase))
-                    .OrderBy(c => GetDisplayName(c, channelMap), NaturalStringComparer.Instance)
-                    .ThenBy(c => c, NaturalStringComparer.Instance)
-                    .ToList();
-            }
-            else
-            {
-                // Нет приоритетного префикса — все extras одной группой
-                group1 = extras
-                    .OrderBy(c => GetDisplayName(c, channelMap), NaturalStringComparer.Instance)
-                    .ThenBy(c => c, NaturalStringComparer.Instance)
-                    .ToList();
-                group2 = new List<string>();
-            }
+            var group2 = extras
+                .Where(c => !HasPrefix(c, priorityPrefix))
+                .OrderBy(c => GetDisplaySortName(c, channelMap), NaturalStringComparer.Instance)
+                .ThenBy(c => GetBaseCode(c), NaturalStringComparer.Instance)
+                .ThenBy(c => c, NaturalStringComparer.Instance)
+                .ToList();
 
             result.AddRange(group1);
             result.AddRange(group2);
             return result;
         }
 
-        private static string StripMergeDecorations(string code)
+        private static string FindPriorityPrefix(string[] cols)
         {
-            int colonIndex = code.IndexOf("::", StringComparison.Ordinal);
-            string result = colonIndex >= 0 ? code.Substring(colonIndex + 2) : code;
-            int hashIndex = result.IndexOf('#');
-            return hashIndex > 0 ? result.Substring(0, hashIndex) : result;
-        }
+            if (cols == null) return string.Empty;
 
-        private static List<string> ResolveKey(string key, string[] cols, HashSet<string> used)
-        {
-            var exact = new List<string>();
-            var suffix = new List<string>();
-            string suf = "-" + key;
-
-            foreach (string c in cols)
+            for (int i = 1; i <= 7; i++)
             {
-                if (used.Contains(c)) continue;
-                string baseCode = StripMergeDecorations(c);
-                if (string.Equals(baseCode, key, StringComparison.OrdinalIgnoreCase))
-                    exact.Add(c);
-                else if (baseCode.EndsWith(suf, StringComparison.OrdinalIgnoreCase))
-                    suffix.Add(c);
+                string key = "T" + i.ToString();
+                foreach (string col in cols)
+                {
+                    string baseCode = GetBaseCode(col);
+                    foreach (string prefix in AllowedPrefixes)
+                    {
+                        if (string.Equals(baseCode, prefix + key, StringComparison.OrdinalIgnoreCase))
+                            return prefix;
+                    }
+                }
             }
 
-            var candidates = exact.Concat(suffix).ToList();
-            if (candidates.Count == 0) return new List<string>();
+            return string.Empty;
+        }
 
-            // Группируем по тегу источника (часть до "::", либо "" для одиночного источника).
-            // Внутри каждой группы применяем приоритет A-/C-префикса и выбираем одного победителя.
-            // Это гарантирует: при одном источнике — один канал на слот (старое поведение),
-            // при нескольких источниках — по одному каналу от каждого источника.
+        private static List<string> ResolveFixedKey(string key, string[] cols, HashSet<string> used, string priorityPrefix)
+        {
+            if (cols == null) return new List<string>();
+
             var bySource = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             var sourceOrder = new List<string>();
-            foreach (string c in candidates)
+            for (int i = 0; i < cols.Length; i++)
             {
-                int sep = c.IndexOf("::", StringComparison.Ordinal);
-                string tag = sep >= 0 ? c.Substring(0, sep) : string.Empty;
-                if (!bySource.ContainsKey(tag))
+                string col = cols[i];
+                if (string.IsNullOrWhiteSpace(col) || (used != null && used.Contains(col)))
+                    continue;
+
+                string baseCode = GetBaseCode(col);
+                if (!IsFixedKeyCandidate(baseCode, key))
+                    continue;
+
+                string source = GetSourceTag(col);
+                if (!bySource.ContainsKey(source))
                 {
-                    bySource[tag] = new List<string>();
-                    sourceOrder.Add(tag);
+                    bySource[source] = new List<string>();
+                    sourceOrder.Add(source);
                 }
-                bySource[tag].Add(c);
+
+                bySource[source].Add(col);
             }
 
             var result = new List<string>(sourceOrder.Count);
-            foreach (string tag in sourceOrder)
+            for (int i = 0; i < sourceOrder.Count; i++)
             {
-                result.Add(SelectBest(bySource[tag]));
+                string selected = SelectBestFixedCandidate(bySource[sourceOrder[i]], key, priorityPrefix);
+                if (!string.IsNullOrWhiteSpace(selected))
+                {
+                    result.Add(selected);
+                }
             }
+
             return result;
         }
 
-        private static string SelectBest(List<string> group)
+        private static bool IsFixedKeyCandidate(string baseCode, string key)
         {
-            foreach (string pref in new[] { "A-", "C-" })
+            if (string.IsNullOrWhiteSpace(baseCode) || string.IsNullOrWhiteSpace(key))
+                return false;
+
+            if (string.Equals(baseCode, key, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            for (int i = 0; i < AllowedPrefixes.Length; i++)
             {
-                string byPref = group.FirstOrDefault(
-                    c => StripMergeDecorations(c).StartsWith(pref, StringComparison.OrdinalIgnoreCase));
-                if (byPref != null) return byPref;
+                if (string.Equals(baseCode, AllowedPrefixes[i] + key, StringComparison.OrdinalIgnoreCase))
+                    return true;
             }
-            return group[0];
+
+            return false;
         }
 
-        private static string GetDisplayName(string code, Dictionary<string, ChannelInfo> channels)
+        private static string SelectBestFixedCandidate(List<string> candidates, string key, string priorityPrefix)
+        {
+            if (candidates == null || candidates.Count == 0)
+                return null;
+
+            if (!string.IsNullOrWhiteSpace(priorityPrefix))
+            {
+                string prefixed = FirstCandidateByBaseCode(candidates, priorityPrefix + key);
+                if (!string.IsNullOrWhiteSpace(prefixed))
+                    return prefixed;
+            }
+
+            string aPrefixed = FirstCandidateByBaseCode(candidates, "A-" + key);
+            if (!string.IsNullOrWhiteSpace(aPrefixed))
+                return aPrefixed;
+
+            string cPrefixed = FirstCandidateByBaseCode(candidates, "C-" + key);
+            if (!string.IsNullOrWhiteSpace(cPrefixed))
+                return cPrefixed;
+
+            string bPrefixed = FirstCandidateByBaseCode(candidates, "B-" + key);
+            if (!string.IsNullOrWhiteSpace(bPrefixed))
+                return bPrefixed;
+
+            string exact = FirstCandidateByBaseCode(candidates, key);
+            return !string.IsNullOrWhiteSpace(exact) ? exact : candidates[0];
+        }
+
+        private static string FirstCandidateByBaseCode(List<string> candidates, string baseCode)
+        {
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                if (string.Equals(GetBaseCode(candidates[i]), baseCode, StringComparison.OrdinalIgnoreCase))
+                    return candidates[i];
+            }
+
+            return null;
+        }
+
+        private static bool HasPrefix(string code, string prefix)
+        {
+            return !string.IsNullOrWhiteSpace(prefix)
+                   && GetBaseCode(code).StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string GetBaseCode(string code)
+        {
+            if (string.IsNullOrWhiteSpace(code)) return string.Empty;
+            int sep = code.IndexOf("::", StringComparison.Ordinal);
+            string result = sep >= 0 ? code.Substring(sep + 2) : code;
+            int hash = result.IndexOf('#');
+            return hash > 0 ? result.Substring(0, hash) : result;
+        }
+
+        private static string GetSourceTag(string code)
+        {
+            if (string.IsNullOrWhiteSpace(code)) return string.Empty;
+            int sep = code.IndexOf("::", StringComparison.Ordinal);
+            return sep >= 0 ? code.Substring(0, sep) : string.Empty;
+        }
+
+        private static string GetDisplaySortName(string code, Dictionary<string, ChannelInfo> channels)
         {
             ChannelInfo ch;
-            if (channels.TryGetValue(code, out ch))
+            if (channels != null && channels.TryGetValue(code, out ch))
             {
                 if (!string.IsNullOrWhiteSpace(ch.Name)) return ch.Name.Trim();
-                if (!string.IsNullOrWhiteSpace(ch.Label)) return ch.Label.Trim();
+
+                if (!string.IsNullOrWhiteSpace(ch.Label) && !string.Equals(ch.Label, ch.Code, StringComparison.OrdinalIgnoreCase))
+                    return GetBaseCode(ch.Label).Trim();
             }
-            return code ?? string.Empty;
+
+            return GetBaseCode(code);
         }
     }
 }

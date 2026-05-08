@@ -51,12 +51,12 @@ namespace JSQViewer.Export
                         return new TemplateValidationResult { Ok = false, Message = "sheetData is missing." };
                     }
 
-                    bool hasFormulaAfterRow4 = false;
+                    bool hasFormulaInDataRows = false;
                     foreach (XElement row in sheetData.Elements(ns + "row"))
                     {
                         XAttribute r = row.Attribute("r");
                         int rowIndex;
-                        if (r == null || !int.TryParse(r.Value, out rowIndex) || rowIndex < 5)
+                        if (r == null || !int.TryParse(r.Value, out rowIndex) || rowIndex < 4)
                         {
                             continue;
                         }
@@ -66,11 +66,11 @@ namespace JSQViewer.Export
                             XElement f = cell.Element(ns + "f");
                             if (f != null && !string.IsNullOrWhiteSpace(f.Value))
                             {
-                                hasFormulaAfterRow4 = true;
+                                hasFormulaInDataRows = true;
                                 break;
                             }
                         }
-                        if (hasFormulaAfterRow4)
+                        if (hasFormulaInDataRows)
                         {
                             break;
                         }
@@ -80,7 +80,7 @@ namespace JSQViewer.Export
                     {
                         return new TemplateValidationResult { Ok = false, Message = "Conditional formatting rules are missing." };
                     }
-                    if (!hasFormulaAfterRow4)
+                    if (!hasFormulaInDataRows)
                     {
                         return new TemplateValidationResult { Ok = false, Message = "No formulas detected in exported data rows." };
                     }

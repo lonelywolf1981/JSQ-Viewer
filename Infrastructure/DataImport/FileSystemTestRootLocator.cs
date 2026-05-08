@@ -9,7 +9,7 @@ namespace JSQViewer.Infrastructure.DataImport
 {
     public sealed class FileSystemTestRootLocator : ITestRootLocator
     {
-        private static readonly Regex ProvaDbfRegex = new Regex(@"Prova(\d+)\.dbf$", RegexOptions.IgnoreCase);
+        private static readonly Regex ProvaDbfRegex = new Regex(@"^Prova\d+\.dbf$", RegexOptions.IgnoreCase);
 
         public string FindRoot(string folder)
         {
@@ -28,15 +28,17 @@ namespace JSQViewer.Infrastructure.DataImport
             }
 
             var found = new List<string>();
-            SearchDbfRecursive(absolutePath, 0, 3, found);
+            SearchDbfRecursive(absolutePath, 0, 8, found);
             if (found.Count == 0)
             {
-                throw new FileNotFoundException("No Prova*.dbf files found in selected folder.");
+                throw new FileNotFoundException("No Prova*.dbf files found in selected folder: " + absolutePath);
             }
 
             return found.Select(Path.GetDirectoryName)
                 .Where(path => !string.IsNullOrEmpty(path))
-                .OrderBy(path => path.Length)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(path => GetRelativeDepth(absolutePath, path))
+                .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
                 .First();
         }
 
@@ -58,24 +60,36 @@ namespace JSQViewer.Infrastructure.DataImport
                     }
                 }
 
-                if (results.Count > 0)
-                {
-                    return;
-                }
-
-                string[] subDirectories = Directory.GetDirectories(directory);
+                string[] subDirectories = Directory.GetDirectories(directory)
+                    .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
                 for (int i = 0; i < subDirectories.Length; i++)
                 {
                     SearchDbfRecursive(subDirectories[i], depth + 1, maxDepth, results);
-                    if (results.Count > 0)
-                    {
-                        return;
-                    }
                 }
             }
             catch (UnauthorizedAccessException)
             {
             }
+        }
+
+        private static int GetRelativeDepth(string root, string path)
+        {
+            string normalizedRoot = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string normalizedPath = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (normalizedPath.Length <= normalizedRoot.Length)
+            {
+                return 0;
+            }
+
+            string relative = normalizedPath.Substring(normalizedRoot.Length)
+                .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (string.IsNullOrEmpty(relative))
+            {
+                return 0;
+            }
+
+            return relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries).Length;
         }
     }
 }

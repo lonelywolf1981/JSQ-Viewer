@@ -116,6 +116,8 @@ namespace JSQViewer.UI
         private bool _syncingSourceChannelSelection;
         private bool _syncingChannelWorkspaceOptions;
         private bool _closingSourceChannelWindows;
+        private bool _suppressRecentFolderSelectionChanged;
+        private int _loadGeneration;
         private int _fixedControlPanelHeight = 430;
         private readonly IAppPaths _appPaths;
         private readonly IFileSystem _fileSystem;
@@ -294,7 +296,7 @@ namespace JSQViewer.UI
             _channelFilterBox = new TextBox(); _channelFilterBox.Width = 130; _channelFilterBox.TextChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_channelFilterBox);
             _sortModeBox = new ComboBox(); _sortModeBox.Width = 160; _sortModeBox.DropDownStyle = ComboBoxStyle.DropDownList;
             PopulateSortModeBox(_sortModeBox);
-            _sortModeBox.SelectedIndex = 5; _sortModeBox.SelectedIndexChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_sortModeBox);
+            _sortModeBox.SelectedIndex = 0; _sortModeBox.SelectedIndexChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_sortModeBox);
             _selectedOnlyCheck = new CheckBox(); _selectedOnlyCheck.Text = Loc.Get("SelectedOnly"); _selectedOnlyCheck.AutoSize = true; _selectedOnlyCheck.CheckedChanged += ChannelViewOptionsChanged; channelsHeaderRow.Controls.Add(_selectedOnlyCheck);
             _selectAllChannelsButton = new Button(); _selectAllChannelsButton.Text = Loc.Get("SelectAll"); _selectAllChannelsButton.AutoSize = true; _selectAllChannelsButton.Click += SelectAllChannelsButtonOnClick; channelsHeaderRow.Controls.Add(_selectAllChannelsButton);
             _clearChannelsButton = new Button(); _clearChannelsButton.Text = Loc.Get("Clear"); _clearChannelsButton.AutoSize = true; _clearChannelsButton.Click += ClearChannelsButtonOnClick; channelsHeaderRow.Controls.Add(_clearChannelsButton);
@@ -821,14 +823,14 @@ namespace JSQViewer.UI
         private static string GetManualXAxisBoundsHint(bool overlayMode)
         {
             return overlayMode
-                ? "Ручное задание диапазона оси X в часах (режим наложения)."
-                : "Ручное задание диапазона оси X в дате/времени, например 31.12.2024 14:30.";
+                ? "Ручное задание диапазона оси X: часы (режим наложения)."
+                : "Ручное задание диапазона оси X в дате/времени, формат dd.MM.yyyy HH:mm.";
         }
 
         private static string GetManualXAxisStepHint(bool overlayMode)
         {
             return overlayMode
-                ? "Шаг делений оси X в часах."
+                ? "Шаг делений оси X: часы."
                 : "Шаг делений оси X в минутах.";
         }
 
@@ -980,6 +982,7 @@ namespace JSQViewer.UI
 
         private void CloseAllButtonOnClick(object sender, EventArgs e)
         {
+            _loadGeneration++;
             _folderBox.Text = string.Empty;
             _channelWorkspacePresenter.ApplyCheckedCodes(null);
             _checkedCodes.Clear();
@@ -987,6 +990,7 @@ namespace JSQViewer.UI
             _allChannels.Clear();
             _pendingCheckedCodes.Clear();
             _viewerSession.SetData(string.Empty, null);
+            ClearChartRangeState();
             _chart.Series.Clear();
             _summaryLabel.Text = Loc.Get("NoTestLoaded");
             _selectionInfoLabel.Text = Loc.Get("Selected");
@@ -1335,17 +1339,60 @@ namespace JSQViewer.UI
 
         private void ResetRangeButtonOnClick(object sender, EventArgs e)
         {
+            ClearChartRangeState();
+        }
+
+        private void ClearChartRangeState()
+        {
             _rangeStartOa = double.NaN;
             _rangeEndOa = double.NaN;
-            _rangeTrackBar.LowerValue = _rangeTrackBar.Minimum;
-            _rangeTrackBar.UpperValue = _rangeTrackBar.Maximum;
             _rangeLabel.Text = BuildRangeLabelText(_rangeStartOa, _rangeEndOa);
             _resetRangeButton.Visible = false;
-            if (_chart.ChartAreas.Count > 0)
+
+            RunWithoutRangeSync(delegate
             {
-                _chart.ChartAreas[0].AxisX.Minimum = double.NaN;
-                _chart.ChartAreas[0].AxisX.Maximum = double.NaN;
+                ResetRangeBarToFullRange(_rangeTrackBar);
+                for (int i = 0; i < _detachedRangeBars.Count; i++)
+                {
+                    ResetRangeBarToFullRange(_detachedRangeBars[i]);
+                }
+            });
+
+            ClearChartAxisRange(_chart);
+            for (int i = 0; i < _detachedCharts.Count; i++)
+            {
+                DetachedChartState state = _detachedCharts[i];
+                if (state != null)
+                {
+                    ClearChartAxisRange(state.Chart);
+                }
             }
+        }
+
+        private static void ResetRangeBarToFullRange(RangeTrackBar rangeBar)
+        {
+            if (rangeBar == null || rangeBar.IsDisposed)
+            {
+                return;
+            }
+            if (double.IsNaN(rangeBar.Minimum) || double.IsNaN(rangeBar.Maximum) || rangeBar.Minimum >= rangeBar.Maximum)
+            {
+                return;
+            }
+
+            rangeBar.LowerValue = rangeBar.Minimum;
+            rangeBar.UpperValue = rangeBar.Maximum;
+        }
+
+        private static void ClearChartAxisRange(Chart chart)
+        {
+            if (chart == null || chart.IsDisposed || chart.ChartAreas.Count == 0)
+            {
+                return;
+            }
+
+            chart.ChartAreas[0].AxisX.Minimum = double.NaN;
+            chart.ChartAreas[0].AxisX.Maximum = double.NaN;
         }
 
         private void SaveImageMenuItemOnClick(object sender, EventArgs e)
@@ -1709,6 +1756,11 @@ namespace JSQViewer.UI
 
         private void RecentFoldersBoxOnSelectedIndexChanged(object sender, EventArgs e)
         {
+            if (_suppressRecentFolderSelectionChanged)
+            {
+                return;
+            }
+
             if (_recentFoldersBox.SelectedItem == null) return;
             string folder = _recentFoldersBox.SelectedItem.ToString();
             _folderBox.Text = folder;
@@ -1780,6 +1832,8 @@ namespace JSQViewer.UI
 
         private async void LoadFolder(string folder, bool addToRecent, bool preserveSelection = false, bool? preferredOverlayMode = null, bool preserveSourceWindowsLayout = false)
         {
+            int generation = 0;
+            bool hasGeneration = false;
             try
             {
                 if (!IsValidFolderSpec(folder))
@@ -1787,6 +1841,8 @@ namespace JSQViewer.UI
                     NotifyError(Loc.Get("SelectFolder"));
                     return;
                 }
+                generation = ++_loadGeneration;
+                hasGeneration = true;
                 List<string> folders = ParseFolderSpec(folder);
 
                 string spec = JoinFolderSpec(folders);
@@ -1806,8 +1862,18 @@ namespace JSQViewer.UI
                 {
                     return _loadWorkspaceDataUseCase.Execute(_workspaceLoadOrchestrationService.CreateLoadRequest(spec));
                 });
+                if (generation != _loadGeneration || IsDisposed)
+                {
+                    return;
+                }
                 spec = result.NormalizedFolderSpec;
-                _currentWorkspaceKey = _workspaceLoadOrchestrationService.BuildWorkspaceKey(result.Folders);
+                string workspaceKey = _workspaceLoadOrchestrationService.BuildWorkspaceKey(result.Folders);
+                bool isDifferentWorkspace = !string.Equals(workspaceKey, _currentWorkspaceKey, StringComparison.OrdinalIgnoreCase);
+                if (!preserveSelection && !preserveSourceWindowsLayout && isDifferentWorkspace)
+                {
+                    ClearChartRangeState();
+                }
+                _currentWorkspaceKey = workspaceKey;
                 _workspaceLayoutState = _workspaceLayoutStateService.Load(_currentWorkspaceKey);
                 TestData data = result.Data;
                 _folderBox.Text = spec;
@@ -1830,8 +1896,22 @@ namespace JSQViewer.UI
                 }
                 NotifySuccess(string.Format(Loc.Get("LoadedTest"), data.RowCount));
             }
-            catch (Exception ex) { _logger.LogError("Load test failed.", ex); _notificationService.ShowError(this, Loc.Get("LoadFailed"), ex.Message); NotifyError(Loc.Get("LoadFailed")); }
-            finally { Cursor = Cursors.Default; SetBusy(false, null); }
+            catch (Exception ex)
+            {
+                if (IsDisposed || (hasGeneration && generation != _loadGeneration))
+                {
+                    return;
+                }
+                _logger.LogError("Load test failed.", ex); _notificationService.ShowError(this, Loc.Get("LoadFailed"), ex.Message); NotifyError(Loc.Get("LoadFailed"));
+            }
+            finally
+            {
+                if (!IsDisposed && (!hasGeneration || generation == _loadGeneration))
+                {
+                    Cursor = Cursors.Default;
+                    SetBusy(false, null);
+                }
+            }
         }
 
         private List<string> ParseFolderSpec(string spec)
@@ -1925,11 +2005,16 @@ namespace JSQViewer.UI
 
         private void RebuildSourceChannelWindows(IReadOnlyList<SourceChannelWindowViewModel> windows)
         {
-            CloseSourceChannelWindows();
             if (windows == null || windows.Count == 0)
             {
+                CloseSourceChannelWindows(false);
                 return;
             }
+
+            var incomingRoots = new HashSet<string>(
+                windows.Select(window => window.SourceRoot ?? string.Empty),
+                StringComparer.OrdinalIgnoreCase);
+            CloseRemovedSourceChannelWindows(incomingRoots);
 
             Rectangle wa = Screen.FromControl(this).WorkingArea;
             int baseX = wa.Left + 12;
@@ -1938,7 +2023,28 @@ namespace JSQViewer.UI
 
             foreach (SourceChannelWindowViewModel window in windows)
             {
-                string sourceRoot = window.SourceRoot;
+                string sourceRoot = window.SourceRoot ?? string.Empty;
+                SourceWindowState existingState;
+                if (_sourceWindows.TryGetValue(sourceRoot, out existingState)
+                    && existingState != null
+                    && existingState.Form != null
+                    && !existingState.Form.IsDisposed
+                    && existingState.List != null
+                    && !existingState.List.IsDisposed)
+                {
+                    existingState.ViewModel = window;
+                    ApplySourceWindowViewModelToControls(existingState);
+                    RebuildSourceWindowList(existingState);
+                    col++;
+                    continue;
+                }
+
+                if (existingState != null)
+                {
+                    _sourceChannelForms.Remove(existingState.Form);
+                    _sourceChannelLists.Remove(sourceRoot);
+                    _sourceWindows.Remove(sourceRoot);
+                }
 
                 var form = new Form();
                 form.Text = string.Format(Loc.Get("ChannelsForSource"), window.Title);
@@ -2086,6 +2192,45 @@ namespace JSQViewer.UI
             }
         }
 
+        private void CloseRemovedSourceChannelWindows(HashSet<string> incomingRoots)
+        {
+            _closingSourceChannelWindows = true;
+            try
+            {
+                var rootsToRemove = _sourceWindows.Keys
+                    .Where(root => incomingRoots == null || !incomingRoots.Contains(root))
+                    .ToList();
+                for (int i = 0; i < rootsToRemove.Count; i++)
+                {
+                    string root = rootsToRemove[i];
+                    SourceWindowState state;
+                    if (!_sourceWindows.TryGetValue(root, out state) || state == null)
+                    {
+                        continue;
+                    }
+
+                    Form form = state.Form;
+                    _sourceWindows.Remove(root);
+                    _sourceChannelLists.Remove(root);
+                    _sourceChannelForms.Remove(form);
+                    if (form != null && !form.IsDisposed)
+                    {
+                        try
+                        {
+                            form.Close();
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                _closingSourceChannelWindows = false;
+            }
+        }
+
         private bool TryRefreshSourceChannelWindows(IReadOnlyList<SourceChannelWindowViewModel> windows)
         {
             if (windows == null || windows.Count == 0)
@@ -2127,6 +2272,11 @@ namespace JSQViewer.UI
 
         private void CloseSourceChannelWindows()
         {
+            CloseSourceChannelWindows(true);
+        }
+
+        private void CloseSourceChannelWindows(bool hideChartHost)
+        {
             _closingSourceChannelWindows = true;
             try
             {
@@ -2148,7 +2298,10 @@ namespace JSQViewer.UI
             _sourceChannelForms.Clear();
             _sourceChannelLists.Clear();
             _sourceWindows.Clear();
-            HideChartHost();
+            if (hideChartHost)
+            {
+                HideChartHost();
+            }
         }
 
         private void SyncSourceWindowsChecksFromSelectedCodes()
@@ -2337,6 +2490,7 @@ namespace JSQViewer.UI
         private void ClearChannelsButtonOnClick(object sender, EventArgs e)
         {
             _channelWorkspacePresenter.ClearAllChannels();
+            _lastSelectedCodes.Clear();
             RefreshChannelViews();
             UpdateSelectionInfo();
             RedrawChartIfRequested();
@@ -3453,6 +3607,7 @@ namespace JSQViewer.UI
         private static void SelectSortModeByKey(ComboBox box, string key)
         {
             if (box == null || string.IsNullOrWhiteSpace(key)) return;
+            key = NormalizeSortModeKey(key);
             for (int i = 0; i < box.Items.Count; i++)
             {
                 var item = box.Items[i] as SortModeItem;
@@ -3618,9 +3773,8 @@ namespace JSQViewer.UI
             if (!string.IsNullOrWhiteSpace(mainSelection.SelectedOrderKey))
             {
                 SelectOrderByKey(mainSelection.SelectedOrderKey);
-                if (mainSelection.Order.Count > 0)
+                if (mainSelection.Order.Count > 0 && IsUserSortMode(GetSelectedSortKey()))
                 {
-                    _channelWorkspacePresenter.SetAllSortModes("User");
                     _channelWorkspacePresenter.ApplyOrder(mainSelection.Order);
                     anyOrderApplied = true;
                 }
@@ -3639,12 +3793,12 @@ namespace JSQViewer.UI
 
                 BindOrderControlsForSource(state);
 
-                if (sourceSelection.Order.Count > 0)
+                if (sourceSelection.Order.Count > 0 && IsUserSortMode(GetSelectedSortKey(state.SortModeBox)))
                 {
                     _channelWorkspacePresenter.UpdateSourceWindowOptions(
                         state.SourceRoot,
                         state.FilterBox == null ? string.Empty : state.FilterBox.Text,
-                        "User",
+                        GetSelectedSortKey(state.SortModeBox),
                         state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked);
                     _channelWorkspacePresenter.ApplyEffectiveOrderToSource(state.SourceRoot, sourceSelection.Order);
                     anyOrderApplied = true;
@@ -3734,11 +3888,19 @@ namespace JSQViewer.UI
 
         private void LoadRecentFolders()
         {
-            _recentFoldersBox.Items.Clear();
-            List<string> folders = _uiShellStateService.LoadRecentFolders();
-            for (int i = 0; i < folders.Count; i++) _recentFoldersBox.Items.Add(folders[i]);
-            UpdateRecentDropDownWidth();
-            if (_recentFoldersBox.Items.Count > 0) _recentFoldersBox.SelectedIndex = 0;
+            _suppressRecentFolderSelectionChanged = true;
+            try
+            {
+                _recentFoldersBox.Items.Clear();
+                List<string> folders = _uiShellStateService.LoadRecentFolders();
+                for (int i = 0; i < folders.Count; i++) _recentFoldersBox.Items.Add(folders[i]);
+                UpdateRecentDropDownWidth();
+                if (_recentFoldersBox.Items.Count > 0) _recentFoldersBox.SelectedIndex = 0;
+            }
+            finally
+            {
+                _suppressRecentFolderSelectionChanged = false;
+            }
         }
 
         private void AddRecentFolder(string folder)
@@ -3749,10 +3911,18 @@ namespace JSQViewer.UI
 
             List<string> folders = _uiShellStateService.AddRecentFolder(currentList, folder);
 
-            _recentFoldersBox.Items.Clear();
-            for (int i = 0; i < folders.Count; i++) _recentFoldersBox.Items.Add(folders[i]);
-            UpdateRecentDropDownWidth();
-            if (_recentFoldersBox.Items.Count > 0) _recentFoldersBox.SelectedIndex = 0;
+            _suppressRecentFolderSelectionChanged = true;
+            try
+            {
+                _recentFoldersBox.Items.Clear();
+                for (int i = 0; i < folders.Count; i++) _recentFoldersBox.Items.Add(folders[i]);
+                UpdateRecentDropDownWidth();
+                if (_recentFoldersBox.Items.Count > 0) _recentFoldersBox.SelectedIndex = 0;
+            }
+            finally
+            {
+                _suppressRecentFolderSelectionChanged = false;
+            }
         }
 
         private void UpdateRecentDropDownWidth()
@@ -3962,13 +4132,32 @@ namespace JSQViewer.UI
         private string GetSelectedSortKey()
         {
             var item = _sortModeBox.SelectedItem as SortModeItem;
-            return item != null ? item.Key : "User";
+            return item != null ? NormalizeSortModeKey(item.Key) : "User";
+        }
+
+        private static bool IsUserSortMode(string sortMode)
+        {
+            return string.Equals(sortMode, "User", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string GetSelectedSortKey(ComboBox box)
         {
             var item = box == null ? null : box.SelectedItem as SortModeItem;
-            return item != null ? item.Key : "User";
+            return item != null ? NormalizeSortModeKey(item.Key) : "User";
+        }
+
+        private static string NormalizeSortModeKey(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return "User";
+
+            // Старый режим был установлен как дефолтный и ломает протокольный порядок
+            // FixedKeys -> priority prefix group -> remaining channels.
+            // Сохраненные состояния с этим режимом мигрируем в User, где порядок берется
+            // из ProtocolChannelOrder.Build(...).
+            if (string.Equals(key.Trim(), "Priority A/C", StringComparison.OrdinalIgnoreCase))
+                return "User";
+
+            return key.Trim();
         }
 
         private sealed class NaturalStringComparer : IComparer<string>

@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using JSQViewer.Application.Workspace;
 using JSQViewer.Application.Workspace.Ports;
 using JSQViewer.Application.Workspace.UseCases;
 using JSQViewer.Core;
+using JSQViewer.Infrastructure.DataImport;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace JSQViewer.Tests
@@ -34,8 +36,79 @@ namespace JSQViewer.Tests
     }
 
     [TestClass]
-    public class LoadWorkspaceDataUseCaseTests
+    public class WorkspaceLoadingTests
     {
+        [TestMethod]
+        public void FindRoot_DoesNotAcceptBackupProvaDbf()
+        {
+            string tempRoot = CreateTempDirectory();
+            try
+            {
+                File.WriteAllText(Path.Combine(tempRoot, "Prova_backup.dbf"), string.Empty);
+                var locator = new FileSystemTestRootLocator();
+
+                Assert.ThrowsException<FileNotFoundException>(() => locator.FindRoot(tempRoot));
+            }
+            finally
+            {
+                DeleteDirectory(tempRoot);
+            }
+        }
+
+        [TestMethod]
+        public void FindRoot_SelectsRootNearestCandidateDeterministically()
+        {
+            string tempRoot = CreateTempDirectory();
+            try
+            {
+                string deepRoot = Path.Combine(tempRoot, "A", "Deep");
+                string nearestRoot = Path.Combine(tempRoot, "B");
+                Directory.CreateDirectory(deepRoot);
+                Directory.CreateDirectory(nearestRoot);
+                File.WriteAllText(Path.Combine(deepRoot, "Prova001.dbf"), string.Empty);
+                File.WriteAllText(Path.Combine(nearestRoot, "Prova001.dbf"), string.Empty);
+                var locator = new FileSystemTestRootLocator();
+
+                string root = locator.FindRoot(tempRoot);
+
+                Assert.AreEqual(Path.GetFullPath(nearestRoot), root);
+            }
+            finally
+            {
+                DeleteDirectory(tempRoot);
+            }
+        }
+
+        [TestMethod]
+        public void Execute_DeduplicatesFoldersResolvingToSameRoot()
+        {
+            var roots = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["C:\\src"] = "C:\\root",
+                ["C:\\root"] = "C:\\root"
+            };
+            var dataByRoot = new Dictionary<string, TestData>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["C:\\root"] = CreateData("C:\\root", new[] { "A-01" }, 10L)
+            };
+            var dataSourceReader = new FakeDataSourceReader(dataByRoot);
+            var useCase = new LoadWorkspaceDataUseCase(
+                new WorkspaceFolderSpecParser(),
+                new FakeRootLocator(roots),
+                new FakeMetadataReader(),
+                new FakeCanaliReader(),
+                dataSourceReader,
+                new MergeLoadedSourcesUseCase());
+
+            WorkspaceLoadResult result = useCase.Execute(new WorkspaceLoadRequest("C:\\src ; C:\\root"));
+
+            Assert.AreEqual("C:\\root", result.NormalizedFolderSpec);
+            Assert.AreEqual(1, result.Folders.Count);
+            Assert.AreEqual("C:\\root", result.Folders[0]);
+            Assert.AreEqual(1, dataSourceReader.ReadRoots.Count);
+            Assert.AreEqual("C:\\root", result.Data.Root);
+        }
+
         [TestMethod]
         public void Execute_AcceptsUpToSixFolders()
         {
@@ -109,7 +182,7 @@ namespace JSQViewer.Tests
 
             WorkspaceLoadResult result = useCase.Execute(new WorkspaceLoadRequest("C:\\src"));
 
-            Assert.AreEqual("C:\\src", result.NormalizedFolderSpec);
+            Assert.AreEqual("C:\\root", result.NormalizedFolderSpec);
             Assert.AreEqual(3, result.Data.RowCount);
             Assert.AreEqual("C:\\root", result.Data.Root);
             Assert.AreEqual(1, dataSourceReader.ReadRoots.Count);
@@ -173,6 +246,21 @@ namespace JSQViewer.Tests
             }
 
             return data;
+        }
+
+        private static string CreateTempDirectory()
+        {
+            string path = Path.Combine(Path.GetTempPath(), "JSQViewerTests", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(path);
+            return path;
+        }
+
+        private static void DeleteDirectory(string path)
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, true);
+            }
         }
 
         private sealed class FakeRootLocator : ITestRootLocator

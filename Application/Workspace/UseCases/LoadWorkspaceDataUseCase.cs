@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using JSQViewer.Application.Workspace.Ports;
 using JSQViewer.Core;
 
@@ -47,10 +48,15 @@ namespace JSQViewer.Application.Workspace.UseCases
                     nameof(request));
             }
 
-            var loadedSources = new List<TestData>(folders.Count);
-            for (int i = 0; i < folders.Count; i++)
+            List<string> resolvedRoots = folders
+                .Select(folder => _testRootLocator.FindRoot(folder))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var loadedSources = new List<TestData>(resolvedRoots.Count);
+            for (int i = 0; i < resolvedRoots.Count; i++)
             {
-                string root = _testRootLocator.FindRoot(folders[i]);
+                string root = resolvedRoots[i];
                 Dictionary<string, string> metadata = _testMetadataReader.Read(root);
                 Dictionary<string, ChannelInfo> channels = _canaliDefinitionReader.Read(root);
                 loadedSources.Add(_testDataSourceReader.Read(root, channels, metadata));
@@ -60,7 +66,7 @@ namespace JSQViewer.Application.Workspace.UseCases
                 ? loadedSources[0]
                 : _mergeLoadedSourcesUseCase.Execute(loadedSources, request.SplitOverlappingCodes);
 
-            return new WorkspaceLoadResult(_folderSpecParser.Join(folders), folders, merged);
+            return new WorkspaceLoadResult(_folderSpecParser.Join(resolvedRoots), resolvedRoots, merged);
         }
     }
 }

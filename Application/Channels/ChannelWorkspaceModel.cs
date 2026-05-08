@@ -45,7 +45,8 @@ namespace JSQViewer.Application.Channels
                 return;
             }
 
-            string[] orderedColumns = ApplySavedOrder(data.ColumnNames, savedOrder);
+            string[] defaultOrderedColumns = ProtocolChannelOrder.Build(data.ColumnNames, data.Channels).ToArray();
+            string[] orderedColumns = ApplySavedOrder(defaultOrderedColumns, savedOrder);
             for (int i = 0; i < orderedColumns.Length; i++)
             {
                 string code = orderedColumns[i];
@@ -483,7 +484,13 @@ namespace JSQViewer.Application.Channels
 
         private static string NormalizeSortMode(string sortMode)
         {
-            return string.IsNullOrWhiteSpace(sortMode) ? "User" : sortMode.Trim();
+            if (string.IsNullOrWhiteSpace(sortMode)) return "User";
+
+            string trimmed = sortMode.Trim();
+            if (string.Equals(trimmed, "Priority A/C", StringComparison.OrdinalIgnoreCase))
+                return "User";
+
+            return trimmed;
         }
 
         private static int PrefixPriority(string code)

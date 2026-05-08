@@ -342,12 +342,12 @@ namespace JSQViewer.Tests
             string overlayStepHint = (string)stepHintMethod.Invoke(null, new object[] { true });
             string nonOverlayStepHint = (string)stepHintMethod.Invoke(null, new object[] { false });
 
-            StringAssert.Contains(overlayCaption, "hours");
-            StringAssert.Contains(nonOverlayCaption, "date/time");
+            StringAssert.Contains(overlayCaption, "часы");
+            StringAssert.Contains(nonOverlayCaption, "дата/время");
             StringAssert.Contains(nonOverlayBoundsHint, "dd.MM.yyyy HH:mm");
-            StringAssert.Contains(nonOverlayStepHint, "minutes");
-            StringAssert.Contains(overlayBoundsHint, "hours");
-            StringAssert.Contains(overlayStepHint, "hours");
+            StringAssert.Contains(nonOverlayStepHint, "минут");
+            StringAssert.Contains(overlayBoundsHint, "часы");
+            StringAssert.Contains(overlayStepHint, "часы");
         }
     }
 }

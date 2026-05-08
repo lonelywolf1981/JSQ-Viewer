@@ -33,6 +33,12 @@ namespace JSQViewer.Application.Workspace.UseCases
                 return list[0];
             }
 
+            list = DeduplicateByRoot(list);
+            if (list.Count == 1)
+            {
+                return list[0];
+            }
+
             Dictionary<string, string> sourceTags = BuildSourceTags(list);
             HashSet<string> overlaps = new HashSet<string>(_analyzeOverlapConflictsUseCase.Execute(list), StringComparer.OrdinalIgnoreCase);
             var codeMapsBySource = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
@@ -282,6 +288,22 @@ namespace JSQViewer.Application.Workspace.UseCases
 
                 used.Add(tag);
                 result[root] = tag;
+            }
+
+            return result;
+        }
+
+        private static IList<TestData> DeduplicateByRoot(IList<TestData> list)
+        {
+            var result = new List<TestData>(list.Count);
+            var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < list.Count; i++)
+            {
+                TestData data = list[i];
+                if (string.IsNullOrWhiteSpace(data.Root) || roots.Add(data.Root))
+                {
+                    result.Add(data);
+                }
             }
 
             return result;

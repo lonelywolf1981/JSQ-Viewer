@@ -261,6 +261,31 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Export_WithSingleDataRow_ValidatesFormulasInFirstDataRow()
+        {
+            byte[] workbook = TemplateExporter.Export(
+                GetTemplatePath(),
+                "C:\\tests\\single-row",
+                CreateData(
+                    new long[] { 0L },
+                    new Dictionary<string, double?[]>
+                    {
+                        ["Pc"] = new double?[] { 11d },
+                        ["Pe"] = new double?[] { 21d },
+                        ["T-sie"] = new double?[] { 31d },
+                        ["UR-sie"] = new double?[] { 41d }
+                    }),
+                new[] { "Pc", "Pe", "T-sie", "UR-sie" },
+                includeExtra: false,
+                refrigerant: "R290",
+                viewerSettings: ViewerSettingsModel.CreateDefault());
+
+            TemplateValidationResult validation = TemplateExportValidator.Validate(workbook);
+
+            Assert.IsTrue(validation.Ok, validation.Message);
+        }
+
+        [TestMethod]
         public void Export_WithProfilingSink_WritesTimingBreakdown()
         {
             var profileLines = new List<string>();

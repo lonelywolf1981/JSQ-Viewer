@@ -314,7 +314,7 @@ namespace JSQViewer.Export
             for (int i = 0; i < cols.Length; i++)
             {
                 string c = cols[i];
-                if (string.Equals(c, key, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(GetBaseCode(c), key, StringComparison.OrdinalIgnoreCase))
                 {
                     matches.Add(c);
                 }
@@ -324,7 +324,7 @@ namespace JSQViewer.Export
             for (int i = 0; i < cols.Length; i++)
             {
                 string c = cols[i];
-                if (c.EndsWith(suf, StringComparison.OrdinalIgnoreCase) && !matches.Contains(c))
+                if (GetBaseCode(c).EndsWith(suf, StringComparison.OrdinalIgnoreCase) && !matches.Contains(c))
                 {
                     matches.Add(c);
                 }
@@ -341,7 +341,7 @@ namespace JSQViewer.Export
                 {
                     foreach (string m in matches)
                     {
-                        if (selected.Contains(m) && m.StartsWith(pref, StringComparison.OrdinalIgnoreCase))
+                        if (selected.Contains(m) && GetBaseCode(m).StartsWith(pref, StringComparison.OrdinalIgnoreCase))
                         {
                             return m;
                         }
@@ -361,7 +361,7 @@ namespace JSQViewer.Export
             {
                 foreach (string m in matches)
                 {
-                    if (m.StartsWith(pref, StringComparison.OrdinalIgnoreCase))
+                    if (GetBaseCode(m).StartsWith(pref, StringComparison.OrdinalIgnoreCase))
                     {
                         return m;
                     }
@@ -369,6 +369,19 @@ namespace JSQViewer.Export
             }
 
             return matches[0];
+        }
+
+        private static string GetBaseCode(string code)
+        {
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                return string.Empty;
+            }
+
+            int sep = code.IndexOf("::", StringComparison.Ordinal);
+            string result = sep >= 0 ? code.Substring(sep + 2) : code;
+            int hash = result.IndexOf('#');
+            return hash > 0 ? result.Substring(0, hash) : result;
         }
 
         internal sealed class TimeGridPreparationResult
