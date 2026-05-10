@@ -124,17 +124,25 @@ namespace JSQViewer.Settings
             string dir = PresetsDir(baseDir);
             Directory.CreateDirectory(dir);
 
-            preset.key = key;
-            preset.saved_at = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            if (preset.channels == null)
+            // Работаем на копии, чтобы не мутировать объект вызывающего кода.
+            var copy = new ViewerPreset
             {
-                preset.channels = new List<string>();
-            }
+                key       = key,
+                name      = preset.name,
+                saved_at  = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                channels  = preset.channels == null ? new List<string>() : new List<string>(preset.channels),
+                sort_mode     = preset.sort_mode,
+                auto_step     = preset.auto_step,
+                target_points = preset.target_points,
+                manual_step   = preset.manual_step,
+                include_extra = preset.include_extra,
+                refrigerant   = preset.refrigerant
+            };
 
             string path = Path.Combine(dir, key + ".json");
-            if (!JsonHelper.SaveToFile(path, preset))
+            if (!JsonHelper.SaveToFile(path, copy))
                 return null;
-            return preset;
+            return copy;
         }
     }
 }
