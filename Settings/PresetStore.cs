@@ -108,7 +108,8 @@ namespace JSQViewer.Settings
             };
 
             string path = Path.Combine(dir, key + ".json");
-            JsonHelper.SaveToFile(path, p);
+            if (!JsonHelper.SaveToFile(path, p))
+                return null;
             return p;
         }
 
@@ -131,7 +132,8 @@ namespace JSQViewer.Settings
             }
 
             string path = Path.Combine(dir, key + ".json");
-            JsonHelper.SaveToFile(path, preset);
+            if (!JsonHelper.SaveToFile(path, preset))
+                return null;
             return preset;
         }
     }
