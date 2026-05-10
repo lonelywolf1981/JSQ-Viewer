@@ -43,7 +43,16 @@ namespace JSQViewer.Settings
                 }
 
                 string json = Serializer.Serialize(value);
-                File.WriteAllText(path, json, Encoding.UTF8);
+                string tmp = path + ".tmp";
+                File.WriteAllText(tmp, json, Encoding.UTF8);
+                if (File.Exists(path))
+                {
+                    File.Replace(tmp, path, path + ".bak");
+                }
+                else
+                {
+                    File.Move(tmp, path);
+                }
                 return true;
             }
             catch
