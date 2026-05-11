@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using JSQViewer.Application.Charting;
+using JSQViewer.Application.Workspace.Ports;
 using JSQViewer.Core;
 
 namespace JSQViewer.Application.Recording
@@ -9,12 +10,16 @@ namespace JSQViewer.Application.Recording
     public sealed class GetRecordingInfoUseCase
     {
         private readonly TimestampRangeService _timestampRangeService;
+        private readonly ITestMetadataReader _metadataReader;
 
-        public GetRecordingInfoUseCase(TimestampRangeService timestampRangeService)
+        public GetRecordingInfoUseCase(
+            TimestampRangeService timestampRangeService,
+            ITestMetadataReader metadataReader = null)
         {
             if (timestampRangeService == null)
                 throw new ArgumentNullException(nameof(timestampRangeService));
             _timestampRangeService = timestampRangeService;
+            _metadataReader = metadataReader;
         }
 
         public RecordingInfoResult Execute(TestData data, string sourceRoot)
@@ -22,12 +27,34 @@ namespace JSQViewer.Application.Recording
             if (data == null) throw new ArgumentNullException(nameof(data));
             if (sourceRoot == null) throw new ArgumentNullException(nameof(sourceRoot));
 
+            // Читаем метаданные напрямую из .dat-файла источника, если reader доступен.
+            // data.Meta — слитый словарь всех источников (первый выигрывает), поэтому
+            // при N>=2 записях он содержит не те данные для источника 2, 3, ...
+            IReadOnlyList<KeyValuePair<string, string>> meta;
+            if (_metadataReader != null)
+            {
+                try
+                {
+                    meta = _metadataReader.Read(sourceRoot).ToList();
+                }
+                catch
+                {
+                    meta = data.Meta != null
+                        ? data.Meta.ToList()
+                        : new List<KeyValuePair<string, string>>();
+                }
+            }
+            else
+            {
+                meta = data.Meta != null
+                    ? data.Meta.ToList()
+                    : new List<KeyValuePair<string, string>>();
+            }
+
             var result = new RecordingInfoResult
             {
                 SourceRoot = sourceRoot,
-                Meta = data.Meta != null
-                    ? data.Meta.ToList()
-                    : new List<KeyValuePair<string, string>>()
+                Meta = meta
             };
 
             string t1Column = FindT1Column(data, sourceRoot);

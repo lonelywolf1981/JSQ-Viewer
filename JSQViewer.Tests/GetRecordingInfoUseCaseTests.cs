@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using JSQViewer.Application.Charting;
 using JSQViewer.Application.Recording;
+using JSQViewer.Application.Workspace.Ports;
 using JSQViewer.Core;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -12,6 +13,20 @@ namespace JSQViewer.Tests
     public class GetRecordingInfoUseCaseTests
     {
         private static readonly string Root = @"C:\Data\Test";
+
+        // Fake ITestMetadataReader — возвращает заранее заданные метаданные
+        private sealed class FakeMetadataReader : ITestMetadataReader
+        {
+            private readonly Dictionary<string, string> _meta;
+            public FakeMetadataReader(Dictionary<string, string> meta)
+            {
+                _meta = meta ?? new Dictionary<string, string>();
+            }
+            public Dictionary<string, string> Read(string root)
+            {
+                return _meta;
+            }
+        }
 
         private static TestData MakeData(string root, long startMs, long endMs,
             string columnName, double?[] values)
@@ -169,8 +184,9 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
-        public void Execute_ReturnsMeta()
+        public void Execute_ReturnsMeta_FallbackToDataMeta_WhenNoReader()
         {
+            // Без reader — используется data.Meta (совместимость)
             var data = MakeData(Root, 0, 60_000, "T1",
                 new double?[] { -10.0, -20.0 });
             var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
@@ -180,6 +196,30 @@ namespace JSQViewer.Tests
             Assert.IsNotNull(r.Meta);
             Assert.IsTrue(r.Meta.Any(kv => kv.Key == "Модель" && kv.Value == "KA140"));
             Assert.IsTrue(r.Meta.Any(kv => kv.Key == "Хладагент" && kv.Value == "R600a"));
+        }
+
+        [TestMethod]
+        public void Execute_ReturnsMeta_FromReader_WhenReaderProvided()
+        {
+            // С reader — используются данные именно этого источника, не слитые
+            var data = MakeData(Root, 0, 60_000, "T1",
+                new double?[] { -10.0, -20.0 });
+            // data.Meta содержит "Модель"="KA140" (источник A)
+            // reader возвращает данные источника B: "Модель"="KA200"
+            var sourceSpecificMeta = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Модель"] = "KA200",
+                ["Хладагент"] = "R290"
+            };
+            var uc = new GetRecordingInfoUseCase(
+                new TimestampRangeService(),
+                new FakeMetadataReader(sourceSpecificMeta));
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.IsNotNull(r.Meta);
+            Assert.IsTrue(r.Meta.Any(kv => kv.Key == "Модель" && kv.Value == "KA200"),
+                "reader должен возвращать метаданные конкретного источника, не слитые");
         }
 
         [TestMethod]

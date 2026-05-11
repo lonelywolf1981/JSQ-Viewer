@@ -19,6 +19,7 @@ using JSQViewer.Application.Session;
 using JSQViewer.Application.Workspace;
 using JSQViewer.Application.Workspace.UseCases;
 using JSQViewer.Application.Recording;
+using JSQViewer.Infrastructure.DataImport;
 using JSQViewer.Presentation.WinForms.Presenters;
 using JSQViewer.Presentation.WinForms.Charting;
 using JSQViewer.Core;
@@ -218,7 +219,7 @@ namespace JSQViewer.UI
             _workspaceLoadOrchestrationService = workspaceLoadOrchestrationService;
             _loadWorkspaceDataUseCase = loadWorkspaceDataUseCase;
             _removeLoadedSourceUseCase = new RemoveLoadedSourceUseCase();
-            _getRecordingInfoUseCase = new GetRecordingInfoUseCase(_timestampRangeService);
+            _getRecordingInfoUseCase = new GetRecordingInfoUseCase(_timestampRangeService, new ProvaMetadataReader());
             _viewerSettings = _viewerSettingsRepository.Load();
             _workspaceLayoutState = new WorkspaceLayoutState();
             _channelWorkspacePresenter = new ChannelWorkspacePresenter();
