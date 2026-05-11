@@ -441,20 +441,22 @@ namespace JSQViewer.Application.Channels
             }
 
             var result = new List<string>(source.Count);
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var inSource = new HashSet<string>(source, StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < saved.Count; i++)
+
+            foreach (string code in saved)
             {
-                if (inSource.Contains(saved[i]) && !result.Contains(saved[i], StringComparer.OrdinalIgnoreCase))
+                if (inSource.Contains(code) && seen.Add(code))
                 {
-                    result.Add(saved[i]);
+                    result.Add(code);
                 }
             }
 
-            for (int i = 0; i < source.Count; i++)
+            foreach (string code in source)
             {
-                if (!result.Contains(source[i], StringComparer.OrdinalIgnoreCase))
+                if (seen.Add(code))
                 {
-                    result.Add(source[i]);
+                    result.Add(code);
                 }
             }
 
