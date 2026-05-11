@@ -19,9 +19,9 @@ namespace JSQViewer.Application.Channels
             {
                 if (i >= a.Length) return -1;
                 if (i >= b.Length) return 1;
-                int ai, bi;
-                bool aIsNum = int.TryParse(a[i], out ai);
-                bool bIsNum = int.TryParse(b[i], out bi);
+                long ai, bi;
+                bool aIsNum = long.TryParse(a[i], out ai);
+                bool bIsNum = long.TryParse(b[i], out bi);
                 int cmp = (aIsNum && bIsNum)
                     ? ai.CompareTo(bi)
                     : string.Compare(a[i], b[i], StringComparison.OrdinalIgnoreCase);
