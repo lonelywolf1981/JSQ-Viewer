@@ -80,10 +80,15 @@ namespace JSQViewer.Application.Recording
             int minIdx = -1;
             double minVal = double.MaxValue;
             double? firstVal = null;
+            long firstValMs = -1; // timestamp первого ненулевого значения T1
             for (int i = i0; i < i1; i++)
             {
                 if (!values[i].HasValue) continue;
-                if (firstVal == null) firstVal = values[i];
+                if (firstVal == null)
+                {
+                    firstVal = values[i];
+                    firstValMs = data.TimestampsMs[i];
+                }
                 if (values[i].Value < minVal)
                 {
                     minVal = values[i].Value;
@@ -96,8 +101,12 @@ namespace JSQViewer.Application.Recording
             result.T1Min = minVal;
             result.T1MinTime = _timestampRangeService.UnixMsToLocalDateTime(
                 data.TimestampsMs[minIdx]);
-            result.T1MinElapsedMs = data.TimestampsMs[minIdx] - startMs;
+            // Отсчёт от первого ненулевого T1 — совпадает с t=0 графика в режиме наложения
+            result.T1MinElapsedMs = firstValMs >= 0
+                ? data.TimestampsMs[minIdx] - firstValMs
+                : data.TimestampsMs[minIdx] - startMs;
 
+            // Скорость падения: от первого значения до минимума, за всё время источника
             double durationMin = (endMs - startMs) / 60_000.0;
             if (durationMin > 0 && firstVal.HasValue)
                 result.T1DropRatePerMinute = (minVal - firstVal.Value) / durationMin;

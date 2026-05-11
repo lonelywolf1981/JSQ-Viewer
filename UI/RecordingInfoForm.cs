@@ -44,10 +44,15 @@ namespace JSQViewer.UI
             {
                 AddRow(table, "Минимум",
                     result.T1Min.Value.ToString("F1") + " °C", ref row);
-                AddRow(table, "Время минимума",
-                    result.T1MinElapsedMs.HasValue
-                        ? FormatElapsed(result.T1MinElapsedMs.Value)
-                        : "—", ref row);
+                // Показываем оба представления: относительное (как на графике) и абсолютное
+                string elapsedStr = result.T1MinElapsedMs.HasValue
+                    ? FormatElapsed(result.T1MinElapsedMs.Value)
+                    : "—";
+                string absStr = result.T1MinTime.HasValue
+                    ? result.T1MinTime.Value.ToString("dd.MM.yy HH:mm:ss")
+                    : "—";
+                AddRow(table, "Время (от T1)", elapsedStr, ref row);
+                AddRow(table, "Время (дата)", absStr, ref row);
                 string rate = result.T1DropRatePerMinute.HasValue
                     ? result.T1DropRatePerMinute.Value.ToString("F2") + " °C/мин"
                     : "—";

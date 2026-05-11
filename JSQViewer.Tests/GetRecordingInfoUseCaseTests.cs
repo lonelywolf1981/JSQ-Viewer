@@ -87,7 +87,7 @@ namespace JSQViewer.Tests
         [TestMethod]
         public void Execute_WithT1Channel_ReturnsElapsedMs()
         {
-            // минимум на позиции [2] — через 40000 мс после старта
+            // минимум на позиции [2] — через 40000 мс после первого T1 значения (позиция [0])
             long startMs = 1_000_000_000L;
             long endMs   = 1_000_060_000L;
             var data = MakeData(Root, startMs, endMs, "T1",
@@ -97,7 +97,29 @@ namespace JSQViewer.Tests
             RecordingInfoResult r = uc.Execute(data, Root);
 
             Assert.IsNotNull(r.T1MinElapsedMs);
+            // elapsed = timestamps[2] - timestamps[0] = (startMs + 40000) - startMs = 40000
             Assert.AreEqual(40_000L, r.T1MinElapsedMs.Value);
+        }
+
+        [TestMethod]
+        public void Execute_WithLeadingNullT1_ElapsedFromFirstNonNull()
+        {
+            // Первые два значения null (инициализация датчика), первое валидное на позиции [2]
+            // Минимум на позиции [4]
+            long startMs = 0L;
+            long endMs   = 80_000L;
+            var data = MakeData(Root, startMs, endMs, "T1",
+                new double?[] { null, null, -10.0, -35.0, -40.0, -30.0 });
+            var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.IsNotNull(r.T1MinElapsedMs);
+            // timestamps[2] = 0 + 2*(80000/5) = 32000 (первый T1)
+            // timestamps[4] = 0 + 4*(80000/5) = 64000 (минимум)
+            // elapsed = 64000 - 32000 = 32000 мс
+            Assert.AreEqual(32_000L, r.T1MinElapsedMs.Value,
+                "elapsed должен считаться от первого ненулевого T1, не от startMs");
         }
 
         [TestMethod]
