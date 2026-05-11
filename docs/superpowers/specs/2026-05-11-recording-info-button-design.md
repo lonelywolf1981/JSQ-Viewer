@@ -83,8 +83,6 @@ WinForms `Form` (not modal):
 │  <Key1>           │  <Value1>       │
 │  <Key2>           │  <Value2>       │
 │  ...              │  ...            │
-├─────────────────────────────────────┤
-│              [ Закрыть ]            │
 └─────────────────────────────────────┘
 ```
 
@@ -94,7 +92,7 @@ WinForms `Form` (not modal):
   - Temperature: `F1` format + ` °C`
   - DateTime: `dd.MM.yy HH:mm:ss`
   - Rate: `F2` format + ` °C/мин`; prefix `−` for negative
-- «Закрыть» button at bottom, `DialogResult = None`, calls `Close()`
+- Закрытие — только стандартная кнопка `✕` в заголовке окна; отдельная кнопка «Закрыть» не нужна
 - Window height: calculated from row count (no scrolling — all rows visible)
 
 ### 4. `UI/MainForm.cs` — changes
