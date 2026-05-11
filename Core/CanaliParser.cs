@@ -76,8 +76,18 @@ namespace JSQViewer.Core
             foreach (string line in lines)
             {
                 string trimmed = line.Trim();
+                if (trimmed.Length == 0 || (trimmed.StartsWith("[") && trimmed.EndsWith("]")))
+                {
+                    continue;
+                }
+
                 int sep = trimmed.IndexOf(';');
-                if (trimmed.Length == 0 || sep <= 0)
+                if (sep <= 0)
+                {
+                    sep = trimmed.IndexOf('=');
+                }
+
+                if (sep <= 0)
                 {
                     continue;
                 }

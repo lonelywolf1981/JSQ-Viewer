@@ -35,19 +35,19 @@ namespace JSQViewer.Application.Recording
             {
                 try
                 {
-                    meta = _metadataReader.Read(sourceRoot).ToList();
+                    meta = FilterDisplayMetadata(_metadataReader.Read(sourceRoot));
                 }
                 catch
                 {
                     meta = data.Meta != null
-                        ? data.Meta.ToList()
+                        ? FilterDisplayMetadata(data.Meta)
                         : new List<KeyValuePair<string, string>>();
                 }
             }
             else
             {
                 meta = data.Meta != null
-                    ? data.Meta.ToList()
+                    ? FilterDisplayMetadata(data.Meta)
                     : new List<KeyValuePair<string, string>>();
             }
 
@@ -71,6 +71,8 @@ namespace JSQViewer.Application.Recording
             if (!data.SourceEndMs.TryGetValue(sourceRoot, out endMs))
                 endMs = data.TimestampsMs.Length > 0 ? data.TimestampsMs[data.TimestampsMs.Length - 1] : 0;
 
+            result.SourceStartTime = _timestampRangeService.UnixMsToLocalDateTime(startMs);
+
             var slice = _timestampRangeService.SliceByTime(data.TimestampsMs, startMs, endMs);
             int i0 = slice.Item1;
             int i1 = slice.Item2;
@@ -80,15 +82,11 @@ namespace JSQViewer.Application.Recording
             int minIdx = -1;
             double minVal = double.MaxValue;
             double? firstVal = null;
-            long firstValMs = -1; // timestamp первого ненулевого значения T1
             for (int i = i0; i < i1; i++)
             {
                 if (!values[i].HasValue) continue;
                 if (firstVal == null)
-                {
                     firstVal = values[i];
-                    firstValMs = data.TimestampsMs[i];
-                }
                 if (values[i].Value < minVal)
                 {
                     minVal = values[i].Value;
@@ -101,13 +99,9 @@ namespace JSQViewer.Application.Recording
             result.T1Min = minVal;
             result.T1MinTime = _timestampRangeService.UnixMsToLocalDateTime(
                 data.TimestampsMs[minIdx]);
-            // Отсчёт от первого ненулевого T1 — совпадает с t=0 графика в режиме наложения
-            result.T1MinElapsedMs = firstValMs >= 0
-                ? data.TimestampsMs[minIdx] - firstValMs
-                : data.TimestampsMs[minIdx] - startMs;
+            result.T1MinElapsedMs = data.TimestampsMs[minIdx] - startMs;
 
-            // Скорость падения: от первого значения до минимума, за всё время источника
-            double durationMin = (endMs - startMs) / 60_000.0;
+            double durationMin = (data.TimestampsMs[minIdx] - startMs) / 60_000.0;
             if (durationMin > 0 && firstVal.HasValue)
                 result.T1DropRatePerMinute = (minVal - firstVal.Value) / durationMin;
 
@@ -131,6 +125,47 @@ namespace JSQViewer.Application.Recording
             }
 
             return null;
+        }
+
+        private static IReadOnlyList<KeyValuePair<string, string>> FilterDisplayMetadata(
+            IEnumerable<KeyValuePair<string, string>> meta)
+        {
+            if (meta == null)
+            {
+                return new List<KeyValuePair<string, string>>();
+            }
+
+            var result = new List<KeyValuePair<string, string>>();
+            foreach (KeyValuePair<string, string> kv in meta)
+            {
+                if (!IsRecordingBoundaryMetadataKey(kv.Key))
+                {
+                    result.Add(kv);
+                }
+            }
+
+            return result;
+        }
+
+        private static bool IsRecordingBoundaryMetadataKey(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            string normalized = key.Trim()
+                .Replace(" ", string.Empty)
+                .Replace("_", string.Empty)
+                .Replace("-", string.Empty);
+
+            return string.Equals(normalized, "StartedAt", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "StoppedAt", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "StartAt", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "StopAt", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "StartTime", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "StopTime", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "EndTime", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string FindT1InArray(string[] cols)

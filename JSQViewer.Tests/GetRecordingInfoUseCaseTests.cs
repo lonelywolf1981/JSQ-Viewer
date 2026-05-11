@@ -85,9 +85,26 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Execute_WithT1Channel_ReturnsLocalSourceStartTime()
+        {
+            long startMs = 1_000_000_000L;
+            long endMs   = 1_000_060_000L;
+            var data = MakeData(Root, startMs, endMs, "T1",
+                new double?[] { -20.0, -35.0, -38.4, -30.0 });
+            var ts = new TimestampRangeService();
+            var uc = new GetRecordingInfoUseCase(ts);
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.IsNotNull(r.SourceStartTime);
+            Assert.AreEqual(ts.UnixMsToLocalDateTime(startMs), r.SourceStartTime.Value);
+            Assert.AreEqual(DateTimeKind.Local, r.SourceStartTime.Value.Kind);
+        }
+
+        [TestMethod]
         public void Execute_WithT1Channel_ReturnsElapsedMs()
         {
-            // минимум на позиции [2] — через 40000 мс после первого T1 значения (позиция [0])
+            // минимум на позиции [2] — через 40000 мс после старта записи
             long startMs = 1_000_000_000L;
             long endMs   = 1_000_060_000L;
             var data = MakeData(Root, startMs, endMs, "T1",
@@ -97,12 +114,12 @@ namespace JSQViewer.Tests
             RecordingInfoResult r = uc.Execute(data, Root);
 
             Assert.IsNotNull(r.T1MinElapsedMs);
-            // elapsed = timestamps[2] - timestamps[0] = (startMs + 40000) - startMs = 40000
+            // elapsed = timestamps[2] - startMs = (startMs + 40000) - startMs = 40000
             Assert.AreEqual(40_000L, r.T1MinElapsedMs.Value);
         }
 
         [TestMethod]
-        public void Execute_WithLeadingNullT1_ElapsedFromFirstNonNull()
+        public void Execute_WithLeadingNullT1_ElapsedFromSourceStart()
         {
             // Первые два значения null (инициализация датчика), первое валидное на позиции [2]
             // Минимум на позиции [4]
@@ -115,11 +132,10 @@ namespace JSQViewer.Tests
             RecordingInfoResult r = uc.Execute(data, Root);
 
             Assert.IsNotNull(r.T1MinElapsedMs);
-            // timestamps[2] = 0 + 2*(80000/5) = 32000 (первый T1)
             // timestamps[4] = 0 + 4*(80000/5) = 64000 (минимум)
-            // elapsed = 64000 - 32000 = 32000 мс
-            Assert.AreEqual(32_000L, r.T1MinElapsedMs.Value,
-                "elapsed должен считаться от первого ненулевого T1, не от startMs");
+            // elapsed = 64000 - SourceStartMs = 64000 мс — от старта открытой записи
+            Assert.AreEqual(64_000L, r.T1MinElapsedMs.Value,
+                "elapsed должен считаться от старта открытой записи, как подписано в окне информации");
         }
 
         [TestMethod]
@@ -167,7 +183,7 @@ namespace JSQViewer.Tests
         [TestMethod]
         public void Execute_WithT1Channel_ReturnsDropRate()
         {
-            // first=-20, min=-38.4, duration=1 мин → rate = (-38.4 - (-20)) / 1 = -18.4
+            // first=-20, min=-38.4 at 40 seconds from start → rate = (-38.4 - (-20)) / (40/60) = -27.6
             var data = MakeData(Root, 0, 60_000, "T1",
                 new double?[] { -20.0, -35.0, -38.4, -30.0 });
             var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
@@ -175,7 +191,22 @@ namespace JSQViewer.Tests
             RecordingInfoResult r = uc.Execute(data, Root);
 
             Assert.IsNotNull(r.T1DropRatePerMinute);
-            Assert.AreEqual(-18.4, r.T1DropRatePerMinute.Value, 0.01);
+            Assert.AreEqual(-27.6, r.T1DropRatePerMinute.Value, 0.01);
+        }
+
+        [TestMethod]
+        public void Execute_WithLeadingNullT1_DropRateUsesTimeFromSourceStartToMinimum()
+        {
+            // first valid T1=-10, min=-40 at 80000 ms from source start -> rate=-22.5 °C/мин.
+            // Если ошибочно делить на всю длительность источника, получится -15.0.
+            var data = MakeData(Root, 0, 120_000, "T1",
+                new double?[] { null, -10.0, -40.0, -20.0 });
+            var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.IsNotNull(r.T1DropRatePerMinute);
+            Assert.AreEqual(-22.5, r.T1DropRatePerMinute.Value, 0.01);
         }
 
         [TestMethod]
@@ -242,6 +273,28 @@ namespace JSQViewer.Tests
             Assert.IsNotNull(r.Meta);
             Assert.IsTrue(r.Meta.Any(kv => kv.Key == "Модель" && kv.Value == "KA200"),
                 "reader должен возвращать метаданные конкретного источника, не слитые");
+        }
+
+        [TestMethod]
+        public void Execute_FiltersRecordingStartAndStopMetadata()
+        {
+            var data = MakeData(Root, 0, 60_000, "T1",
+                new double?[] { -10.0, -20.0 });
+            var meta = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Operator"] = "Administrator",
+                ["StartedAt"] = "2026-05-04 10:13:33.926783+00:00",
+                ["StoppedAt"] = "2026-05-05 03:40:59.500322+00:00"
+            };
+            var uc = new GetRecordingInfoUseCase(
+                new TimestampRangeService(),
+                new FakeMetadataReader(meta));
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.IsTrue(r.Meta.Any(kv => kv.Key == "Operator"));
+            Assert.IsFalse(r.Meta.Any(kv => string.Equals(kv.Key, "StartedAt", StringComparison.OrdinalIgnoreCase)));
+            Assert.IsFalse(r.Meta.Any(kv => string.Equals(kv.Key, "StoppedAt", StringComparison.OrdinalIgnoreCase)));
         }
 
         [TestMethod]

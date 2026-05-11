@@ -18,12 +18,23 @@ namespace JSQViewer.Infrastructure.DataImport
                 throw new ArgumentException("Root folder is required.", nameof(root));
             }
 
-            foreach (string file in Directory.GetFiles(root))
+            string fallbackDat = null;
+            foreach (string file in Directory.GetFiles(root, "*.dat"))
             {
                 if (ProvaDatRegex.IsMatch(Path.GetFileName(file)))
                 {
                     return CanaliParser.ParseProvaDat(file);
                 }
+
+                if (fallbackDat == null)
+                {
+                    fallbackDat = file;
+                }
+            }
+
+            if (fallbackDat != null)
+            {
+                return CanaliParser.ParseProvaDat(fallbackDat);
             }
 
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

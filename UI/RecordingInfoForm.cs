@@ -9,9 +9,10 @@ namespace JSQViewer.UI
 {
     public sealed class RecordingInfoForm : Form
     {
-        public RecordingInfoForm(RecordingInfoResult result)
+        public RecordingInfoForm(RecordingInfoResult result, System.Drawing.Icon appIcon = null)
         {
             if (result == null) throw new ArgumentNullException(nameof(result));
+            if (appIcon != null) Icon = appIcon;
 
             Text = TruncatePath(result.SourceRoot ?? string.Empty);
             FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -48,11 +49,15 @@ namespace JSQViewer.UI
                 string elapsedStr = result.T1MinElapsedMs.HasValue
                     ? FormatElapsed(result.T1MinElapsedMs.Value)
                     : "—";
+                string startStr = result.SourceStartTime.HasValue
+                    ? result.SourceStartTime.Value.ToString("dd.MM.yy HH:mm:ss")
+                    : "—";
                 string absStr = result.T1MinTime.HasValue
                     ? result.T1MinTime.Value.ToString("dd.MM.yy HH:mm:ss")
                     : "—";
-                AddRow(table, "Время (от T1)", elapsedStr, ref row);
-                AddRow(table, "Время (дата)", absStr, ref row);
+                AddRow(table, "Старт записи", startStr, ref row);
+                AddRow(table, "Время до минимума", elapsedStr, ref row);
+                AddRow(table, "Дата/время минимума", absStr, ref row);
                 string rate = result.T1DropRatePerMinute.HasValue
                     ? result.T1DropRatePerMinute.Value.ToString("F2") + " °C/мин"
                     : "—";
@@ -106,15 +111,20 @@ namespace JSQViewer.UI
                 Padding = new Padding(0, 1, 20, 1),
                 Margin = new Padding(0)
             };
-            var valLbl = new Label
+            var valBox = new TextBox
             {
                 Text = value,
-                AutoSize = true,
+                ReadOnly = true,
+                BorderStyle = BorderStyle.None,
+                BackColor = SystemColors.Control,
+                ForeColor = SystemColors.ControlText,
+                TabStop = false,
+                Width = Math.Max(60, TextRenderer.MeasureText(value ?? string.Empty, table.Font).Width + 6),
                 Padding = new Padding(0, 1, 0, 1),
                 Margin = new Padding(0)
             };
             table.Controls.Add(keyLbl, 0, row);
-            table.Controls.Add(valLbl, 1, row);
+            table.Controls.Add(valBox, 1, row);
             row++;
         }
 

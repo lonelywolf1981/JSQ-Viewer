@@ -2238,7 +2238,7 @@ namespace JSQViewer.UI
                     TestData data = _viewerSession.Data;
                     if (data == null) return;
                     RecordingInfoResult info = _getRecordingInfoUseCase.Execute(data, state.SourceRoot);
-                    var infoForm = new RecordingInfoForm(info);
+                    var infoForm = new RecordingInfoForm(info, this.Icon);
                     state.InfoForm = infoForm;
                     infoForm.FormClosed += delegate { state.InfoForm = null; };
                     infoForm.Location = new Point(
