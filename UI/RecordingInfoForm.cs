@@ -13,7 +13,7 @@ namespace JSQViewer.UI
         {
             if (result == null) throw new ArgumentNullException(nameof(result));
 
-            Text = result.SourceRoot ?? string.Empty;
+            Text = TruncatePath(result.SourceRoot ?? string.Empty);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -111,6 +111,17 @@ namespace JSQViewer.UI
             table.Controls.Add(keyLbl, 0, row);
             table.Controls.Add(valLbl, 1, row);
             row++;
+        }
+
+        private static string TruncatePath(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return path;
+            char sep = System.IO.Path.DirectorySeparatorChar;
+            char alt = System.IO.Path.AltDirectorySeparatorChar;
+            string[] parts = path.Split(sep, alt);
+            if (parts.Length <= 2) return path;
+            return "..." + sep + string.Join(sep.ToString(),
+                parts[parts.Length - 2], parts[parts.Length - 1]);
         }
     }
 }

@@ -80,15 +80,29 @@ namespace JSQViewer.Application.Recording
         private static string FindT1Column(TestData data, string sourceRoot)
         {
             string[] cols;
-            if (!data.SourceColumns.TryGetValue(sourceRoot, out cols) || cols == null)
-                return null;
+            if (data.SourceColumns.TryGetValue(sourceRoot, out cols) && cols != null)
+            {
+                string found = FindT1InArray(cols);
+                if (found != null) return found;
+            }
 
+            // Fallback: search global column list
+            if (data.ColumnNames != null)
+            {
+                string found = FindT1InArray(data.ColumnNames);
+                if (found != null) return found;
+            }
+
+            return null;
+        }
+
+        private static string FindT1InArray(string[] cols)
+        {
             foreach (string col in cols)
             {
                 if (col == null) continue;
                 if (string.Equals(col, "T1", StringComparison.OrdinalIgnoreCase))
                     return col;
-                // Формат X-T1: однобуквенный префикс
                 if (col.Length >= 4 && col[1] == '-' &&
                     string.Equals(col.Substring(2), "T1", StringComparison.OrdinalIgnoreCase))
                     return col;

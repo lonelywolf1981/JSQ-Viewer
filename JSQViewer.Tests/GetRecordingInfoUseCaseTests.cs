@@ -135,5 +135,31 @@ namespace JSQViewer.Tests
 
             Assert.IsNull(r.T1DropRatePerMinute);
         }
+
+        [TestMethod]
+        public void Execute_FallbackToColumnNames_WhenSourceColumnsEmpty()
+        {
+            // SourceColumns does NOT contain the root — fallback to ColumnNames
+            var data = new TestData
+            {
+                RowCount = 3,
+                TimestampsMs = new long[] { 0, 30_000, 60_000 },
+                ColumnNames = new[] { "T1" },
+                Columns = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase)
+                    { ["T1"] = new double?[] { -10.0, -25.0, -20.0 } },
+                SourceColumns = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase),  // empty!
+                SourceStartMs = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+                    { [Root] = 0L },
+                SourceEndMs = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+                    { [Root] = 60_000L },
+                Meta = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            };
+            var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.IsNotNull(r.T1Min, "должен найти T1 через ColumnNames fallback");
+            Assert.AreEqual(-25.0, r.T1Min.Value, 0.001);
+        }
     }
 }
