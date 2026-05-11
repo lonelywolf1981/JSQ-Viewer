@@ -1473,7 +1473,8 @@ namespace JSQViewer.UI
             };
 
             // Also update detached chart when main trackbar changes (via sync)
-            _rangeTrackBar.RangeChanged += delegate
+            EventHandler rangeChangedHandler = null;
+            rangeChangedHandler = delegate
             {
                 if (detachedRangeBar.IsDisposed || detachedChart.IsDisposed) return;
                 if (detachedChart.ChartAreas.Count == 0) return;
@@ -1482,6 +1483,7 @@ namespace JSQViewer.UI
                 detachedChart.ChartAreas[0].AxisX.Minimum = full ? double.NaN : _rangeTrackBar.LowerValue;
                 detachedChart.ChartAreas[0].AxisX.Maximum = full ? double.NaN : _rangeTrackBar.UpperValue;
             };
+            _rangeTrackBar.RangeChanged += rangeChangedHandler;
 
             _detachedRangeBars.Add(detachedRangeBar);
             var state = new DetachedChartState
@@ -1493,6 +1495,7 @@ namespace JSQViewer.UI
             _detachedCharts.Add(state);
             form.FormClosed += delegate
             {
+                _rangeTrackBar.RangeChanged -= rangeChangedHandler;
                 _detachedRangeBars.Remove(detachedRangeBar);
                 _detachedCharts.Remove(state);
             };
