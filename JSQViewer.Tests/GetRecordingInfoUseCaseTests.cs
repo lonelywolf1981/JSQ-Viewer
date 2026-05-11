@@ -70,6 +70,36 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Execute_WithT1Channel_ReturnsElapsedMs()
+        {
+            // минимум на позиции [2] — через 40000 мс после старта
+            long startMs = 1_000_000_000L;
+            long endMs   = 1_000_060_000L;
+            var data = MakeData(Root, startMs, endMs, "T1",
+                new double?[] { -20.0, -35.0, -38.4, -30.0 });
+            var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.IsNotNull(r.T1MinElapsedMs);
+            Assert.AreEqual(40_000L, r.T1MinElapsedMs.Value);
+        }
+
+        [TestMethod]
+        public void Execute_WithDoubleColonT1Format_FindsChannel()
+        {
+            // Формат слитых источников: "basename::T1"
+            var data = MakeData(Root, 0, 60_000, "JSQ:28 ACTIVE LARGE KA140::T1",
+                new double?[] { -10.0, -40.0, -30.0 });
+            var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.IsNotNull(r.T1Min, "basename::T1 должен распознаваться как T1");
+            Assert.AreEqual(-40.0, r.T1Min.Value, 0.001);
+        }
+
+        [TestMethod]
         public void Execute_WithT1Channel_ReturnsDropRate()
         {
             // first=-20, min=-38.4, duration=1 мин → rate = (-38.4 - (-20)) / 1 = -18.4

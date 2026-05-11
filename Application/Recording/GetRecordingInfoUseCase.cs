@@ -69,6 +69,7 @@ namespace JSQViewer.Application.Recording
             result.T1Min = minVal;
             result.T1MinTime = _timestampRangeService.UnixMsToLocalDateTime(
                 data.TimestampsMs[minIdx]);
+            result.T1MinElapsedMs = data.TimestampsMs[minIdx] - startMs;
 
             double durationMin = (endMs - startMs) / 60_000.0;
             if (durationMin > 0 && firstVal.HasValue)
@@ -101,10 +102,21 @@ namespace JSQViewer.Application.Recording
             foreach (string col in cols)
             {
                 if (col == null) continue;
+
+                // Прямое совпадение: "T1"
                 if (string.Equals(col, "T1", StringComparison.OrdinalIgnoreCase))
                     return col;
+
+                // Однобуквенный префикс: "A-T1"
                 if (col.Length >= 4 && col[1] == '-' &&
                     string.Equals(col.Substring(2), "T1", StringComparison.OrdinalIgnoreCase))
+                    return col;
+
+                // Формат слитых источников: "basename::T1"
+                // (BuildSourceTags использует полное имя папки + "::" как разделитель)
+                int sep = col.IndexOf("::", StringComparison.Ordinal);
+                if (sep >= 0 &&
+                    string.Equals(col.Substring(sep + 2), "T1", StringComparison.OrdinalIgnoreCase))
                     return col;
             }
             return null;

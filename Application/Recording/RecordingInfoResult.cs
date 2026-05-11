@@ -10,6 +10,8 @@ namespace JSQViewer.Application.Recording
         // null если канал T1 не найден в данном источнике
         public double? T1Min { get; set; }
         public DateTime? T1MinTime { get; set; }
+        // Прошедшее время от старта записи до достижения минимума (в миллисекундах)
+        public long? T1MinElapsedMs { get; set; }
         public double? T1DropRatePerMinute { get; set; }
 
         // Все пары ключ-значение из .dat, в порядке перечисления Meta

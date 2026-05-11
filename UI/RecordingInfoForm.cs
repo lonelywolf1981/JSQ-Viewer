@@ -45,8 +45,8 @@ namespace JSQViewer.UI
                 AddRow(table, "Минимум",
                     result.T1Min.Value.ToString("F1") + " °C", ref row);
                 AddRow(table, "Время минимума",
-                    result.T1MinTime.HasValue
-                        ? result.T1MinTime.Value.ToString("dd.MM.yy HH:mm:ss")
+                    result.T1MinElapsedMs.HasValue
+                        ? FormatElapsed(result.T1MinElapsedMs.Value)
                         : "—", ref row);
                 string rate = result.T1DropRatePerMinute.HasValue
                     ? result.T1DropRatePerMinute.Value.ToString("F2") + " °C/мин"
@@ -111,6 +111,16 @@ namespace JSQViewer.UI
             table.Controls.Add(keyLbl, 0, row);
             table.Controls.Add(valLbl, 1, row);
             row++;
+        }
+
+        // Форматирует прошедшее время в виде ЧЧ:мм:сс (часы могут быть > 23)
+        private static string FormatElapsed(long elapsedMs)
+        {
+            long totalSec = elapsedMs / 1000;
+            long hours   = totalSec / 3600;
+            long minutes = (totalSec % 3600) / 60;
+            long seconds = totalSec % 60;
+            return string.Format("{0:00}:{1:00}:{2:00}", hours, minutes, seconds);
         }
 
         private static string TruncatePath(string path)
