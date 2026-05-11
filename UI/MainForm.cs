@@ -758,14 +758,18 @@ namespace JSQViewer.UI
                 if (sw.DeleteOrderButton != null) sw.DeleteOrderButton.Text = Loc.Get("Delete");
                 if (sw.SortModeBox != null)
                 {
-                    typeof(ComboBox).GetMethod("RefreshItems", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(sw.SortModeBox, null);
+                    var prevSwIdx = sw.SortModeBox.SelectedIndex;
+                    PopulateSortModeBox(sw.SortModeBox);
+                    if (prevSwIdx >= 0 && prevSwIdx < sw.SortModeBox.Items.Count)
+                        sw.SortModeBox.SelectedIndex = prevSwIdx;
                 }
             }
 
             // Force sort combo to re-read ToString() of items
-            int selIdx = _sortModeBox.SelectedIndex;
-            typeof(ComboBox).GetMethod("RefreshItems", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(_sortModeBox, null);
-            if (selIdx >= 0 && selIdx < _sortModeBox.Items.Count) _sortModeBox.SelectedIndex = selIdx;
+            var prevIdx = _sortModeBox.SelectedIndex;
+            PopulateSortModeBox(_sortModeBox);
+            if (prevIdx >= 0 && prevIdx < _sortModeBox.Items.Count)
+                _sortModeBox.SelectedIndex = prevIdx;
             ApplyTooltips();
             UpdateSelectionInfo();
             AdjustControlPanelWidth();
