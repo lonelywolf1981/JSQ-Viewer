@@ -20,6 +20,14 @@ namespace JSQViewer.UI
         private DragTarget _dragging = DragTarget.None;
         private double _dragOffset;
 
+        // GDI object cache
+        private SolidBrush _brushBackground;
+        private SolidBrush _brushSelection;
+        private SolidBrush _brushLabel;
+        private SolidBrush _brushThumb;
+        private Pen _penThumbBorder;
+        private Font _labelFont;
+
         public event EventHandler RangeChanged;
 
         public Func<double, string> ValueLabelFormatter { get; set; }
@@ -80,8 +88,43 @@ namespace JSQViewer.UI
             return _minimum + ratio * (_maximum - _minimum);
         }
 
+        private void EnsureBrushes()
+        {
+            if (_brushBackground != null)
+                return;
+
+            DisposeBrushes();
+
+            _brushBackground = new SolidBrush(Color.FromArgb(220, 220, 220));
+            _brushSelection  = new SolidBrush(Color.FromArgb(160, 70, 130, 220));
+            _brushLabel      = new SolidBrush(Color.FromArgb(80, 80, 80));
+            _brushThumb      = new SolidBrush(Color.FromArgb(50, 100, 190));
+            _penThumbBorder  = new Pen(Color.FromArgb(30, 60, 140), 1);
+            _labelFont       = new Font("Microsoft Sans Serif", 7f);
+        }
+
+        private void DisposeBrushes()
+        {
+            _brushBackground?.Dispose(); _brushBackground = null;
+            _brushSelection?.Dispose();  _brushSelection  = null;
+            _brushLabel?.Dispose();      _brushLabel      = null;
+            _brushThumb?.Dispose();      _brushThumb      = null;
+            _penThumbBorder?.Dispose();  _penThumbBorder  = null;
+            _labelFont?.Dispose();       _labelFont       = null;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                DisposeBrushes();
+            }
+            base.Dispose(disposing);
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
+            EnsureBrushes();
             base.OnPaint(e);
             Graphics g = e.Graphics;
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
@@ -89,24 +132,18 @@ namespace JSQViewer.UI
             int trackY = Height / 2 - TrackHeight / 2;
 
             // Background track
-            using (var brush = new SolidBrush(Color.FromArgb(220, 220, 220)))
-            {
-                g.FillRectangle(brush, TrackPadding, trackY, Width - 2 * TrackPadding, TrackHeight);
-            }
+            g.FillRectangle(_brushBackground, TrackPadding, trackY, Width - 2 * TrackPadding, TrackHeight);
 
             int lx = ValueToPixel(_lowerValue);
             int ux = ValueToPixel(_upperValue);
 
             // Selected range
-            using (var brush = new SolidBrush(Color.FromArgb(160, 70, 130, 220)))
-            {
-                g.FillRectangle(brush, lx, trackY, Math.Max(0, ux - lx), TrackHeight);
-            }
+            g.FillRectangle(_brushSelection, lx, trackY, Math.Max(0, ux - lx), TrackHeight);
 
             // Lower thumb
-            DrawThumb(g, lx, Color.FromArgb(50, 100, 190));
+            DrawThumb(g, lx);
             // Upper thumb
-            DrawThumb(g, ux, Color.FromArgb(50, 100, 190));
+            DrawThumb(g, ux);
 
             // Date labels
             if (_maximum > _minimum)
@@ -115,14 +152,10 @@ namespace JSQViewer.UI
                 {
                     string sLo = FormatValueLabel(_lowerValue);
                     string sHi = FormatValueLabel(_upperValue);
-                    using (var font = new Font("Microsoft Sans Serif", 7f))
-                    using (var brush = new SolidBrush(Color.FromArgb(80, 80, 80)))
-                    {
-                        var sfLeft = new StringFormat { Alignment = StringAlignment.Center };
-                        int labelY = Height - 16;
-                        g.DrawString(sLo, font, brush, lx, labelY, sfLeft);
-                        g.DrawString(sHi, font, brush, ux, labelY, sfLeft);
-                    }
+                    var sfLeft = new StringFormat { Alignment = StringAlignment.Center };
+                    int labelY = Height - 16;
+                    g.DrawString(sLo, _labelFont, _brushLabel, lx, labelY, sfLeft);
+                    g.DrawString(sHi, _labelFont, _brushLabel, ux, labelY, sfLeft);
                 }
                 catch { }
             }
@@ -139,18 +172,12 @@ namespace JSQViewer.UI
             return value.ToString("0.##", CultureInfo.InvariantCulture);
         }
 
-        private void DrawThumb(Graphics g, int x, Color color)
+        private void DrawThumb(Graphics g, int x)
         {
             int thumbHeight = Height - 22;
             int thumbY = 2;
-            using (var brush = new SolidBrush(color))
-            {
-                g.FillRectangle(brush, x - ThumbWidth / 2, thumbY, ThumbWidth, thumbHeight);
-            }
-            using (var pen = new Pen(Color.FromArgb(30, 60, 140), 1))
-            {
-                g.DrawRectangle(pen, x - ThumbWidth / 2, thumbY, ThumbWidth, thumbHeight);
-            }
+            g.FillRectangle(_brushThumb, x - ThumbWidth / 2, thumbY, ThumbWidth, thumbHeight);
+            g.DrawRectangle(_penThumbBorder, x - ThumbWidth / 2, thumbY, ThumbWidth, thumbHeight);
         }
 
         protected override void OnMouseDown(MouseEventArgs e)

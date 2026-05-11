@@ -83,7 +83,8 @@ namespace JSQViewer.Settings
             };
 
             string path = Path.Combine(dir, key + ".json");
-            JsonHelper.SaveToFile(path, payload);
+            if (!JsonHelper.SaveToFile(path, payload))
+                return null;
             return payload;
         }
 

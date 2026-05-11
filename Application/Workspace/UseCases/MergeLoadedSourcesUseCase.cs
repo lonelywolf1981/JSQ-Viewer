@@ -176,12 +176,15 @@ namespace JSQViewer.Application.Workspace.UseCases
                 TestData data = list[i];
                 string source = data.Root ?? ("source_" + (i + 1).ToString(CultureInfo.InvariantCulture));
                 Dictionary<string, string> codeMap = codeMapsBySource[source];
-                if (data.RowCount <= 0)
+                int rowsToCopy = Math.Min(
+                    data.RowCount,
+                    data.TimestampsMs != null ? data.TimestampsMs.Length : 0);
+                if (rowsToCopy <= 0)
                 {
                     continue;
                 }
 
-                Array.Copy(data.TimestampsMs, 0, compactTimestamps, writeOffset, data.RowCount);
+                Array.Copy(data.TimestampsMs, 0, compactTimestamps, writeOffset, rowsToCopy);
                 for (int c = 0; c < data.ColumnNames.Length; c++)
                 {
                     string column = data.ColumnNames[c];
@@ -197,10 +200,10 @@ namespace JSQViewer.Application.Workspace.UseCases
                         continue;
                     }
 
-                    Array.Copy(sourceArray, 0, compactColumns[mergedColumn], writeOffset, data.RowCount);
+                    Array.Copy(sourceArray, 0, compactColumns[mergedColumn], writeOffset, rowsToCopy);
                 }
 
-                writeOffset += data.RowCount;
+                writeOffset += rowsToCopy;
             }
 
             int[] sortIndices = new int[totalRows];
@@ -234,6 +237,22 @@ namespace JSQViewer.Application.Workspace.UseCases
                 }
             }
 
+            var sourceColumnMap = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < list.Count; i++)
+            {
+                TestData d = list[i];
+                string src = d.Root ?? ("source_" + (i + 1).ToString(CultureInfo.InvariantCulture));
+                Dictionary<string, string> map = codeMapsBySource[src];
+                var cols = new string[d.ColumnNames.Length];
+                for (int j = 0; j < d.ColumnNames.Length; j++)
+                {
+                    string merged;
+                    cols[j] = map.TryGetValue(d.ColumnNames[j], out merged) ? merged : d.ColumnNames[j];
+                }
+
+                sourceColumnMap[src] = cols;
+            }
+
             return new TestData
             {
                 Root = string.Join(" ; ", list.Select(data => data.Root).Where(root => !string.IsNullOrWhiteSpace(root))),
@@ -245,21 +264,7 @@ namespace JSQViewer.Application.Workspace.UseCases
                 TimestampsMs = sortedTimestamps,
                 Columns = sortedColumns,
                 ColumnNames = columnNames,
-                SourceColumns = list.ToDictionary(
-                    data => data.Root,
-                    data =>
-                    {
-                        Dictionary<string, string> map = codeMapsBySource[data.Root];
-                        var columns = new string[data.ColumnNames.Length];
-                        for (int i = 0; i < data.ColumnNames.Length; i++)
-                        {
-                            string merged;
-                            columns[i] = map.TryGetValue(data.ColumnNames[i], out merged) ? merged : data.ColumnNames[i];
-                        }
-
-                        return columns;
-                    },
-                    StringComparer.OrdinalIgnoreCase),
+                SourceColumns = sourceColumnMap,
                 RowCount = totalRows
             };
         }

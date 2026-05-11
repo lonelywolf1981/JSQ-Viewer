@@ -89,6 +89,8 @@ namespace JSQViewer.UI
         private readonly ToolStripMenuItem _crosshairMenuItem;
         private bool _crosshairEnabled = true;
         private int? _mainCrosshairPixelX;
+        private int _lastCrosshairPixelX = -1;
+        private Series _lastHighlightedSeries = null;
         private readonly RangeTrackBar _rangeTrackBar;
         private readonly FlowLayoutPanel _rangePanel;
         private readonly Label _rangeLabel;
@@ -457,6 +459,15 @@ namespace JSQViewer.UI
             Resize += MainFormOnResizeFixHeight;
         }
 
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                Loc.LanguageChanged -= ApplyLocalization;
+            }
+            base.Dispose(disposing);
+        }
+
         private void SyncPresenterFromMainControls()
         {
             _channelWorkspacePresenter.Initialize(_channelFilterBox.Text, GetSelectedSortKey(), _selectedOnlyCheck.Checked);
@@ -747,14 +758,18 @@ namespace JSQViewer.UI
                 if (sw.DeleteOrderButton != null) sw.DeleteOrderButton.Text = Loc.Get("Delete");
                 if (sw.SortModeBox != null)
                 {
-                    typeof(ComboBox).GetMethod("RefreshItems", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(sw.SortModeBox, null);
+                    var prevSwIdx = sw.SortModeBox.SelectedIndex;
+                    PopulateSortModeBox(sw.SortModeBox);
+                    if (prevSwIdx >= 0 && prevSwIdx < sw.SortModeBox.Items.Count)
+                        sw.SortModeBox.SelectedIndex = prevSwIdx;
                 }
             }
 
             // Force sort combo to re-read ToString() of items
-            int selIdx = _sortModeBox.SelectedIndex;
-            typeof(ComboBox).GetMethod("RefreshItems", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(_sortModeBox, null);
-            if (selIdx >= 0 && selIdx < _sortModeBox.Items.Count) _sortModeBox.SelectedIndex = selIdx;
+            var prevIdx = _sortModeBox.SelectedIndex;
+            PopulateSortModeBox(_sortModeBox);
+            if (prevIdx >= 0 && prevIdx < _sortModeBox.Items.Count)
+                _sortModeBox.SelectedIndex = prevIdx;
             ApplyTooltips();
             UpdateSelectionInfo();
             AdjustControlPanelWidth();
@@ -1131,6 +1146,8 @@ namespace JSQViewer.UI
 
         private void ChartOnMouseMove(object sender, MouseEventArgs e)
         {
+            if (e.X == _lastCrosshairPixelX) return;
+            _lastCrosshairPixelX = e.X;
             if (_chart.ChartAreas.Count == 0 || _chart.Series.Count == 0) return;
             var area = _chart.ChartAreas[0];
             try
@@ -1175,7 +1192,7 @@ namespace JSQViewer.UI
             }
         }
 
-        private static void BuildCrosshairTooltip(Chart chart, ToolTip toolTip, double xVal, Point mousePoint, bool overlayMode)
+        private void BuildCrosshairTooltip(Chart chart, ToolTip toolTip, double xVal, Point mousePoint, bool overlayMode)
         {
             if (chart.Series.Count == 0)
             {
@@ -1213,9 +1230,13 @@ namespace JSQViewer.UI
                 if (dist < closestDist) { closestDist = dist; closestSeries = s; }
             }
 
-            foreach (Series s in chart.Series)
+            if (closestSeries != _lastHighlightedSeries)
             {
-                s.BorderWidth = s == closestSeries ? 3 : 2;
+                _lastHighlightedSeries = closestSeries;
+                foreach (Series s in chart.Series)
+                {
+                    s.BorderWidth = s == closestSeries ? 3 : 2;
+                }
             }
 
             string text = sb.ToString();
@@ -1473,7 +1494,8 @@ namespace JSQViewer.UI
             };
 
             // Also update detached chart when main trackbar changes (via sync)
-            _rangeTrackBar.RangeChanged += delegate
+            EventHandler rangeChangedHandler = null;
+            rangeChangedHandler = delegate
             {
                 if (detachedRangeBar.IsDisposed || detachedChart.IsDisposed) return;
                 if (detachedChart.ChartAreas.Count == 0) return;
@@ -1482,6 +1504,7 @@ namespace JSQViewer.UI
                 detachedChart.ChartAreas[0].AxisX.Minimum = full ? double.NaN : _rangeTrackBar.LowerValue;
                 detachedChart.ChartAreas[0].AxisX.Maximum = full ? double.NaN : _rangeTrackBar.UpperValue;
             };
+            _rangeTrackBar.RangeChanged += rangeChangedHandler;
 
             _detachedRangeBars.Add(detachedRangeBar);
             var state = new DetachedChartState
@@ -1493,6 +1516,7 @@ namespace JSQViewer.UI
             _detachedCharts.Add(state);
             form.FormClosed += delegate
             {
+                _rangeTrackBar.RangeChanged -= rangeChangedHandler;
                 _detachedRangeBars.Remove(detachedRangeBar);
                 _detachedCharts.Remove(state);
             };
@@ -1514,9 +1538,12 @@ namespace JSQViewer.UI
             var tip = new ToolTip { AutoPopDelay = 600000, InitialDelay = 400, ReshowDelay = 200 };
             bool crosshair = true;
             int? crosshairPixelX = null;
+            int lastDetachedX = -1;
 
             chart.MouseMove += delegate(object s, MouseEventArgs ev)
             {
+                if (ev.X == lastDetachedX) return;
+                lastDetachedX = ev.X;
                 if (chart.ChartAreas.Count == 0 || chart.Series.Count == 0) return;
                 var area = chart.ChartAreas[0];
                 try
@@ -3456,11 +3483,19 @@ namespace JSQViewer.UI
         private void RebuildChannelList()
         {
             ChannelListViewModel viewModel = _channelWorkspacePresenter.GetMainChannelList();
-            _channelsList.Items.Clear();
-            foreach (ChannelListItemViewModel item in viewModel.Items)
+            _channelsList.BeginUpdate();
+            try
             {
-                int idx = _channelsList.Items.Add(item, item.IsSelected);
-                if (idx >= 0) { }
+                _channelsList.Items.Clear();
+                foreach (ChannelListItemViewModel item in viewModel.Items)
+                {
+                    int idx = _channelsList.Items.Add(item, item.IsSelected);
+                    if (idx >= 0) { }
+                }
+            }
+            finally
+            {
+                _channelsList.EndUpdate();
             }
         }
 
@@ -3515,6 +3550,7 @@ namespace JSQViewer.UI
             if (state == null || state.List == null || state.List.IsDisposed) return;
             state.ViewModel = _channelWorkspacePresenter.GetSourceWindow(state.SourceRoot);
             _syncingSourceChannelSelection = true;
+            state.List.BeginUpdate();
             try
             {
                 state.List.Items.Clear();
@@ -3525,6 +3561,7 @@ namespace JSQViewer.UI
             }
             finally
             {
+                state.List.EndUpdate();
                 _syncingSourceChannelSelection = false;
             }
         }

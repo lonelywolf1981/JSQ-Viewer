@@ -189,6 +189,123 @@ namespace JSQViewer.Core
         }
 
         /// <summary>
+        /// Reads all records from a DBF stream directly into pre-allocated arrays.
+        /// Returns the number of valid (non-deleted) rows written.
+        /// </summary>
+        /// <param name="fs">Stream positioned at the start of record data</param>
+        /// <param name="header">Pre-read header</param>
+        /// <param name="timestamps">Output timestamp array (segment starting at writeOffset)</param>
+        /// <param name="columns">Output column arrays (segment starting at writeOffset)</param>
+        /// <param name="columnNames">Column names matching the columns dictionary keys</param>
+        /// <param name="writeOffset">Starting index to write into the arrays</param>
+        /// <returns>Number of valid rows written</returns>
+        public static int ReadAllRecordsDirect(
+            Stream fs,
+            DbfHeader header,
+            long[] timestamps,
+            Dictionary<string, double?[]> columns,
+            string[] columnNames,
+            int writeOffset)
+        {
+            if (fs == null) throw new ArgumentNullException(nameof(fs));
+            if (header == null) throw new ArgumentNullException(nameof(header));
+            if (header.RecordLength <= 0)
+            {
+                throw new InvalidDataException(
+                    "DBF record length is zero or negative. File may be corrupt.");
+            }
+
+            int written = 0;
+
+            // Pre-compute field offsets for fast access
+            int fieldCount = header.Fields.Count;
+            int[] fieldOffsets = new int[fieldCount];
+            int off = 1; // skip delete flag byte
+            for (int f = 0; f < fieldCount; f++)
+            {
+                fieldOffsets[f] = off;
+                off += header.Fields[f].Length;
+            }
+
+            // Pre-build column-to-field mapping (avoid FindFieldIndex per record)
+            int colCount = columnNames.Length;
+            int[] colFieldIdx = new int[colCount];
+            int[] colFieldLen = new int[colCount];
+            double?[][] colArrays = new double?[colCount][];
+            for (int c = 0; c < colCount; c++)
+            {
+                int fi = FindFieldIndex(header.Fields, columnNames[c]);
+                colFieldIdx[c] = fi;
+                colFieldLen[c] = fi >= 0 ? header.Fields[fi].Length : 0;
+                columns.TryGetValue(columnNames[c], out colArrays[c]);
+            }
+
+            byte[] bulkBuffer = new byte[Math.Min(header.Records, 4096) * header.RecordLength];
+            DateTime epochUtc = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+            int remaining = header.Records;
+            while (remaining > 0)
+            {
+                int batchRecords = Math.Min(remaining, bulkBuffer.Length / header.RecordLength);
+                int bytesToRead = batchRecords * header.RecordLength;
+                int bytesRead = fs.Read(bulkBuffer, 0, bytesToRead);
+                if (bytesRead < header.RecordLength) break;
+
+                int actualRecords = bytesRead / header.RecordLength;
+                for (int r = 0; r < actualRecords; r++)
+                {
+                    int recStart = r * header.RecordLength;
+                    if (bulkBuffer[recStart] == (byte)'*') continue;
+
+                    // Parse timestamp
+                    DateTime date = default(DateTime);
+                    bool hasDate = false;
+                    if (columnNames.Length > 0 && header.Fields.Count > 0)
+                    {
+                        // Find date field index
+                        int dateFieldIdx = FindFieldIndex(header.Fields, "Data");
+                        if (dateFieldIdx >= 0)
+                        {
+                            DbfField df = header.Fields[dateFieldIdx];
+                            string ds = Encoding.ASCII.GetString(bulkBuffer, recStart + fieldOffsets[dateFieldIdx], df.Length).Trim();
+                            if (ds.Length == 8)
+                            {
+                                DateTime parsed;
+                                if (DateTime.TryParseExact(ds, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed))
+                                {
+                                    date = parsed.Date;
+                                    hasDate = true;
+                                }
+                            }
+                        }
+                    }
+
+                    if (hasDate)
+                    {
+                        int idx = writeOffset + written;
+                        timestamps[idx] = ((long)(date.ToUniversalTime() - epochUtc).TotalMilliseconds);
+
+                        // Parse data columns using pre-built mapping
+                        for (int c = 0; c < colCount; c++)
+                        {
+                            if (colFieldIdx[c] < 0 || colArrays[c] == null) continue;
+                            DbfField field = header.Fields[colFieldIdx[c]];
+                            if (field.FieldType == 'N')
+                            {
+                                colArrays[c][idx] = ParseDoubleField(bulkBuffer, recStart + fieldOffsets[colFieldIdx[c]], colFieldLen[c]);
+                            }
+                        }
+
+                        written++;
+                    }
+                }
+                remaining -= actualRecords;
+            }
+
+            return written;
+        }
+
+        /// <summary>
         /// Reads all records from a DBF file directly into pre-allocated arrays.
         /// Returns the number of valid (non-deleted) rows written.
         /// </summary>
@@ -209,6 +326,13 @@ namespace JSQViewer.Core
             int writeOffset,
             int[] timeFieldIndices)
         {
+            if (header == null) throw new ArgumentNullException(nameof(header));
+            if (header.RecordLength <= 0)
+            {
+                throw new InvalidDataException(
+                    "DBF record length is zero or negative. File may be corrupt.");
+            }
+
             int written = 0;
             using (var fs = new FileStream(dbfPath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536))
             {

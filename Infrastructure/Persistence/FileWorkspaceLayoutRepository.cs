@@ -33,7 +33,9 @@ namespace JSQViewer.Infrastructure.Persistence
 
         private string GetFilePath(string workspaceKey)
         {
-            string key = string.IsNullOrWhiteSpace(workspaceKey) ? "default" : workspaceKey.Trim();
+            string key = string.IsNullOrWhiteSpace(workspaceKey)
+                ? "default"
+                : JSQViewer.Settings.Persistence.SanitizeKey(workspaceKey.Trim(), "layout");
             return Path.Combine(_layoutsDirectory, key + ".json");
         }
     }
