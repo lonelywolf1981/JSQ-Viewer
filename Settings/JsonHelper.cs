@@ -57,6 +57,15 @@ namespace JSQViewer.Settings
             }
             catch
             {
+                try
+                {
+                    string tmp = path + ".tmp";
+                    if (File.Exists(tmp)) File.Delete(tmp);
+                }
+                catch
+                {
+                    // best-effort cleanup
+                }
                 return false;
             }
         }
