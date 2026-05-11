@@ -101,25 +101,52 @@ namespace JSQViewer.Application.Recording
         {
             foreach (string col in cols)
             {
-                if (col == null) continue;
-
-                // Прямое совпадение: "T1"
-                if (string.Equals(col, "T1", StringComparison.OrdinalIgnoreCase))
-                    return col;
-
-                // Однобуквенный префикс: "A-T1"
-                if (col.Length >= 4 && col[1] == '-' &&
-                    string.Equals(col.Substring(2), "T1", StringComparison.OrdinalIgnoreCase))
-                    return col;
-
-                // Формат слитых источников: "basename::T1"
-                // (BuildSourceTags использует полное имя папки + "::" как разделитель)
-                int sep = col.IndexOf("::", StringComparison.Ordinal);
-                if (sep >= 0 &&
-                    string.Equals(col.Substring(sep + 2), "T1", StringComparison.OrdinalIgnoreCase))
-                    return col;
+                if (IsT1ColumnName(col)) return col;
             }
             return null;
+        }
+
+        // Определяет, является ли имя колонки "T1" в любом из возможных форматов:
+        //   "T1"                  — одиночный источник, прямое имя
+        //   "C-T1"                — одиночный источник, однобуквенный префикс (C.T1 → C-T1)
+        //   "T1#2"                — слияние без split, суффикс дубликата
+        //   "C-T1#2"              — слияние без split, суффикс дубликата с префиксом
+        //   "foldername::T1"      — слияние с split, полное имя папки как префикс
+        //   "foldername::C-T1"    — слияние с split + однобуквенный префикс
+        private static bool IsT1ColumnName(string col)
+        {
+            if (string.IsNullOrEmpty(col)) return false;
+
+            // Снимаем prefix "basename::" (BuildSourceTags использует имя папки + "::")
+            string name = col;
+            int sep = col.IndexOf("::", StringComparison.Ordinal);
+            if (sep >= 0)
+                name = col.Substring(sep + 2);
+
+            // Снимаем суффикс дубликата "#N"
+            int hash = name.LastIndexOf('#');
+            if (hash > 0)
+            {
+                string hashPart = name.Substring(hash + 1);
+                bool allDigits = hashPart.Length > 0;
+                foreach (char c in hashPart)
+                {
+                    if (!char.IsDigit(c)) { allDigits = false; break; }
+                }
+                if (allDigits)
+                    name = name.Substring(0, hash);
+            }
+
+            // Прямое совпадение: "T1"
+            if (string.Equals(name, "T1", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // Однобуквенный префикс: "C-T1", "A-T1", "B-T1" и т.д.
+            if (name.Length >= 4 && name[1] == '-' &&
+                string.Equals(name.Substring(2), "T1", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            return false;
         }
     }
 }

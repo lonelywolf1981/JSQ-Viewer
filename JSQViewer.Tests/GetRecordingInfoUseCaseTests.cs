@@ -100,6 +100,34 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Execute_WithDoubleColonPrefixedT1Format_FindsChannel()
+        {
+            // Формат слитых источников с однобуквенным префиксом: "basename::C-T1"
+            var data = MakeData(Root, 0, 60_000, "JSQ:28 ACTIVE LARGE KA140::C-T1",
+                new double?[] { -10.0, -40.0, -30.0 });
+            var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.IsNotNull(r.T1Min, "basename::C-T1 должен распознаваться как T1");
+            Assert.AreEqual(-40.0, r.T1Min.Value, 0.001);
+        }
+
+        [TestMethod]
+        public void Execute_WithDuplicateSuffixT1Format_FindsChannel()
+        {
+            // Слияние без split, дубликат суффикса: "C-T1#2"
+            var data = MakeData(Root, 0, 60_000, "C-T1#2",
+                new double?[] { -10.0, -40.0, -30.0 });
+            var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.IsNotNull(r.T1Min, "C-T1#2 должен распознаваться как T1");
+            Assert.AreEqual(-40.0, r.T1Min.Value, 0.001);
+        }
+
+        [TestMethod]
         public void Execute_WithT1Channel_ReturnsDropRate()
         {
             // first=-20, min=-38.4, duration=1 мин → rate = (-38.4 - (-20)) / 1 = -18.4
