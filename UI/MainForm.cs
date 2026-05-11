@@ -18,6 +18,7 @@ using JSQViewer.Application.Exporting;
 using JSQViewer.Application.Session;
 using JSQViewer.Application.Workspace;
 using JSQViewer.Application.Workspace.UseCases;
+using JSQViewer.Application.Recording;
 using JSQViewer.Presentation.WinForms.Presenters;
 using JSQViewer.Presentation.WinForms.Charting;
 using JSQViewer.Core;
@@ -142,6 +143,7 @@ namespace JSQViewer.UI
         private readonly ViewerSettingsSanitizer _viewerSettingsSanitizer;
         private readonly WorkspaceLoadOrchestrationService _workspaceLoadOrchestrationService;
         private readonly LoadWorkspaceDataUseCase _loadWorkspaceDataUseCase;
+        private readonly GetRecordingInfoUseCase _getRecordingInfoUseCase;
         private readonly RemoveLoadedSourceUseCase _removeLoadedSourceUseCase;
         private WorkspaceLayoutState _workspaceLayoutState;
         private string _currentWorkspaceKey;
@@ -216,6 +218,7 @@ namespace JSQViewer.UI
             _workspaceLoadOrchestrationService = workspaceLoadOrchestrationService;
             _loadWorkspaceDataUseCase = loadWorkspaceDataUseCase;
             _removeLoadedSourceUseCase = new RemoveLoadedSourceUseCase();
+            _getRecordingInfoUseCase = new GetRecordingInfoUseCase(_timestampRangeService);
             _viewerSettings = _viewerSettingsRepository.Load();
             _workspaceLayoutState = new WorkspaceLayoutState();
             _channelWorkspacePresenter = new ChannelWorkspacePresenter();
@@ -2120,7 +2123,7 @@ namespace JSQViewer.UI
 
                 var form = new Form();
                 form.Text = string.Format(Loc.Get("ChannelsForSource"), window.Title);
-                form.Width = 560;
+                form.Width = 610;
                 form.Height = 640;
                 form.StartPosition = FormStartPosition.Manual;
                 form.Location = new Point(baseX + (col * 570), baseY);
@@ -2159,6 +2162,12 @@ namespace JSQViewer.UI
                 clear.Text = Loc.Get("Clear");
                 clear.AutoSize = true;
                 top.Controls.Add(clear);
+
+                var infoButton = new Button();
+                infoButton.Text = "i";
+                infoButton.Width = 24;
+                infoButton.Font = new Font(top.Font, FontStyle.Bold | FontStyle.Italic);
+                top.Controls.Add(infoButton);
 
                 var list = new CheckedListBox();
                 list.Dock = DockStyle.Fill;
@@ -2217,6 +2226,25 @@ namespace JSQViewer.UI
                 selectedOnly.CheckedChanged += delegate { SourceWindowOptionsChanged(state); };
                 selectAll.Click += delegate { SelectAllInSource(state); };
                 clear.Click += delegate { ClearAllInSource(state); };
+                infoButton.Click += delegate
+                {
+                    if (state.InfoForm != null && !state.InfoForm.IsDisposed)
+                    {
+                        state.InfoForm.Close();
+                        state.InfoForm = null;
+                        return;
+                    }
+                    TestData data = _viewerSession.Data;
+                    if (data == null) return;
+                    RecordingInfoResult info = _getRecordingInfoUseCase.Execute(data, state.SourceRoot);
+                    var infoForm = new RecordingInfoForm(info);
+                    state.InfoForm = infoForm;
+                    infoForm.FormClosed += delegate { state.InfoForm = null; };
+                    infoForm.Location = new Point(
+                        state.Form.Right + 8,
+                        state.Form.Top);
+                    infoForm.Show(this);
+                };
                 ordersBox.SelectedIndexChanged += delegate { SaveWorkspaceLayoutSelectionForSource(state); };
                 saveOrderButton.Click += delegate { SaveOrderFromSource(state); };
                 loadOrderButton.Click += delegate { LoadOrderFromSource(state); };
@@ -2231,6 +2259,11 @@ namespace JSQViewer.UI
                 form.Controls.Add(top);
                 form.FormClosed += delegate
                 {
+                    if (state.InfoForm != null && !state.InfoForm.IsDisposed)
+                    {
+                        state.InfoForm.Close();
+                        state.InfoForm = null;
+                    }
                     if (!_closingSourceChannelWindows)
                     {
                         var folders = ParseFolderSpec(_folderBox.Text);
@@ -4195,6 +4228,7 @@ namespace JSQViewer.UI
             public Label StatusLabel { get; set; }
             public CheckedListBox List { get; set; }
             public List<ChannelItem> Items { get; set; }
+            public Form InfoForm { get; set; }
         }
 
         private sealed class DetachedChartState
