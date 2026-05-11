@@ -457,6 +457,15 @@ namespace JSQViewer.UI
             Resize += MainFormOnResizeFixHeight;
         }
 
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                Loc.LanguageChanged -= ApplyLocalization;
+            }
+            base.Dispose(disposing);
+        }
+
         private void SyncPresenterFromMainControls()
         {
             _channelWorkspacePresenter.Initialize(_channelFilterBox.Text, GetSelectedSortKey(), _selectedOnlyCheck.Checked);
