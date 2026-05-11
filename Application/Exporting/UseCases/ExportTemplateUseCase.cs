@@ -17,6 +17,18 @@ namespace JSQViewer.Application.Exporting
         public ExportTemplateResult Execute(ExportTemplateRequest request)
         {
             byte[] payload = _templateExporter.Export(request);
+            if (payload == null)
+            {
+                return new ExportTemplateResult
+                {
+                    Payload = null,
+                    Validation = new TemplateValidationResult
+                    {
+                        Ok = false,
+                        Message = "Exporter returned no data."
+                    }
+                };
+            }
             return new ExportTemplateResult
             {
                 Payload = payload,
