@@ -20,7 +20,13 @@ namespace JSQViewer.Application.Session
 
         public int DataVersion
         {
-            get { return Volatile.Read(ref _dataVersion); }
+            get
+            {
+                lock (_sync)
+                {
+                    return _dataVersion;
+                }
+            }
         }
 
         public bool IsLoaded
