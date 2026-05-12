@@ -94,7 +94,10 @@ namespace JSQViewer.Application.Recording
             {
                 if (!values[i].HasValue) continue;
                 if (firstVal == null)
+                {
                     firstVal = values[i];
+                    result.T1InitialTemperature = values[i];
+                }
                 if (values[i].Value < minVal)
                 {
                     minVal = values[i].Value;
@@ -124,7 +127,54 @@ namespace JSQViewer.Application.Recording
             if (durationMin > 0 && firstVal.HasValue)
                 result.T1DropRatePerMinute = (dropRateMinVal - firstVal.Value) / durationMin;
 
+            CalculateT1EnergyToTarget(data, sourceRoot, result, i0, dropRateIdx, startMs);
+
             return result;
+        }
+
+        private static void CalculateT1EnergyToTarget(
+            TestData data,
+            string sourceRoot,
+            RecordingInfoResult result,
+            int i0,
+            int targetIdx,
+            long startMs)
+        {
+            string wColumn = FindWColumn(data, sourceRoot);
+            if (wColumn == null)
+            {
+                return;
+            }
+
+            double?[] wValues;
+            if (!data.Columns.TryGetValue(wColumn, out wValues) || wValues == null)
+            {
+                return;
+            }
+
+            double sum = 0d;
+            int count = 0;
+            for (int i = i0; i <= targetIdx && i < wValues.Length; i++)
+            {
+                if (!wValues[i].HasValue)
+                {
+                    continue;
+                }
+
+                sum += wValues[i].Value;
+                count++;
+            }
+
+            long elapsedMs = data.TimestampsMs[targetIdx] - startMs;
+            if (count == 0 || elapsedMs <= 0)
+            {
+                return;
+            }
+
+            double averageW = sum / count;
+            double hours = elapsedMs / 3_600_000.0;
+            result.T1EnergyToTargetKWh = (averageW / 1000.0) * hours;
+            result.T1EnergyTargetElapsedMs = elapsedMs;
         }
 
         private static int FindFirstCoolingMinimumIndex(
@@ -156,6 +206,8 @@ namespace JSQViewer.Application.Recording
                 long stabilityEnd = timestamps[i] + FirstCoolingMinimumStabilityLookAheadMs;
                 double futureMax = value;
                 double futureMin = value;
+                double reboundWindowMin = value;
+                int reboundWindowMinIdx = i;
                 bool hasFuture = false;
 
                 for (int j = i + 1; j < i1 && timestamps[j] <= stabilityEnd; j++)
@@ -169,6 +221,12 @@ namespace JSQViewer.Application.Recording
                     if (timestamps[j] <= reboundEnd && future > futureMax)
                     {
                         futureMax = future;
+                    }
+
+                    if (timestamps[j] <= reboundEnd && future < reboundWindowMin)
+                    {
+                        reboundWindowMin = future;
+                        reboundWindowMinIdx = j;
                     }
 
                     if (future < futureMin)
@@ -188,7 +246,7 @@ namespace JSQViewer.Application.Recording
                 bool doesNotContinueCooling = futureMin >= value - FirstCoolingMinimumLowerTolerance;
                 if (hasRebound && doesNotContinueCooling)
                 {
-                    return i;
+                    return reboundWindowMinIdx;
                 }
             }
 
@@ -365,6 +423,24 @@ namespace JSQViewer.Application.Recording
             return null;
         }
 
+        private static string FindWColumn(TestData data, string sourceRoot)
+        {
+            string[] cols;
+            if (data.SourceColumns.TryGetValue(sourceRoot, out cols) && cols != null)
+            {
+                string found = FindWInArray(cols);
+                if (found != null) return found;
+            }
+
+            if (data.ColumnNames != null)
+            {
+                string found = FindWInArray(data.ColumnNames);
+                if (found != null) return found;
+            }
+
+            return null;
+        }
+
         private static List<string> FindTColumns(TestData data, string sourceRoot, int minimumNumber)
         {
             var result = new List<string>();
@@ -446,11 +522,47 @@ namespace JSQViewer.Application.Recording
             return null;
         }
 
+        private static string FindWInArray(string[] cols)
+        {
+            foreach (string col in cols)
+            {
+                if (IsWChannel(col)) return col;
+            }
+            return null;
+        }
+
+        private static bool IsWChannel(string col)
+        {
+            if (string.IsNullOrEmpty(col)) return false;
+
+            string name = NormalizeChannelName(col);
+            return string.Equals(name, "W", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static bool TryGetTChannelNumber(string col, out int number)
         {
             number = 0;
             if (string.IsNullOrEmpty(col)) return false;
 
+            string name = NormalizeChannelName(col);
+            if (name.Length < 2 || (name[0] != 'T' && name[0] != 't'))
+                return false;
+
+            string digits = name.Substring(1);
+            if (digits.Length == 0)
+                return false;
+
+            foreach (char c in digits)
+            {
+                if (!char.IsDigit(c))
+                    return false;
+            }
+
+            return int.TryParse(digits, out number);
+        }
+
+        private static string NormalizeChannelName(string col)
+        {
             string name = col.Trim();
             int sep = name.LastIndexOf("::", StringComparison.Ordinal);
             if (sep >= 0)
@@ -472,20 +584,7 @@ namespace JSQViewer.Application.Recording
             if (name.Length >= 3 && name[1] == '-')
                 name = name.Substring(2);
 
-            if (name.Length < 2 || (name[0] != 'T' && name[0] != 't'))
-                return false;
-
-            string digits = name.Substring(1);
-            if (digits.Length == 0)
-                return false;
-
-            foreach (char c in digits)
-            {
-                if (!char.IsDigit(c))
-                    return false;
-            }
-
-            return int.TryParse(digits, out number);
+            return name;
         }
     }
 }

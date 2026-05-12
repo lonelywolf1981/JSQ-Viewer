@@ -43,21 +43,17 @@ namespace JSQViewer.UI
 
             if (result.T1Min.HasValue)
             {
-                AddRow(table, "Минимум",
-                    result.T1Min.Value.ToString("F1") + " °C", ref row);
-                // Показываем оба представления: относительное (как на графике) и абсолютное
-                string elapsedStr = result.T1MinElapsedMs.HasValue
-                    ? FormatElapsed(result.T1MinElapsedMs.Value)
-                    : "—";
                 string startStr = result.SourceStartTime.HasValue
                     ? result.SourceStartTime.Value.ToString("dd.MM.yy HH:mm:ss")
                     : "—";
-                string absStr = result.T1MinTime.HasValue
-                    ? result.T1MinTime.Value.ToString("dd.MM.yy HH:mm:ss")
-                    : "—";
                 AddRow(table, "Старт записи", startStr, ref row);
-                AddRow(table, "Время до минимума", elapsedStr, ref row);
-                AddRow(table, "Дата/время минимума", absStr, ref row);
+                if (result.T1InitialTemperature.HasValue)
+                {
+                    AddRow(table, "Начальная температура",
+                        result.T1InitialTemperature.Value.ToString("F1") + " °C",
+                        ref row);
+                }
+
                 if (result.T1FirstCoolingMin.HasValue)
                 {
                     AddRow(table, "Первый минимум",
@@ -74,10 +70,28 @@ namespace JSQViewer.UI
                         ref row);
                 }
 
+                AddRow(table, "Минимум",
+                    result.T1Min.Value.ToString("F1") + " °C", ref row);
+                // Показываем оба представления: относительное (как на графике) и абсолютное
+                string elapsedStr = result.T1MinElapsedMs.HasValue
+                    ? FormatElapsed(result.T1MinElapsedMs.Value)
+                    : "—";
+                string absStr = result.T1MinTime.HasValue
+                    ? result.T1MinTime.Value.ToString("dd.MM.yy HH:mm:ss")
+                    : "—";
+                AddRow(table, "Время до минимума", elapsedStr, ref row);
+                AddRow(table, "Дата/время минимума", absStr, ref row);
+
                 string rate = result.T1DropRatePerMinute.HasValue
                     ? result.T1DropRatePerMinute.Value.ToString("F2") + " °C/мин"
                     : "—";
                 AddRow(table, "Скорость падения", rate, ref row);
+                if (result.T1EnergyToTargetKWh.HasValue)
+                {
+                    AddRow(table, "Энергопотребление",
+                        result.T1EnergyToTargetKWh.Value.ToString("F3") + " кВт⋅ч",
+                        ref row);
+                }
             }
             else
             {

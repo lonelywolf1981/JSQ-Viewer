@@ -48,6 +48,7 @@ namespace JSQViewer.Tests
             {
                 SourceRoot = @"C:\Data\Test",
                 SourceStartTime = new DateTime(2026, 5, 8, 12, 22, 39, DateTimeKind.Local),
+                T1InitialTemperature = 32.0,
                 T1Min = 5.0,
                 T1MinElapsedMs = 300 * 60_000L,
                 T1MinTime = new DateTime(2026, 5, 10, 0, 56, 19, DateTimeKind.Local),
@@ -67,6 +68,65 @@ namespace JSQViewer.Tests
                 Assert.IsTrue(valueBoxes.Any(box => box.Text == "6,0 °C" || box.Text == "6.0 °C"));
                 Assert.IsTrue(valueBoxes.Any(box => box.Text == "01:20:00"));
                 Assert.IsTrue(valueBoxes.Any(box => box.Text == "09.05.26 12:00:00"));
+            }
+        }
+
+        [TestMethod]
+        public void Constructor_RendersT1StartThenInitialTemperatureBeforeMinimum()
+        {
+            var result = new RecordingInfoResult
+            {
+                SourceRoot = @"C:\Data\Test",
+                SourceStartTime = new DateTime(2026, 5, 8, 12, 22, 39, DateTimeKind.Local),
+                T1InitialTemperature = 31.5,
+                T1Min = 5.0,
+                T1MinElapsedMs = 300 * 60_000L,
+                T1MinTime = new DateTime(2026, 5, 10, 0, 56, 19, DateTimeKind.Local),
+                T1FirstCoolingMin = 6.0,
+                T1FirstCoolingMinElapsedMs = 80 * 60_000L,
+                T1FirstCoolingMinTime = new DateTime(2026, 5, 9, 12, 0, 0, DateTimeKind.Local),
+                Meta = new List<KeyValuePair<string, string>>()
+            };
+
+            using (var form = new RecordingInfoForm(result))
+            {
+                Label[] labels = FindControls<Label>(form).ToArray();
+                int startIndex = Array.FindIndex(labels, label => label.Text == "Старт записи");
+                int initialIndex = Array.FindIndex(labels, label => label.Text == "Начальная температура");
+                int firstMinIndex = Array.FindIndex(labels, label => label.Text == "Первый минимум");
+                int minIndex = Array.FindIndex(labels, label => label.Text == "Минимум");
+                TextBox initialBox = FindControls<TextBox>(form)
+                    .FirstOrDefault(box => box.Text == result.T1InitialTemperature.Value.ToString("F1") + " °C");
+
+                Assert.IsTrue(startIndex >= 0);
+                Assert.IsTrue(initialIndex > startIndex);
+                Assert.IsTrue(firstMinIndex > initialIndex);
+                Assert.IsTrue(minIndex > firstMinIndex);
+                Assert.IsNotNull(initialBox);
+            }
+        }
+
+        [TestMethod]
+        public void Constructor_RendersT1EnergyToTarget()
+        {
+            var result = new RecordingInfoResult
+            {
+                SourceRoot = @"C:\Data\Test",
+                T1Min = 5.0,
+                T1EnergyToTargetKWh = 0.16,
+                T1EnergyTargetElapsedMs = 80 * 60_000L,
+                Meta = new List<KeyValuePair<string, string>>()
+            };
+
+            using (var form = new RecordingInfoForm(result))
+            {
+                Label energyLabel = FindControls<Label>(form)
+                    .FirstOrDefault(label => label.Text == "Энергопотребление");
+                TextBox energyBox = FindControls<TextBox>(form)
+                    .FirstOrDefault(box => box.Text == result.T1EnergyToTargetKWh.Value.ToString("F3") + " кВт⋅ч");
+
+                Assert.IsNotNull(energyLabel);
+                Assert.IsNotNull(energyBox);
             }
         }
 

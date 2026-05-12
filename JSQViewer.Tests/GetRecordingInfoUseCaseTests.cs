@@ -87,6 +87,18 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Execute_WithT1Channel_ReturnsInitialTemperatureFromFirstValidPoint()
+        {
+            var data = MakeData(Root, 0, 60_000, "T1",
+                new double?[] { null, 31.5, 20.0, 10.0 });
+            var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.AreEqual(31.5, r.T1InitialTemperature.Value, 0.001);
+        }
+
+        [TestMethod]
         public void Execute_WithT1Channel_ReturnsFirstCoolingMinimumBeforeLaterGlobalMinimum()
         {
             long[] timestamps = Enumerable.Range(0, 31)
@@ -118,6 +130,32 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Execute_WithT1FirstCoolingMinimum_ReturnsLowestPointInsideFirstReboundWindow()
+        {
+            long[] timestamps = Enumerable.Range(0, 31)
+                .Select(i => i * 5 * 60_000L)
+                .ToArray();
+            double?[] values =
+            {
+                32.0, 20.0, 5.23, 5.20, 5.10, 4.96, 5.00, 5.20,
+                5.80, 6.00, 6.10, 6.00, 5.90, 5.80, 5.70, 5.60,
+                5.50, 5.40, 5.30, 5.20, 5.10, 5.00, 4.95, 5.10,
+                5.20, 5.30, 5.40, 5.50, 5.20, 5.00, 4.80
+            };
+            var data = MakeData(Root, timestamps, new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["T1"] = values
+            });
+            var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.AreEqual(4.80, r.T1Min.Value, 0.001);
+            Assert.AreEqual(4.96, r.T1FirstCoolingMin.Value, 0.001);
+            Assert.AreEqual(25 * 60_000L, r.T1FirstCoolingMinElapsedMs.Value);
+        }
+
+        [TestMethod]
         public void Execute_WithT1FirstCoolingMinimum_DropRateUsesFirstCoolingMinimum()
         {
             long[] timestamps = Enumerable.Range(0, 31)
@@ -141,6 +179,52 @@ namespace JSQViewer.Tests
             Assert.AreEqual(5.0, r.T1Min.Value, 0.001);
             Assert.AreEqual(6.0, r.T1FirstCoolingMin.Value, 0.001);
             Assert.AreEqual(-0.325, r.T1DropRatePerMinute.Value, 0.001);
+        }
+
+        [TestMethod]
+        public void Execute_WithWChannel_ReturnsEnergyToFirstCoolingMinimum()
+        {
+            long[] timestamps = Enumerable.Range(0, 31)
+                .Select(i => i * 10 * 60_000L)
+                .ToArray();
+            double?[] t1Values =
+            {
+                32.0, 28.0, 24.0, 24.8, 20.0, 16.0, 12.0, 8.0,
+                6.0, 7.2, 6.5, 7.4, 6.6, 7.5, 6.7, 7.6,
+                6.8, 7.7, 6.9, 7.8, 6.7, 7.6, 6.6, 7.5,
+                6.4, 7.4, 6.2, 7.2, 6.0, 7.0, 5.0
+            };
+            var columns = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["A-T1"] = t1Values,
+                ["A-W"] = Enumerable.Repeat<double?>(120.0, timestamps.Length).ToArray()
+            };
+            var data = MakeData(Root, timestamps, columns);
+            var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.AreEqual(80 * 60_000L, r.T1EnergyTargetElapsedMs.Value);
+            Assert.AreEqual(0.16, r.T1EnergyToTargetKWh.Value, 0.001);
+        }
+
+        [TestMethod]
+        public void Execute_WithWChannel_WhenFirstCoolingMinimumMissing_ReturnsEnergyToGlobalMinimum()
+        {
+            long[] timestamps = new[] { 0L, 60 * 60_000L, 120 * 60_000L };
+            var columns = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["C-T1"] = new double?[] { 40.0, 35.0, 25.0 },
+                ["C-W"] = new double?[] { 100.0, 200.0, 300.0 }
+            };
+            var data = MakeData(Root, timestamps, columns);
+            var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.IsNull(r.T1FirstCoolingMin);
+            Assert.AreEqual(120 * 60_000L, r.T1EnergyTargetElapsedMs.Value);
+            Assert.AreEqual(0.4, r.T1EnergyToTargetKWh.Value, 0.001);
         }
 
         [TestMethod]

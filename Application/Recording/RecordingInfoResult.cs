@@ -9,6 +9,7 @@ namespace JSQViewer.Application.Recording
         public DateTime? SourceStartTime { get; set; }
 
         // null если канал T1 не найден в данном источнике
+        public double? T1InitialTemperature { get; set; }
         public double? T1Min { get; set; }
         public DateTime? T1MinTime { get; set; }
         // Прошедшее время от старта записи до достижения минимума T1 (в миллисекундах)
@@ -17,6 +18,8 @@ namespace JSQViewer.Application.Recording
         public DateTime? T1FirstCoolingMinTime { get; set; }
         public long? T1FirstCoolingMinElapsedMs { get; set; }
         public double? T1DropRatePerMinute { get; set; }
+        public double? T1EnergyToTargetKWh { get; set; }
+        public long? T1EnergyTargetElapsedMs { get; set; }
 
         public T8PlusTemperatureStats T8PlusStats { get; set; }
 
