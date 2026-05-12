@@ -57,14 +57,6 @@ namespace JSQViewer.Application.Recording
                 Meta = meta
             };
 
-            string t1Column = FindT1Column(data, sourceRoot);
-            if (t1Column == null)
-                return result;
-
-            double?[] values;
-            if (!data.Columns.TryGetValue(t1Column, out values) || values == null)
-                return result;
-
             long startMs, endMs;
             if (!data.SourceStartMs.TryGetValue(sourceRoot, out startMs))
                 startMs = data.TimestampsMs.Length > 0 ? data.TimestampsMs[0] : 0;
@@ -77,6 +69,16 @@ namespace JSQViewer.Application.Recording
             int i0 = slice.Item1;
             int i1 = slice.Item2;
             if (i1 <= i0)
+                return result;
+
+            result.T8PlusStats = CalculateT8PlusStats(data, sourceRoot, i0, i1, startMs);
+
+            string t1Column = FindT1Column(data, sourceRoot);
+            if (t1Column == null)
+                return result;
+
+            double?[] values;
+            if (!data.Columns.TryGetValue(t1Column, out values) || values == null)
                 return result;
 
             int minIdx = -1;
@@ -108,6 +110,130 @@ namespace JSQViewer.Application.Recording
             return result;
         }
 
+        private T8PlusTemperatureStats CalculateT8PlusStats(
+            TestData data,
+            string sourceRoot,
+            int i0,
+            int i1,
+            long startMs)
+        {
+            List<string> columns = FindTColumns(data, sourceRoot, 8);
+            if (columns.Count == 0)
+            {
+                return null;
+            }
+
+            var stats = new T8PlusTemperatureStats { HasChannels = true };
+            double bestAverage = double.MaxValue;
+            long bestAverageTimestampMs = 0L;
+            bool hasAverage = false;
+            double bestMinimum = double.MaxValue;
+            long bestMinimumTimestampMs = 0L;
+            bool hasMinimum = false;
+            double bestMaximum = double.MaxValue;
+            long bestMaximumTimestampMs = 0L;
+            bool hasMaximum = false;
+
+            for (int i = i0; i < i1; i++)
+            {
+                double sum = 0d;
+                double min = double.MaxValue;
+                double max = double.MinValue;
+                int count = 0;
+
+                foreach (string column in columns)
+                {
+                    double?[] values;
+                    if (!data.Columns.TryGetValue(column, out values) || values == null ||
+                        i >= values.Length || !values[i].HasValue)
+                    {
+                        continue;
+                    }
+
+                    double value = values[i].Value;
+                    sum += value;
+                    if (value < min) min = value;
+                    if (value > max) max = value;
+                    count++;
+                }
+
+                if (count == 0)
+                {
+                    continue;
+                }
+
+                long timestampMs = data.TimestampsMs[i];
+                double average = sum / count;
+                if (average < bestAverage)
+                {
+                    bestAverage = average;
+                    bestAverageTimestampMs = timestampMs;
+                    hasAverage = true;
+                }
+
+                if (min < bestMinimum)
+                {
+                    bestMinimum = min;
+                    bestMinimumTimestampMs = timestampMs;
+                    hasMinimum = true;
+                }
+
+                if (max < bestMaximum)
+                {
+                    bestMaximum = max;
+                    bestMaximumTimestampMs = timestampMs;
+                    hasMaximum = true;
+                }
+
+                if (!stats.AverageReached && average <= 5.0)
+                {
+                    stats.AverageReached = true;
+                    stats.AverageValue = average;
+                    stats.AverageElapsedMs = timestampMs - startMs;
+                    stats.AverageTime = _timestampRangeService.UnixMsToLocalDateTime(timestampMs);
+                }
+
+                if (!stats.MinimumReached && min <= 1.0)
+                {
+                    stats.MinimumReached = true;
+                    stats.MinimumValue = min;
+                    stats.MinimumElapsedMs = timestampMs - startMs;
+                    stats.MinimumTime = _timestampRangeService.UnixMsToLocalDateTime(timestampMs);
+                }
+
+                if (!stats.MaximumReached && max <= 9.0)
+                {
+                    stats.MaximumReached = true;
+                    stats.MaximumValue = max;
+                    stats.MaximumElapsedMs = timestampMs - startMs;
+                    stats.MaximumTime = _timestampRangeService.UnixMsToLocalDateTime(timestampMs);
+                }
+            }
+
+            if (!stats.AverageReached && hasAverage)
+            {
+                stats.AverageValue = bestAverage;
+                stats.AverageElapsedMs = bestAverageTimestampMs - startMs;
+                stats.AverageTime = _timestampRangeService.UnixMsToLocalDateTime(bestAverageTimestampMs);
+            }
+
+            if (!stats.MinimumReached && hasMinimum)
+            {
+                stats.MinimumValue = bestMinimum;
+                stats.MinimumElapsedMs = bestMinimumTimestampMs - startMs;
+                stats.MinimumTime = _timestampRangeService.UnixMsToLocalDateTime(bestMinimumTimestampMs);
+            }
+
+            if (!stats.MaximumReached && hasMaximum)
+            {
+                stats.MaximumValue = bestMaximum;
+                stats.MaximumElapsedMs = bestMaximumTimestampMs - startMs;
+                stats.MaximumTime = _timestampRangeService.UnixMsToLocalDateTime(bestMaximumTimestampMs);
+            }
+
+            return stats;
+        }
+
         private static string FindT1Column(TestData data, string sourceRoot)
         {
             string[] cols;
@@ -125,6 +251,36 @@ namespace JSQViewer.Application.Recording
             }
 
             return null;
+        }
+
+        private static List<string> FindTColumns(TestData data, string sourceRoot, int minimumNumber)
+        {
+            var result = new List<string>();
+            string[] cols;
+            if (data.SourceColumns.TryGetValue(sourceRoot, out cols) && cols != null)
+            {
+                AddTColumns(result, cols, minimumNumber);
+                return result;
+            }
+
+            if (data.ColumnNames != null && data.SourceColumns.Count <= 1)
+            {
+                AddTColumns(result, data.ColumnNames, minimumNumber);
+            }
+
+            return result;
+        }
+
+        private static void AddTColumns(List<string> result, string[] cols, int minimumNumber)
+        {
+            foreach (string col in cols)
+            {
+                int number;
+                if (TryGetTChannelNumber(col, out number) && number >= minimumNumber)
+                {
+                    result.Add(col);
+                }
+            }
         }
 
         private static IReadOnlyList<KeyValuePair<string, string>> FilterDisplayMetadata(
@@ -172,29 +328,22 @@ namespace JSQViewer.Application.Recording
         {
             foreach (string col in cols)
             {
-                if (IsT1ColumnName(col)) return col;
+                int number;
+                if (TryGetTChannelNumber(col, out number) && number == 1) return col;
             }
             return null;
         }
 
-        // Определяет, является ли имя колонки "T1" в любом из возможных форматов:
-        //   "T1"                  — одиночный источник, прямое имя
-        //   "C-T1"                — одиночный источник, однобуквенный префикс (C.T1 → C-T1)
-        //   "T1#2"                — слияние без split, суффикс дубликата
-        //   "C-T1#2"              — слияние без split, суффикс дубликата с префиксом
-        //   "foldername::T1"      — слияние с split, полное имя папки как префикс
-        //   "foldername::C-T1"    — слияние с split + однобуквенный префикс
-        private static bool IsT1ColumnName(string col)
+        private static bool TryGetTChannelNumber(string col, out int number)
         {
+            number = 0;
             if (string.IsNullOrEmpty(col)) return false;
 
-            // Снимаем prefix "basename::" (BuildSourceTags использует имя папки + "::")
-            string name = col;
-            int sep = col.IndexOf("::", StringComparison.Ordinal);
+            string name = col.Trim();
+            int sep = name.LastIndexOf("::", StringComparison.Ordinal);
             if (sep >= 0)
-                name = col.Substring(sep + 2);
+                name = name.Substring(sep + 2);
 
-            // Снимаем суффикс дубликата "#N"
             int hash = name.LastIndexOf('#');
             if (hash > 0)
             {
@@ -208,16 +357,23 @@ namespace JSQViewer.Application.Recording
                     name = name.Substring(0, hash);
             }
 
-            // Прямое совпадение: "T1"
-            if (string.Equals(name, "T1", StringComparison.OrdinalIgnoreCase))
-                return true;
+            if (name.Length >= 3 && name[1] == '-')
+                name = name.Substring(2);
 
-            // Однобуквенный префикс: "C-T1", "A-T1", "B-T1" и т.д.
-            if (name.Length >= 4 && name[1] == '-' &&
-                string.Equals(name.Substring(2), "T1", StringComparison.OrdinalIgnoreCase))
-                return true;
+            if (name.Length < 2 || (name[0] != 'T' && name[0] != 't'))
+                return false;
 
-            return false;
+            string digits = name.Substring(1);
+            if (digits.Length == 0)
+                return false;
+
+            foreach (char c in digits)
+            {
+                if (!char.IsDigit(c))
+                    return false;
+            }
+
+            return int.TryParse(digits, out number);
         }
     }
 }

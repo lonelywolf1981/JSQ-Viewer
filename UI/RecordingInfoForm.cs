@@ -68,6 +68,38 @@ namespace JSQViewer.UI
                 AddRow(table, "T1 не найден", "—", ref row);
             }
 
+            if (result.T8PlusStats != null && result.T8PlusStats.HasChannels)
+            {
+                AddHeader(table, "ТЕМПЕРАТУРЫ T8+", ref row, topPad: 8);
+                AddThresholdRows(
+                    table,
+                    "Средняя T8+",
+                    "Средняя <= 5 °C",
+                    result.T8PlusStats.AverageReached,
+                    result.T8PlusStats.AverageValue,
+                    result.T8PlusStats.AverageElapsedMs,
+                    result.T8PlusStats.AverageTime,
+                    ref row);
+                AddThresholdRows(
+                    table,
+                    "Минимум T8+",
+                    "Минимум <= 1 °C",
+                    result.T8PlusStats.MinimumReached,
+                    result.T8PlusStats.MinimumValue,
+                    result.T8PlusStats.MinimumElapsedMs,
+                    result.T8PlusStats.MinimumTime,
+                    ref row);
+                AddThresholdRows(
+                    table,
+                    "Максимум T8+",
+                    "Максимум <= 9 °C",
+                    result.T8PlusStats.MaximumReached,
+                    result.T8PlusStats.MaximumValue,
+                    result.T8PlusStats.MaximumElapsedMs,
+                    result.T8PlusStats.MaximumTime,
+                    ref row);
+            }
+
             // --- Секция метаданных ---
             if (result.Meta != null && result.Meta.Count > 0)
             {
@@ -98,8 +130,30 @@ namespace JSQViewer.UI
             row++;
         }
 
+        private static void AddThresholdRows(
+            TableLayoutPanel table,
+            string title,
+            string valueKey,
+            bool reached,
+            double? value,
+            long? elapsedMs,
+            DateTime? time,
+            ref int row)
+        {
+            Color color = reached ? Color.Green : Color.Red;
+            AddRow(table, valueKey, value.HasValue ? value.Value.ToString("F1") + " °C" : "—", ref row, color);
+            AddRow(table, title + " время", elapsedMs.HasValue ? FormatElapsed(elapsedMs.Value) : "—", ref row, color);
+            AddRow(table, title + " дата/время", time.HasValue ? time.Value.ToString("dd.MM.yy HH:mm:ss") : "—", ref row, color);
+        }
+
         private static void AddRow(TableLayoutPanel table, string key, string value,
             ref int row)
+        {
+            AddRow(table, key, value, ref row, null);
+        }
+
+        private static void AddRow(TableLayoutPanel table, string key, string value,
+            ref int row, Color? valueColor)
         {
             table.RowCount = row + 1;
             table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -117,7 +171,7 @@ namespace JSQViewer.UI
                 ReadOnly = true,
                 BorderStyle = BorderStyle.None,
                 BackColor = SystemColors.Control,
-                ForeColor = SystemColors.ControlText,
+                ForeColor = valueColor ?? SystemColors.ControlText,
                 TabStop = false,
                 Width = Math.Max(60, TextRenderer.MeasureText(value ?? string.Empty, table.Font).Width + 6),
                 Padding = new Padding(0, 1, 0, 1),

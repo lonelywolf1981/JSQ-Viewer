@@ -15,8 +15,29 @@ namespace JSQViewer.Application.Recording
         public long? T1MinElapsedMs { get; set; }
         public double? T1DropRatePerMinute { get; set; }
 
+        public T8PlusTemperatureStats T8PlusStats { get; set; }
 
         // Все пары ключ-значение из .dat, в порядке перечисления Meta
         public IReadOnlyList<KeyValuePair<string, string>> Meta { get; set; }
+    }
+
+    public sealed class T8PlusTemperatureStats
+    {
+        public bool HasChannels { get; set; }
+
+        public bool AverageReached { get; set; }
+        public double? AverageValue { get; set; }
+        public long? AverageElapsedMs { get; set; }
+        public DateTime? AverageTime { get; set; }
+
+        public bool MinimumReached { get; set; }
+        public double? MinimumValue { get; set; }
+        public long? MinimumElapsedMs { get; set; }
+        public DateTime? MinimumTime { get; set; }
+
+        public bool MaximumReached { get; set; }
+        public double? MaximumValue { get; set; }
+        public long? MaximumElapsedMs { get; set; }
+        public DateTime? MaximumTime { get; set; }
     }
 }
