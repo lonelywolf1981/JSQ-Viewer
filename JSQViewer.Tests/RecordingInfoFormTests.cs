@@ -42,6 +42,35 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Constructor_RendersT1FirstCoolingMinimumRows()
+        {
+            var result = new RecordingInfoResult
+            {
+                SourceRoot = @"C:\Data\Test",
+                SourceStartTime = new DateTime(2026, 5, 8, 12, 22, 39, DateTimeKind.Local),
+                T1Min = 5.0,
+                T1MinElapsedMs = 300 * 60_000L,
+                T1MinTime = new DateTime(2026, 5, 10, 0, 56, 19, DateTimeKind.Local),
+                T1FirstCoolingMin = 6.0,
+                T1FirstCoolingMinElapsedMs = 80 * 60_000L,
+                T1FirstCoolingMinTime = new DateTime(2026, 5, 9, 12, 0, 0, DateTimeKind.Local),
+                Meta = new List<KeyValuePair<string, string>>()
+            };
+
+            using (var form = new RecordingInfoForm(result))
+            {
+                Label firstMinLabel = FindControls<Label>(form)
+                    .FirstOrDefault(label => label.Text == "Первый минимум");
+                TextBox[] valueBoxes = FindControls<TextBox>(form).ToArray();
+
+                Assert.IsNotNull(firstMinLabel);
+                Assert.IsTrue(valueBoxes.Any(box => box.Text == "6,0 °C" || box.Text == "6.0 °C"));
+                Assert.IsTrue(valueBoxes.Any(box => box.Text == "01:20:00"));
+                Assert.IsTrue(valueBoxes.Any(box => box.Text == "09.05.26 12:00:00"));
+            }
+        }
+
+        [TestMethod]
         public void Constructor_RendersReachedT8PlusThresholdsInGreen()
         {
             var result = new RecordingInfoResult

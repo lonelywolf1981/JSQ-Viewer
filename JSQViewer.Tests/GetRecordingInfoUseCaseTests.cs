@@ -87,6 +87,63 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Execute_WithT1Channel_ReturnsFirstCoolingMinimumBeforeLaterGlobalMinimum()
+        {
+            long[] timestamps = Enumerable.Range(0, 31)
+                .Select(i => i * 10 * 60_000L)
+                .ToArray();
+            double?[] values =
+            {
+                32.0, 28.0, 24.0, 24.8, 20.0, 16.0, 12.0, 8.0,
+                6.0, 7.2, 6.5, 7.4, 6.6, 7.5, 6.7, 7.6,
+                6.8, 7.7, 6.9, 7.8, 6.7, 7.6, 6.6, 7.5,
+                6.4, 7.4, 6.2, 7.2, 6.0, 7.0, 5.0
+            };
+            var data = MakeData(Root, timestamps, new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["T1"] = values
+            });
+            var ts = new TimestampRangeService();
+            var uc = new GetRecordingInfoUseCase(ts);
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.AreEqual(5.0, r.T1Min.Value, 0.001);
+            Assert.AreEqual(300 * 60_000L, r.T1MinElapsedMs.Value);
+
+            Assert.IsNotNull(r.T1FirstCoolingMin);
+            Assert.AreEqual(6.0, r.T1FirstCoolingMin.Value, 0.001);
+            Assert.AreEqual(80 * 60_000L, r.T1FirstCoolingMinElapsedMs.Value);
+            Assert.AreEqual(ts.UnixMsToLocalDateTime(80 * 60_000L), r.T1FirstCoolingMinTime.Value);
+        }
+
+        [TestMethod]
+        public void Execute_WithT1FirstCoolingMinimum_DropRateUsesFirstCoolingMinimum()
+        {
+            long[] timestamps = Enumerable.Range(0, 31)
+                .Select(i => i * 10 * 60_000L)
+                .ToArray();
+            double?[] values =
+            {
+                32.0, 28.0, 24.0, 24.8, 20.0, 16.0, 12.0, 8.0,
+                6.0, 7.2, 6.5, 7.4, 6.6, 7.5, 6.7, 7.6,
+                6.8, 7.7, 6.9, 7.8, 6.7, 7.6, 6.6, 7.5,
+                6.4, 7.4, 6.2, 7.2, 6.0, 7.0, 5.0
+            };
+            var data = MakeData(Root, timestamps, new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["T1"] = values
+            });
+            var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.AreEqual(5.0, r.T1Min.Value, 0.001);
+            Assert.AreEqual(6.0, r.T1FirstCoolingMin.Value, 0.001);
+            Assert.AreEqual(-0.325, r.T1DropRatePerMinute.Value, 0.001);
+        }
+
+        [TestMethod]
         public void Execute_WithT1Channel_ReturnsCorrectMinTime()
         {
             long startMs = 1_000_000_000L;

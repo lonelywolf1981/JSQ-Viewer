@@ -13,6 +13,9 @@ namespace JSQViewer.Application.Recording
         public DateTime? T1MinTime { get; set; }
         // Прошедшее время от старта записи до достижения минимума T1 (в миллисекундах)
         public long? T1MinElapsedMs { get; set; }
+        public double? T1FirstCoolingMin { get; set; }
+        public DateTime? T1FirstCoolingMinTime { get; set; }
+        public long? T1FirstCoolingMinElapsedMs { get; set; }
         public double? T1DropRatePerMinute { get; set; }
 
         public T8PlusTemperatureStats T8PlusStats { get; set; }

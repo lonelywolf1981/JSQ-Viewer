@@ -9,6 +9,12 @@ namespace JSQViewer.Application.Recording
 {
     public sealed class GetRecordingInfoUseCase
     {
+        private const double FirstCoolingMinimumDropThreshold = 5.0;
+        private const double FirstCoolingMinimumReboundThreshold = 0.5;
+        private const double FirstCoolingMinimumLowerTolerance = 0.3;
+        private const long FirstCoolingMinimumReboundLookAheadMs = 30L * 60_000L;
+        private const long FirstCoolingMinimumStabilityLookAheadMs = 120L * 60_000L;
+
         private readonly TimestampRangeService _timestampRangeService;
         private readonly ITestMetadataReader _metadataReader;
 
@@ -103,11 +109,90 @@ namespace JSQViewer.Application.Recording
                 data.TimestampsMs[minIdx]);
             result.T1MinElapsedMs = data.TimestampsMs[minIdx] - startMs;
 
-            double durationMin = (data.TimestampsMs[minIdx] - startMs) / 60_000.0;
+            int firstCoolingMinIdx = FindFirstCoolingMinimumIndex(data.TimestampsMs, values, i0, i1, firstVal);
+            if (firstCoolingMinIdx >= 0)
+            {
+                result.T1FirstCoolingMin = values[firstCoolingMinIdx].Value;
+                result.T1FirstCoolingMinTime = _timestampRangeService.UnixMsToLocalDateTime(
+                    data.TimestampsMs[firstCoolingMinIdx]);
+                result.T1FirstCoolingMinElapsedMs = data.TimestampsMs[firstCoolingMinIdx] - startMs;
+            }
+
+            int dropRateIdx = firstCoolingMinIdx >= 0 ? firstCoolingMinIdx : minIdx;
+            double dropRateMinVal = values[dropRateIdx].Value;
+            double durationMin = (data.TimestampsMs[dropRateIdx] - startMs) / 60_000.0;
             if (durationMin > 0 && firstVal.HasValue)
-                result.T1DropRatePerMinute = (minVal - firstVal.Value) / durationMin;
+                result.T1DropRatePerMinute = (dropRateMinVal - firstVal.Value) / durationMin;
 
             return result;
+        }
+
+        private static int FindFirstCoolingMinimumIndex(
+            long[] timestamps,
+            double?[] values,
+            int i0,
+            int i1,
+            double? firstValue)
+        {
+            if (!firstValue.HasValue)
+            {
+                return -1;
+            }
+
+            for (int i = i0; i < i1; i++)
+            {
+                if (!values[i].HasValue)
+                {
+                    continue;
+                }
+
+                double value = values[i].Value;
+                if (firstValue.Value - value < FirstCoolingMinimumDropThreshold)
+                {
+                    continue;
+                }
+
+                long reboundEnd = timestamps[i] + FirstCoolingMinimumReboundLookAheadMs;
+                long stabilityEnd = timestamps[i] + FirstCoolingMinimumStabilityLookAheadMs;
+                double futureMax = value;
+                double futureMin = value;
+                bool hasFuture = false;
+
+                for (int j = i + 1; j < i1 && timestamps[j] <= stabilityEnd; j++)
+                {
+                    if (!values[j].HasValue)
+                    {
+                        continue;
+                    }
+
+                    double future = values[j].Value;
+                    if (timestamps[j] <= reboundEnd && future > futureMax)
+                    {
+                        futureMax = future;
+                    }
+
+                    if (future < futureMin)
+                    {
+                        futureMin = future;
+                    }
+
+                    hasFuture = true;
+                }
+
+                if (!hasFuture)
+                {
+                    continue;
+                }
+
+                bool hasRebound = futureMax - value >= FirstCoolingMinimumReboundThreshold;
+                bool doesNotContinueCooling = futureMin >= value - FirstCoolingMinimumLowerTolerance;
+                if (hasRebound && doesNotContinueCooling)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
         }
 
         private T8PlusTemperatureStats CalculateT8PlusStats(

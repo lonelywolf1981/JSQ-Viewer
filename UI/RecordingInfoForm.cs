@@ -58,6 +58,22 @@ namespace JSQViewer.UI
                 AddRow(table, "Старт записи", startStr, ref row);
                 AddRow(table, "Время до минимума", elapsedStr, ref row);
                 AddRow(table, "Дата/время минимума", absStr, ref row);
+                if (result.T1FirstCoolingMin.HasValue)
+                {
+                    AddRow(table, "Первый минимум",
+                        result.T1FirstCoolingMin.Value.ToString("F1") + " °C", ref row);
+                    AddRow(table, "Время до первого минимума",
+                        result.T1FirstCoolingMinElapsedMs.HasValue
+                            ? FormatElapsed(result.T1FirstCoolingMinElapsedMs.Value)
+                            : "—",
+                        ref row);
+                    AddRow(table, "Дата/время первого минимума",
+                        result.T1FirstCoolingMinTime.HasValue
+                            ? result.T1FirstCoolingMinTime.Value.ToString("dd.MM.yy HH:mm:ss")
+                            : "—",
+                        ref row);
+                }
+
                 string rate = result.T1DropRatePerMinute.HasValue
                     ? result.T1DropRatePerMinute.Value.ToString("F2") + " °C/мин"
                     : "—";
