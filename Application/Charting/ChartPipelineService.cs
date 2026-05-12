@@ -91,7 +91,7 @@ namespace JSQViewer.Application.Charting
                         LegendText = BuildSeriesLegendText(data, code),
                         XValues = new double[0],
                         YValues = new double[0],
-                        BorderWidth = codesToRender.Count > 20 ? 1 : 2,
+                        BorderWidth = 1,
                         IsVisibleInLegend = showLegend
                     });
                     continue;
@@ -127,7 +127,7 @@ namespace JSQViewer.Application.Charting
                     LegendText = BuildSeriesLegendText(data, code),
                     XValues = xArr,
                     YValues = yArr,
-                    BorderWidth = codesToRender.Count > 20 ? 1 : 2,
+                    BorderWidth = 1,
                     IsVisibleInLegend = showLegend
                 });
             }

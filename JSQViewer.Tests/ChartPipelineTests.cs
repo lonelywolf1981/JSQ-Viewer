@@ -163,6 +163,32 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Execute_UsesThinOnePixelLineForRenderedSeries()
+        {
+            var service = new ChartPipelineService(new SeriesSliceService(new MemorySeriesSliceCache(), new TimestampRangeService()));
+            var data = SessionAndChartingTestData.CreateData(
+                new long[] { 0L, 1000L },
+                new Dictionary<string, double?[]>
+                {
+                    ["A-01"] = new double?[] { 1d, 2d },
+                    ["A-02"] = new double?[] { 3d, 4d }
+                });
+            var request = ChartPipelineRequest.ForChart(
+                data,
+                new[] { "A-01", "A-02" },
+                overlayMode: false,
+                dataVersion: 1,
+                autoStepEnabled: false,
+                manualStep: 1,
+                targetPoints: 5000,
+                selectedChannelCount: 2);
+
+            ChartPipelineResult result = service.Execute(request);
+
+            Assert.IsTrue(result.Series.All(series => series.BorderWidth == 1));
+        }
+
+        [TestMethod]
         public void Execute_PropagatesManualXAxisSettings_WhenEnabled()
         {
             var service = new ChartPipelineService(new SeriesSliceService(new MemorySeriesSliceCache(), new TimestampRangeService()));

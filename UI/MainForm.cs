@@ -1221,6 +1221,7 @@ namespace JSQViewer.UI
 
             Series closestSeries = null;
             double closestDist = double.MaxValue;
+            ChartArea chartArea = chart.ChartAreas.Count > 0 ? chart.ChartAreas[0] : null;
 
             foreach (Series s in chart.Series)
             {
@@ -1230,7 +1231,7 @@ namespace JSQViewer.UI
                 DataPoint dp = s.Points[idx];
                 sb.AppendFormat("\n{0}: {1:F2}", GetSeriesDisplayName(s), dp.YValues[0]);
 
-                double dist = Math.Abs(dp.XValue - xVal);
+                double dist = CalculatePointPixelDistanceSquared(chartArea, dp, mousePoint, xVal);
                 if (dist < closestDist) { closestDist = dist; closestSeries = s; }
             }
 
@@ -1239,7 +1240,7 @@ namespace JSQViewer.UI
                 _lastHighlightedSeries = closestSeries;
                 foreach (Series s in chart.Series)
                 {
-                    s.BorderWidth = s == closestSeries ? 3 : 2;
+                    s.BorderWidth = s == closestSeries ? 2 : 1;
                 }
             }
 
@@ -1250,6 +1251,32 @@ namespace JSQViewer.UI
                 chart.Tag = text;
                 // Show tooltip a bit to the right of the cursor and only on content change to avoid flicker.
                 toolTip.Show(text, chart, mousePoint.X + 24, mousePoint.Y + 8);
+            }
+        }
+
+        private static double CalculatePointPixelDistanceSquared(ChartArea chartArea, DataPoint point, Point mousePoint, double xValue)
+        {
+            if (chartArea == null || point == null || point.YValues == null || point.YValues.Length == 0)
+            {
+                return double.MaxValue;
+            }
+
+            try
+            {
+                double pointX = chartArea.AxisX.ValueToPixelPosition(point.XValue);
+                double pointY = chartArea.AxisY.ValueToPixelPosition(point.YValues[0]);
+                if (double.IsNaN(pointX) || double.IsNaN(pointY) || double.IsInfinity(pointX) || double.IsInfinity(pointY))
+                {
+                    return Math.Abs(point.XValue - xValue);
+                }
+
+                double dx = pointX - mousePoint.X;
+                double dy = pointY - mousePoint.Y;
+                return dx * dx + dy * dy;
+            }
+            catch (InvalidOperationException)
+            {
+                return Math.Abs(point.XValue - xValue);
             }
         }
 
