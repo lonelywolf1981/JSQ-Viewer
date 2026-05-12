@@ -415,5 +415,53 @@ namespace JSQViewer.Tests
             Assert.AreEqual(10.0, r.T8PlusStats.MaximumValue.Value, 0.001);
             Assert.AreEqual(120_000L, r.T8PlusStats.MaximumElapsedMs.Value);
         }
+
+        [TestMethod]
+        public void Execute_WithT8PlusChannels_IgnoresMinus99SentinelValues()
+        {
+            var columns = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["T1"] = new double?[] { -10.0, -20.0, -30.0 },
+                ["A-T8"] = new double?[] { 30.0, 20.0, 10.0 },
+                ["A-T9"] = new double?[] { 32.0, 22.0, 12.0 },
+                ["C-T23"] = new double?[] { -99.0, -99.0, -99.0 },
+                ["C-T24"] = new double?[] { -99.0, -99.0, -99.0 }
+            };
+            var data = MakeData(Root, new long[] { 0L, 60_000L, 120_000L }, columns);
+            var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.IsNotNull(r.T8PlusStats);
+            Assert.IsFalse(r.T8PlusStats.AverageReached);
+            Assert.AreEqual(11.0, r.T8PlusStats.AverageValue.Value, 0.001);
+            Assert.AreEqual(120_000L, r.T8PlusStats.AverageElapsedMs.Value);
+
+            Assert.IsFalse(r.T8PlusStats.MinimumReached);
+            Assert.AreEqual(10.0, r.T8PlusStats.MinimumValue.Value, 0.001);
+            Assert.AreEqual(120_000L, r.T8PlusStats.MinimumElapsedMs.Value);
+
+            Assert.IsFalse(r.T8PlusStats.MaximumReached);
+            Assert.AreEqual(12.0, r.T8PlusStats.MaximumValue.Value, 0.001);
+            Assert.AreEqual(120_000L, r.T8PlusStats.MaximumElapsedMs.Value);
+        }
+
+        [TestMethod]
+        public void Execute_WithT8PlusChannels_ReturnsAverageDropRateFromStartToMinimumAverage()
+        {
+            var columns = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["T1"] = new double?[] { 30.0, 20.0, 10.0 },
+                ["A-T8"] = new double?[] { 20.0, 14.0, 12.0 },
+                ["A-T9"] = new double?[] { 22.0, 16.0, 14.0 }
+            };
+            var data = MakeData(Root, new long[] { 0L, 60_000L, 120_000L }, columns);
+            var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.IsNotNull(r.T8PlusStats);
+            Assert.AreEqual(-4.0, r.T8PlusStats.AverageDropRatePerMinute.Value, 0.001);
+        }
     }
 }

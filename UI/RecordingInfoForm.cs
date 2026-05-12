@@ -98,6 +98,13 @@ namespace JSQViewer.UI
                     result.T8PlusStats.MaximumElapsedMs,
                     result.T8PlusStats.MaximumTime,
                     ref row);
+                if (ShouldShowT8PlusDropRate(result))
+                {
+                    AddRow(table,
+                        "Скорость падения T8+",
+                        result.T8PlusStats.AverageDropRatePerMinute.Value.ToString("F2") + " °C/мин",
+                        ref row);
+                }
             }
 
             // --- Секция метаданных ---
@@ -150,6 +157,24 @@ namespace JSQViewer.UI
             ref int row)
         {
             AddRow(table, key, value, ref row, null);
+        }
+
+        private static bool ShouldShowT8PlusDropRate(RecordingInfoResult result)
+        {
+            if (result == null || result.T8PlusStats == null ||
+                !result.T8PlusStats.AverageDropRatePerMinute.HasValue)
+            {
+                return false;
+            }
+
+            if (!result.T1DropRatePerMinute.HasValue)
+            {
+                return true;
+            }
+
+            double t1Rounded = Math.Round(result.T1DropRatePerMinute.Value, 2);
+            double t8Rounded = Math.Round(result.T8PlusStats.AverageDropRatePerMinute.Value, 2);
+            return Math.Abs(t1Rounded - t8Rounded) > 0.000001;
         }
 
         private static void AddRow(TableLayoutPanel table, string key, string value,

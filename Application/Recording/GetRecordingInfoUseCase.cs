@@ -127,6 +127,8 @@ namespace JSQViewer.Application.Recording
             double bestAverage = double.MaxValue;
             long bestAverageTimestampMs = 0L;
             bool hasAverage = false;
+            double? firstAverage = null;
+            long firstAverageTimestampMs = 0L;
             double bestMinimum = double.MaxValue;
             long bestMinimumTimestampMs = 0L;
             bool hasMinimum = false;
@@ -151,6 +153,11 @@ namespace JSQViewer.Application.Recording
                     }
 
                     double value = values[i].Value;
+                    if (!IsValidT8PlusAggregateTemperature(value))
+                    {
+                        continue;
+                    }
+
                     sum += value;
                     if (value < min) min = value;
                     if (value > max) max = value;
@@ -164,6 +171,12 @@ namespace JSQViewer.Application.Recording
 
                 long timestampMs = data.TimestampsMs[i];
                 double average = sum / count;
+                if (!firstAverage.HasValue)
+                {
+                    firstAverage = average;
+                    firstAverageTimestampMs = timestampMs;
+                }
+
                 if (average < bestAverage)
                 {
                     bestAverage = average;
@@ -217,6 +230,15 @@ namespace JSQViewer.Application.Recording
                 stats.AverageTime = _timestampRangeService.UnixMsToLocalDateTime(bestAverageTimestampMs);
             }
 
+            if (firstAverage.HasValue && hasAverage)
+            {
+                double durationMin = (bestAverageTimestampMs - firstAverageTimestampMs) / 60_000.0;
+                if (durationMin > 0)
+                {
+                    stats.AverageDropRatePerMinute = (bestAverage - firstAverage.Value) / durationMin;
+                }
+            }
+
             if (!stats.MinimumReached && hasMinimum)
             {
                 stats.MinimumValue = bestMinimum;
@@ -232,6 +254,11 @@ namespace JSQViewer.Application.Recording
             }
 
             return stats;
+        }
+
+        private static bool IsValidT8PlusAggregateTemperature(double value)
+        {
+            return value > -90.0;
         }
 
         private static string FindT1Column(TestData data, string sourceRoot)

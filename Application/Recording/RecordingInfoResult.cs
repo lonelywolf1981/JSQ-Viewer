@@ -39,5 +39,7 @@ namespace JSQViewer.Application.Recording
         public double? MaximumValue { get; set; }
         public long? MaximumElapsedMs { get; set; }
         public DateTime? MaximumTime { get; set; }
+
+        public double? AverageDropRatePerMinute { get; set; }
     }
 }

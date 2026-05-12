@@ -106,6 +106,60 @@ namespace JSQViewer.Tests
             }
         }
 
+        [TestMethod]
+        public void Constructor_RendersT8PlusDropRate_WhenDifferentFromT1DropRate()
+        {
+            var result = new RecordingInfoResult
+            {
+                SourceRoot = @"C:\Data\Test",
+                T1Min = 4.9,
+                T1DropRatePerMinute = -0.02,
+                T8PlusStats = new T8PlusTemperatureStats
+                {
+                    HasChannels = true,
+                    AverageDropRatePerMinute = -0.05
+                },
+                Meta = new List<KeyValuePair<string, string>>()
+            };
+
+            using (var form = new RecordingInfoForm(result))
+            {
+                Label rateLabel = FindControls<Label>(form)
+                    .FirstOrDefault(label => label.Text == "Скорость падения T8+");
+                string expectedRate = result.T8PlusStats.AverageDropRatePerMinute.Value.ToString("F2") + " °C/мин";
+                TextBox rateBox = FindControls<TextBox>(form)
+                    .FirstOrDefault(box => box.Text == expectedRate);
+
+                Assert.IsNotNull(rateLabel);
+                Assert.IsNotNull(rateBox);
+            }
+        }
+
+        [TestMethod]
+        public void Constructor_HidesT8PlusDropRate_WhenSameAsT1DropRate()
+        {
+            var result = new RecordingInfoResult
+            {
+                SourceRoot = @"C:\Data\Test",
+                T1Min = 4.9,
+                T1DropRatePerMinute = -0.05,
+                T8PlusStats = new T8PlusTemperatureStats
+                {
+                    HasChannels = true,
+                    AverageDropRatePerMinute = -0.05
+                },
+                Meta = new List<KeyValuePair<string, string>>()
+            };
+
+            using (var form = new RecordingInfoForm(result))
+            {
+                Label rateLabel = FindControls<Label>(form)
+                    .FirstOrDefault(label => label.Text == "Скорость падения T8+");
+
+                Assert.IsNull(rateLabel);
+            }
+        }
+
         private static IEnumerable<T> FindControls<T>(Control root)
             where T : Control
         {
