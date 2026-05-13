@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using JSQViewer.Application.Charting;
 using JSQViewer.Application.Charting.UseCases;
@@ -242,6 +243,71 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Render_OverlayFullRangeStartsAtZeroAndUsesElapsedLabels()
+        {
+            var renderer = new ChartRenderer();
+            var chart = new Chart();
+            chart.ChartAreas.Add(new ChartArea("main"));
+            chart.Legends.Add(new Legend("legend"));
+            var viewModel = new ChartViewModel
+            {
+                HasData = true,
+                OverlayMode = true,
+                ShowLegend = true,
+                XAxisTitle = "Overlay hours",
+                DataMinimum = 0d,
+                DataMaximum = 1.9d,
+                Series = new[]
+                {
+                    new ChartSeriesViewModel
+                    {
+                        Code = "A-01",
+                        LegendText = "A-01",
+                        XValues = new[] { 0.0, 1.9 },
+                        YValues = new[] { 1d, 2d },
+                        BorderWidth = 2,
+                        IsVisibleInLegend = true
+                    }
+                }
+            };
+
+            renderer.Render(chart, viewModel);
+
+            ChartArea area = chart.ChartAreas[0];
+            Assert.AreEqual(0d, area.AxisX.Minimum, 1e-9);
+            Assert.AreEqual(1.9d, area.AxisX.Maximum, 1e-9);
+            Assert.IsTrue(area.AxisX.CustomLabels.Count > 0);
+            Assert.IsTrue(HasCustomLabel(area.AxisX.CustomLabels, "0"));
+            Assert.IsTrue(HasCustomLabel(area.AxisX.CustomLabels, "1 ч 54 мин"));
+        }
+
+        [TestMethod]
+        public void Render_OverlayAxisIntervalScalesWithVisibleSpan()
+        {
+            MethodInfo method = typeof(ChartRenderer).GetMethod("ResolveElapsedLabelInterval", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.IsNotNull(method, "Expected ChartRenderer.ResolveElapsedLabelInterval helper.");
+
+            double longRecordingInterval = (double)method.Invoke(null, new object[] { 20d });
+            double selectedRangeInterval = (double)method.Invoke(null, new object[] { 0.07d });
+
+            Assert.AreEqual(1d, longRecordingInterval, 1e-9);
+            Assert.AreEqual(1d / 120d, selectedRangeInterval, 1e-9);
+        }
+
+        private static bool HasCustomLabel(CustomLabelsCollection labels, string text)
+        {
+            for (int i = 0; i < labels.Count; i++)
+            {
+                if (labels[i].Text == text)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        [TestMethod]
         public void Render_PrefersManualXAxisBoundsOverActiveRange()
         {
             var renderer = new ChartRenderer();
@@ -348,6 +414,33 @@ namespace JSQViewer.Tests
             StringAssert.Contains(nonOverlayStepHint, "минут");
             StringAssert.Contains(overlayBoundsHint, "часы");
             StringAssert.Contains(overlayStepHint, "часы");
+        }
+
+        [TestMethod]
+        public void RelativeTimeAxisAvailability_DependsOnSelectedSources()
+        {
+            MethodInfo method = typeof(MainForm).GetMethod("IsRelativeTimeAxisModeAvailableForSelection", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.IsNotNull(method, "Expected MainForm.IsRelativeTimeAxisModeAvailableForSelection helper.");
+
+            var data = SessionAndChartingTestData.CreateData(
+                new long[] { 0L, 1000L },
+                new Dictionary<string, double?[]>
+                {
+                    ["A-01"] = new double?[] { 1d, 2d },
+                    ["B-01"] = new double?[] { 3d, 4d }
+                });
+            data.SourceColumns["C:\\tests\\source-a"] = new[] { "A-01" };
+            data.SourceColumns["C:\\tests\\source-b"] = new[] { "B-01" };
+            data.CodeSources["A-01"] = "C:\\tests\\source-a";
+            data.CodeSources["B-01"] = "C:\\tests\\source-b";
+            data.SourceStartMs["C:\\tests\\source-a"] = 0L;
+            data.SourceStartMs["C:\\tests\\source-b"] = 0L;
+
+            bool oneSource = (bool)method.Invoke(null, new object[] { data, new[] { "A-01" } });
+            bool twoSources = (bool)method.Invoke(null, new object[] { data, new[] { "A-01", "B-01" } });
+
+            Assert.IsTrue(oneSource);
+            Assert.IsFalse(twoSources);
         }
     }
 }

@@ -98,8 +98,7 @@ namespace JSQViewer.Application.Charting
                 }
 
                 int n = Math.Min(timestamps.Length, values.Length);
-                int firstValueIndex = FirstValueIndex(values, n);
-                long seriesBaseMs = firstValueIndex >= 0 ? timestamps[firstValueIndex] : timestamps[0];
+                long seriesBaseMs = overlayMode ? ResolveSeriesBaseMs(data, code, timestamps[0]) : timestamps[0];
                 double[] xArr = new double[count];
                 double[] yArr = new double[count];
                 int writeIndex = 0;
@@ -315,6 +314,26 @@ namespace JSQViewer.Application.Charting
             return maxDuration;
         }
 
+        private static long ResolveSeriesBaseMs(TestData data, string code, long fallbackMs)
+        {
+            string source = null;
+            if (data != null && data.CodeSources != null)
+            {
+                data.CodeSources.TryGetValue(code, out source);
+            }
+
+            long startMs;
+            if (!string.IsNullOrWhiteSpace(source)
+                && data != null
+                && data.SourceStartMs != null
+                && data.SourceStartMs.TryGetValue(source, out startMs))
+            {
+                return startMs;
+            }
+
+            return fallbackMs;
+        }
+
         private static string BuildSeriesLegendText(TestData data, string code)
         {
             string displayCode = NormalizeChannelCodeForDisplay(code);
@@ -381,17 +400,5 @@ namespace JSQViewer.Application.Charting
             return count;
         }
 
-        private static int FirstValueIndex(double?[] values, int count)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                if (values[i].HasValue)
-                {
-                    return i;
-                }
-            }
-
-            return -1;
-        }
     }
 }

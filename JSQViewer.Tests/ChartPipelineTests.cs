@@ -79,6 +79,40 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Execute_OverlayMode_UsesSourceStartAsRelativeZero()
+        {
+            var service = new ChartPipelineService(new SeriesSliceService(new MemorySeriesSliceCache(), new TimestampRangeService()));
+            var data = SessionAndChartingTestData.CreateData(
+                new long[] { 0L, 3600000L, 7200000L },
+                new Dictionary<string, double?[]>
+                {
+                    ["A-01"] = new double?[] { null, 10d, 20d }
+                });
+            string source = "C:\\tests\\root\\";
+            data.SourceColumns[source] = new[] { "A-01" };
+            data.CodeSources["A-01"] = source;
+            data.SourceStartMs[source] = 0L;
+            data.SourceEndMs[source] = 7200000L;
+
+            var request = ChartPipelineRequest.ForChart(
+                data,
+                new[] { "A-01" },
+                overlayMode: true,
+                dataVersion: 1,
+                autoStepEnabled: false,
+                manualStep: 1,
+                targetPoints: 5000,
+                selectedChannelCount: 1);
+
+            ChartPipelineResult result = service.Execute(request);
+
+            Assert.AreEqual(2, result.Series.Single().XValues.Length);
+            Assert.AreEqual(1d, result.Series.Single().XValues[0], 1e-9);
+            Assert.AreEqual(2d, result.Series.Single().XValues[1], 1e-9);
+            Assert.AreEqual(2d, result.DataMaximum, 1e-9);
+        }
+
+        [TestMethod]
         public void ResolveLegendText_UsesSourceNameWhenMultipleSourcesAreLoaded()
         {
             var service = new ChartPipelineService(new SeriesSliceService(new MemorySeriesSliceCache(), new TimestampRangeService()));

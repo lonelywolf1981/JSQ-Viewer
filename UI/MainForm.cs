@@ -67,6 +67,7 @@ namespace JSQViewer.UI
         private readonly Label _targetLabel;
         private readonly Label _manualLabel;
         private readonly CheckBox _compareOverlayCheck;
+        private readonly CheckBox _relativeTimeAxisCheck;
         private readonly Label _channelsHeader;
         private readonly Label _refrigLabel;
         private readonly Label _templateModeLabel;
@@ -282,6 +283,7 @@ namespace JSQViewer.UI
             _manualLabel = new Label(); _manualLabel.Text = Loc.Get("Manual"); _manualLabel.AutoSize = true; _manualLabel.Padding = new Padding(8, 5, 2, 0); stepRow.Controls.Add(_manualLabel);
             _manualStepUpDown = new NumericUpDown(); _manualStepUpDown.Width = 70; _manualStepUpDown.Minimum = 1; _manualStepUpDown.Maximum = 100000; _manualStepUpDown.Value = 1; _manualStepUpDown.Enabled = false; _manualStepUpDown.ValueChanged += StepControlsOnChanged; stepRow.Controls.Add(_manualStepUpDown);
             _compareOverlayCheck = new CheckBox(); _compareOverlayCheck.Text = Loc.Get("CompareOverlayMode"); _compareOverlayCheck.AutoSize = true; _compareOverlayCheck.Padding = new Padding(12, 2, 0, 0); _compareOverlayCheck.Enabled = false; _compareOverlayCheck.CheckedChanged += CompareOverlayCheckOnCheckedChanged; stepRow.Controls.Add(_compareOverlayCheck);
+            _relativeTimeAxisCheck = new CheckBox(); _relativeTimeAxisCheck.Text = Loc.Get("RelativeTimeAxisMode"); _relativeTimeAxisCheck.AutoSize = true; _relativeTimeAxisCheck.Padding = new Padding(12, 2, 0, 0); _relativeTimeAxisCheck.Enabled = false; _relativeTimeAxisCheck.CheckedChanged += RelativeTimeAxisCheckOnCheckedChanged; stepRow.Controls.Add(_relativeTimeAxisCheck);
 
             var axisRow = NewRow(); axisRow.WrapContents = true; left.Controls.Add(axisRow, 0, 6);
             _manualXAxisCheck = new CheckBox(); _manualXAxisCheck.Text = "Ось X"; _manualXAxisCheck.AutoSize = true; _manualXAxisCheck.CheckedChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualXAxisCheck);
@@ -712,6 +714,7 @@ namespace JSQViewer.UI
             _targetLabel.Text = Loc.Get("Target");
             _manualLabel.Text = Loc.Get("Manual");
             _compareOverlayCheck.Text = Loc.Get("CompareOverlayMode");
+            _relativeTimeAxisCheck.Text = Loc.Get("RelativeTimeAxisMode");
             _channelsHeader.Text = Loc.Get("Channels");
             _selectedOnlyCheck.Text = Loc.Get("SelectedOnly");
             _selectAllChannelsButton.Text = Loc.Get("SelectAll");
@@ -781,8 +784,8 @@ namespace JSQViewer.UI
 
         private void ApplyTooltips()
         {
-            bool overlayMode = IsOverlayCompareModeActive();
-            UpdateManualXAxisUiHints(overlayMode);
+            bool relativeAxisMode = IsRelativeXAxisModeActive();
+            UpdateManualXAxisUiHints(relativeAxisMode);
             _toolTip.SetToolTip(_folderBox, Loc.Get("TipFolder"));
             _toolTip.SetToolTip(_browseButton, Loc.Get("TipBrowse"));
             _toolTip.SetToolTip(_addDataButton, Loc.Get("TipAddData"));
@@ -794,6 +797,7 @@ namespace JSQViewer.UI
             _toolTip.SetToolTip(_targetPointsBox, Loc.Get("TipTarget"));
             _toolTip.SetToolTip(_manualStepUpDown, Loc.Get("TipManualStep"));
             _toolTip.SetToolTip(_compareOverlayCheck, Loc.Get("TipCompareOverlayMode"));
+            _toolTip.SetToolTip(_relativeTimeAxisCheck, Loc.Get("TipRelativeTimeAxisMode"));
             _toolTip.SetToolTip(_manualYAxisCheck, "Ручное задание диапазона оси Y (значения канала).");
             _toolTip.SetToolTip(_manualYAxisMinBox, "Минимальное значение оси Y.");
             _toolTip.SetToolTip(_manualYAxisMaxBox, "Максимальное значение оси Y.");
@@ -1022,6 +1026,8 @@ namespace JSQViewer.UI
             _loadOrderButton.Enabled = _deleteOrderButton.Enabled = _ordersBox.Items.Count > 0;
             _compareOverlayCheck.Checked = false;
             _compareOverlayCheck.Enabled = false;
+            _relativeTimeAxisCheck.Checked = false;
+            _relativeTimeAxisCheck.Enabled = false;
             CloseSourceChannelWindows();
             _chartDisplayPresenter.Close();
             HideChartHost();
@@ -1100,8 +1106,17 @@ namespace JSQViewer.UI
                 _resetRangeButton.Visible = false;
                 if (_chart.ChartAreas.Count > 0)
                 {
-                    _chart.ChartAreas[0].AxisX.Minimum = double.NaN;
-                    _chart.ChartAreas[0].AxisX.Maximum = double.NaN;
+                    if (IsRelativeXAxisModeActive())
+                    {
+                        _chart.ChartAreas[0].AxisX.Minimum = trackBar.Minimum;
+                        _chart.ChartAreas[0].AxisX.Maximum = trackBar.Maximum;
+                        ChartRenderer.ApplyElapsedXAxisLabels(_chart.ChartAreas[0]);
+                    }
+                    else
+                    {
+                        _chart.ChartAreas[0].AxisX.Minimum = double.NaN;
+                        _chart.ChartAreas[0].AxisX.Maximum = double.NaN;
+                    }
                 }
             }
             else
@@ -1114,6 +1129,10 @@ namespace JSQViewer.UI
                 {
                     _chart.ChartAreas[0].AxisX.Minimum = lo;
                     _chart.ChartAreas[0].AxisX.Maximum = hi;
+                    if (IsRelativeXAxisModeActive())
+                    {
+                        ChartRenderer.ApplyElapsedXAxisLabels(_chart.ChartAreas[0]);
+                    }
                 }
             }
 
@@ -1162,7 +1181,7 @@ namespace JSQViewer.UI
                 {
                     _mainCrosshairPixelX = e.X;
                     _chart.Invalidate();
-                        BuildCrosshairTooltip(_chart, _toolTip, xVal, e.Location, IsOverlayCompareModeActive());
+                    BuildCrosshairTooltip(_chart, _toolTip, xVal, e.Location, IsRelativeXAxisModeActive());
                 }
             }
             catch { }
@@ -1490,7 +1509,7 @@ namespace JSQViewer.UI
         private void DetachChartMenuItemOnClick(object sender, EventArgs e)
         {
             if (_chart.Series.Count == 0) return;
-            bool overlayMode = IsOverlayCompareModeActive();
+            bool overlayMode = IsRelativeXAxisModeActive();
 
             var form = new Form();
             form.Text = string.Format(Loc.Get("ChartWindowTitle"), _viewerSession.Folder ?? Loc.Get("AppTitle"));
@@ -1520,8 +1539,13 @@ namespace JSQViewer.UI
                 if (detachedChart.ChartAreas.Count == 0) return;
                 bool full = Math.Abs(detachedRangeBar.LowerValue - detachedRangeBar.Minimum) < 1e-10
                          && Math.Abs(detachedRangeBar.UpperValue - detachedRangeBar.Maximum) < 1e-10;
-                detachedChart.ChartAreas[0].AxisX.Minimum = full ? double.NaN : detachedRangeBar.LowerValue;
-                detachedChart.ChartAreas[0].AxisX.Maximum = full ? double.NaN : detachedRangeBar.UpperValue;
+                bool relativeAxis = IsRelativeXAxisModeActive();
+                detachedChart.ChartAreas[0].AxisX.Minimum = full && !relativeAxis ? double.NaN : detachedRangeBar.LowerValue;
+                detachedChart.ChartAreas[0].AxisX.Maximum = full && !relativeAxis ? double.NaN : detachedRangeBar.UpperValue;
+                if (relativeAxis)
+                {
+                    ChartRenderer.ApplyElapsedXAxisLabels(detachedChart.ChartAreas[0]);
+                }
             };
 
             // Also update detached chart when main trackbar changes (via sync)
@@ -1532,8 +1556,13 @@ namespace JSQViewer.UI
                 if (detachedChart.ChartAreas.Count == 0) return;
                 bool full = Math.Abs(_rangeTrackBar.LowerValue - _rangeTrackBar.Minimum) < 1e-10
                          && Math.Abs(_rangeTrackBar.UpperValue - _rangeTrackBar.Maximum) < 1e-10;
-                detachedChart.ChartAreas[0].AxisX.Minimum = full ? double.NaN : _rangeTrackBar.LowerValue;
-                detachedChart.ChartAreas[0].AxisX.Maximum = full ? double.NaN : _rangeTrackBar.UpperValue;
+                bool relativeAxis = IsRelativeXAxisModeActive();
+                detachedChart.ChartAreas[0].AxisX.Minimum = full && !relativeAxis ? double.NaN : _rangeTrackBar.LowerValue;
+                detachedChart.ChartAreas[0].AxisX.Maximum = full && !relativeAxis ? double.NaN : _rangeTrackBar.UpperValue;
+                if (relativeAxis)
+                {
+                    ChartRenderer.ApplyElapsedXAxisLabels(detachedChart.ChartAreas[0]);
+                }
             };
             _rangeTrackBar.RangeChanged += rangeChangedHandler;
 
@@ -2074,6 +2103,8 @@ namespace JSQViewer.UI
             {
                 _compareOverlayCheck.Checked = false;
             }
+            bool canRelativeTimeAxis = IsRelativeTimeAxisModeAvailable(data);
+            UpdateRelativeTimeAxisControlState(canRelativeTimeAxis);
             if (data.SourceColumns != null && data.SourceColumns.Count > 0)
             {
                 _folderBox.Text = JoinFolderSpec(data.SourceColumns.Keys.ToList());
@@ -2485,7 +2516,7 @@ namespace JSQViewer.UI
         private void AxisControlsOnChanged(object sender, EventArgs e)
         {
             UpdateAxisControlStates();
-            UpdateManualXAxisUiHints(IsOverlayCompareModeActive());
+            UpdateManualXAxisUiHints(IsRelativeXAxisModeActive());
             RedrawChartIfRequested();
         }
 
@@ -2528,11 +2559,37 @@ namespace JSQViewer.UI
                 return;
             }
 
+            ResetRelativeXAxisMode("COMPARE_TOGGLE", data);
+        }
+
+        private void RelativeTimeAxisCheckOnCheckedChanged(object sender, EventArgs e)
+        {
+            TestData data = _viewerSession.Data;
+            if (data == null)
+            {
+                return;
+            }
+            if (!IsRelativeTimeAxisModeAvailable(data))
+            {
+                if (_relativeTimeAxisCheck.Checked)
+                {
+                    _relativeTimeAxisCheck.Checked = false;
+                    return;
+                }
+                return;
+            }
+
+            ResetRelativeXAxisMode("RELATIVE_X_TOGGLE", data);
+        }
+
+        private void ResetRelativeXAxisMode(string logScope, TestData data)
+        {
             BeginInvoke((Action)(delegate
             {
                 _logger.LogInfo(string.Format(
-                    "COMPARE_TOGGLE begin checked={0} dataRows={1} sourceWindows={2} checkedCodes={3}",
-                    _compareOverlayCheck.Checked ? "1" : "0",
+                    "{0} begin relative={1} dataRows={2} sourceWindows={3} checkedCodes={4}",
+                    logScope,
+                    IsRelativeXAxisModeActive() ? "1" : "0",
                     data.RowCount,
                     _sourceWindows.Count,
                     string.Join(",", GetSelectedCodes().Take(20).ToArray())));
@@ -2566,8 +2623,9 @@ namespace JSQViewer.UI
                 ApplyChannelChecks(previousSelection);
                 _chart.Invalidate();
                 _logger.LogInfo(string.Format(
-                    "COMPARE_TOGGLE end checked={0} checkedCodes={1} axisX=[{2};{3}] range=[{4};{5}] series={6}",
-                    _compareOverlayCheck.Checked ? "1" : "0",
+                    "{0} end relative={1} checkedCodes={2} axisX=[{3};{4}] range=[{5};{6}] series={7}",
+                    logScope,
+                    IsRelativeXAxisModeActive() ? "1" : "0",
                     string.Join(",", GetSelectedCodes().Take(20).ToArray()),
                     _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Minimum.ToString(CultureInfo.InvariantCulture) : "na",
                     _chart.ChartAreas.Count > 0 ? _chart.ChartAreas[0].AxisX.Maximum.ToString(CultureInfo.InvariantCulture) : "na",
@@ -2734,7 +2792,7 @@ namespace JSQViewer.UI
                 return;
             }
 
-            bool overlayMode = IsOverlayCompareModeActive();
+            bool overlayMode = IsRelativeXAxisModeActive();
             UpdateManualXAxisUiHints(overlayMode);
             List<string> selectedCodes = GetSelectedCodes();
             if (selectedCodes.Count == 0 && _lastSelectedCodes.Count > 0)
@@ -2918,6 +2976,73 @@ namespace JSQViewer.UI
             return _compareOverlayCheck.Checked && IsOverlayCompareModeAvailable(_viewerSession.Data);
         }
 
+        private bool IsRelativeTimeAxisModeAvailable(TestData data)
+        {
+            return IsRelativeTimeAxisModeAvailableForSelection(data, GetSelectedCodes());
+        }
+
+        private static bool IsRelativeTimeAxisModeAvailableForSelection(TestData data, IEnumerable<string> selectedCodes)
+        {
+            return data != null
+                   && data.TimestampsMs != null
+                   && data.TimestampsMs.Length > 1
+                   && HasAtMostOneSelectedSource(data, selectedCodes);
+        }
+
+        private static bool HasAtMostOneSelectedSource(TestData data, IEnumerable<string> selectedCodes)
+        {
+            if (data == null)
+            {
+                return false;
+            }
+
+            if (data.SourceColumns == null || data.SourceColumns.Count <= 1)
+            {
+                return true;
+            }
+
+            if (selectedCodes == null || data.CodeSources == null)
+            {
+                return false;
+            }
+
+            string selectedSource = null;
+            bool hasSelectedSource = false;
+            foreach (string code in selectedCodes)
+            {
+                if (string.IsNullOrWhiteSpace(code))
+                {
+                    continue;
+                }
+
+                string source;
+                if (!data.CodeSources.TryGetValue(code, out source) || string.IsNullOrWhiteSpace(source))
+                {
+                    continue;
+                }
+
+                if (!hasSelectedSource)
+                {
+                    selectedSource = source;
+                    hasSelectedSource = true;
+                    continue;
+                }
+
+                if (!string.Equals(selectedSource, source, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+            }
+
+            return hasSelectedSource;
+        }
+
+        private bool IsRelativeXAxisModeActive()
+        {
+            return IsOverlayCompareModeActive()
+                   || (_relativeTimeAxisCheck.Checked && IsRelativeTimeAxisModeAvailable(_viewerSession.Data));
+        }
+
         private static long ResolveOverlayMaxDurationMs(TestData data, List<string> selectedCodes)
         {
             long maxDuration = 0L;
@@ -2953,7 +3078,7 @@ namespace JSQViewer.UI
             {
                 return Loc.Get("RangeAll");
             }
-            if (IsOverlayCompareModeActive())
+            if (IsRelativeXAxisModeActive())
             {
                 return string.Format(Loc.Get("RangeSelectedOverlay"), FormatOverlayElapsedHours(startOa), FormatOverlayElapsedHours(endOa));
             }
@@ -3100,7 +3225,7 @@ namespace JSQViewer.UI
                         includeExtra,
                         refrig,
                         settings,
-                        IsOverlayCompareModeActive(),
+                        IsRelativeXAxisModeActive(),
                         _rangeStartOa,
                         _rangeEndOa);
                     ExportTemplateResult exportResult = await Task.Run(() => _exportTemplateUseCase.Execute(request));
@@ -3822,6 +3947,16 @@ namespace JSQViewer.UI
                 stepInfo = string.Format(Loc.Get("StepInfo"), step, approx);
             }
             _selectionInfoLabel.Text = string.Format(Loc.Get("SelectedInfo"), selected, total, stepInfo);
+            UpdateRelativeTimeAxisControlState(IsRelativeTimeAxisModeAvailable(_viewerSession.Data));
+        }
+
+        private void UpdateRelativeTimeAxisControlState(bool enabled)
+        {
+            _relativeTimeAxisCheck.Enabled = enabled;
+            if (!enabled && _relativeTimeAxisCheck.Checked)
+            {
+                _relativeTimeAxisCheck.Checked = false;
+            }
         }
 
         private void SetStatus(string text)
