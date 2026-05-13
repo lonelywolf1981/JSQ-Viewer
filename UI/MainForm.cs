@@ -763,13 +763,6 @@ namespace JSQViewer.UI
                 if (sw.SaveOrderButton != null) sw.SaveOrderButton.Text = Loc.Get("SaveOrder");
                 if (sw.LoadOrderButton != null) sw.LoadOrderButton.Text = Loc.Get("Load");
                 if (sw.DeleteOrderButton != null) sw.DeleteOrderButton.Text = Loc.Get("Delete");
-                if (sw.SortModeBox != null)
-                {
-                    var prevSwIdx = sw.SortModeBox.SelectedIndex;
-                    PopulateSortModeBox(sw.SortModeBox);
-                    if (prevSwIdx >= 0 && prevSwIdx < sw.SortModeBox.Items.Count)
-                        sw.SortModeBox.SelectedIndex = prevSwIdx;
-                }
             }
 
             // Force sort combo to re-read ToString() of items
@@ -2192,16 +2185,9 @@ namespace JSQViewer.UI
                 top.Padding = new Padding(4, 4, 4, 2);
 
                 var filterBox = new TextBox();
-                filterBox.Width = 130;
+                filterBox.Width = 95;
                 filterBox.Text = window.FilterText;
                 top.Controls.Add(filterBox);
-
-                var sortBox = new ComboBox();
-                sortBox.DropDownStyle = ComboBoxStyle.DropDownList;
-                sortBox.Width = 150;
-                PopulateSortModeBox(sortBox);
-                SelectSortModeByKey(sortBox, window.SortMode);
-                top.Controls.Add(sortBox);
 
                 var selectedOnly = new CheckBox();
                 selectedOnly.Text = Loc.Get("SelectedOnly");
@@ -2237,48 +2223,34 @@ namespace JSQViewer.UI
                 bottom.Dock = DockStyle.Bottom;
                 bottom.AutoSize = true;
                 bottom.ColumnCount = 1;
-                bottom.RowCount = 2;
-
-                var orderRow = NewRow();
-                var orderNameBox = new TextBox(); orderNameBox.Width = 150; orderNameBox.Text = _orderNameBox.Text;
-                var saveOrderButton = new Button(); saveOrderButton.Text = Loc.Get("SaveOrder"); saveOrderButton.AutoSize = true;
-                var ordersBox = new ComboBox(); ordersBox.Width = 180; ordersBox.DropDownStyle = ComboBoxStyle.DropDownList;
-                var loadOrderButton = new Button(); loadOrderButton.Text = Loc.Get("Load"); loadOrderButton.AutoSize = true;
-                var deleteOrderButton = new Button(); deleteOrderButton.Text = Loc.Get("Delete"); deleteOrderButton.AutoSize = true;
-                orderRow.Controls.Add(orderNameBox);
-                orderRow.Controls.Add(saveOrderButton);
-                orderRow.Controls.Add(ordersBox);
-                orderRow.Controls.Add(loadOrderButton);
-                orderRow.Controls.Add(deleteOrderButton);
-                bottom.Controls.Add(orderRow, 0, 0);
+                bottom.RowCount = 1;
 
                 var status = new Label();
                 status.AutoSize = true;
                 status.Padding = new Padding(4, 4, 4, 6);
                 status.Text = Loc.Get("Ready");
-                bottom.Controls.Add(status, 0, 1);
+                bottom.Controls.Add(status, 0, 0);
 
                 var state = new SourceWindowState
                 {
                     SourceRoot = sourceRoot,
                     Form = form,
                     FilterBox = filterBox,
-                    SortModeBox = sortBox,
+                    SortModeBox = null,
                     SelectedOnlyCheck = selectedOnly,
                     SelectAllButton = selectAll,
                     ClearButton = clear,
-                    OrderNameBox = orderNameBox,
-                    SaveOrderButton = saveOrderButton,
-                    OrdersBox = ordersBox,
-                    LoadOrderButton = loadOrderButton,
-                    DeleteOrderButton = deleteOrderButton,
+                    OrderNameBox = null,
+                    SaveOrderButton = null,
+                    OrdersBox = null,
+                    LoadOrderButton = null,
+                    DeleteOrderButton = null,
                     StatusLabel = status,
                     List = list,
                     ViewModel = window
                 };
 
                 filterBox.TextChanged += delegate { SourceWindowOptionsChanged(state); };
-                sortBox.SelectedIndexChanged += delegate { SourceWindowOptionsChanged(state); };
                 selectedOnly.CheckedChanged += delegate { SourceWindowOptionsChanged(state); };
                 selectAll.Click += delegate { SelectAllInSource(state); };
                 clear.Click += delegate { ClearAllInSource(state); };
@@ -2307,10 +2279,6 @@ namespace JSQViewer.UI
                         state.Form.Top);
                     infoForm.Show(this);
                 };
-                ordersBox.SelectedIndexChanged += delegate { SaveWorkspaceLayoutSelectionForSource(state); };
-                saveOrderButton.Click += delegate { SaveOrderFromSource(state); };
-                loadOrderButton.Click += delegate { LoadOrderFromSource(state); };
-                deleteOrderButton.Click += delegate { DeleteOrderFromSource(state); };
                 list.MouseDown += delegate(object s, MouseEventArgs me) { SourceListMouseDown(state, me); };
                 list.MouseMove += delegate(object s, MouseEventArgs me) { SourceListMouseMove(state, me); };
                 list.DragOver += ChannelsListOnDragOver;
@@ -2713,8 +2681,7 @@ namespace JSQViewer.UI
         {
             if (_dragIndex < 0 || !e.Data.GetDataPresent(typeof(ChannelListItemViewModel))) return;
             if ((state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked) ||
-                (state.FilterBox != null && !string.IsNullOrWhiteSpace(state.FilterBox.Text)) ||
-                GetSelectedSortKey(state.SortModeBox) != "User") return;
+                (state.FilterBox != null && !string.IsNullOrWhiteSpace(state.FilterBox.Text))) return;
             Point p = state.List.PointToClient(new Point(e.X, e.Y));
             int targetIndex = state.List.IndexFromPoint(p);
             if (targetIndex < 0) targetIndex = state.List.Items.Count - 1;

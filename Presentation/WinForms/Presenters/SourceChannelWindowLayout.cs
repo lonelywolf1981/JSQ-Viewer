@@ -5,11 +5,11 @@ namespace JSQViewer.Presentation.WinForms.Presenters
 {
     public static class SourceChannelWindowLayout
     {
-        private const int DefaultWidth = 610;
+        private const int DefaultWidth = 440;
         private const int DefaultHeight = 640;
         private const int Margin = 12;
         private const int Gap = 10;
-        private const int HorizontalStep = 570;
+        private const int HorizontalStep = 430;
 
         public static Rectangle GetBounds(Rectangle workingArea, Rectangle ownerBounds, int index)
         {

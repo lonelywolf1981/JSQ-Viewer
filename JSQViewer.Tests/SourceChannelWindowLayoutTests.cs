@@ -33,6 +33,17 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void GetBounds_UsesCompactSourceWindowWidth()
+        {
+            Rectangle workingArea = new Rectangle(0, 0, 1920, 1080);
+            Rectangle ownerBounds = new Rectangle(0, 0, 1920, 430);
+
+            Rectangle bounds = SourceChannelWindowLayout.GetBounds(workingArea, ownerBounds, 0);
+
+            Assert.IsTrue(bounds.Width <= 460, bounds.ToString());
+        }
+
+        [TestMethod]
         public void GetBounds_WhenOwnerLeavesNoRoomBelow_KeepsWindowNearBottom()
         {
             Rectangle workingArea = new Rectangle(0, 0, 1920, 1080);
