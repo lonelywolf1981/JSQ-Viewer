@@ -7,6 +7,7 @@ namespace JSQViewer.Settings
         public RowMarkSettings row_mark { get; set; }
         public ThresholdColorSettings discharge_mark { get; set; }
         public ThresholdColorSettings suction_mark { get; set; }
+        public T8PlusThresholdSettings t8_plus_thresholds { get; set; }
         public Dictionary<string, ScaleSettings> scales { get; set; }
 
         public static ViewerSettingsModel CreateDefault()
@@ -16,6 +17,7 @@ namespace JSQViewer.Settings
                 row_mark = new RowMarkSettings { threshold_T = 150.0, color = "#EAD706", intensity = 100 },
                 discharge_mark = new ThresholdColorSettings { threshold = null, color = "#FFC000" },
                 suction_mark = new ThresholdColorSettings { threshold = null, color = "#00B0F0" },
+                t8_plus_thresholds = T8PlusThresholdSettings.CreateDefault(),
                 scales = new Dictionary<string, ScaleSettings>
                 {
                     { "W", ScaleSettings.CreateDefault() },
@@ -37,6 +39,23 @@ namespace JSQViewer.Settings
     {
         public double? threshold { get; set; }
         public string color { get; set; }
+    }
+
+    public sealed class T8PlusThresholdSettings
+    {
+        public double average { get; set; }
+        public double minimum { get; set; }
+        public double maximum { get; set; }
+
+        public static T8PlusThresholdSettings CreateDefault()
+        {
+            return new T8PlusThresholdSettings
+            {
+                average = 5.0,
+                minimum = 1.0,
+                maximum = 9.0
+            };
+        }
     }
 
     public sealed class ScaleSettings

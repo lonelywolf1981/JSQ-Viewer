@@ -2292,11 +2292,14 @@ namespace JSQViewer.UI
                     }
                     TestData data = _viewerSession.Data;
                     if (data == null) return;
-                    RecordingInfoResult info = _getRecordingInfoUseCase.Execute(data, state.SourceRoot);
+                    T8PlusTemperatureThresholds thresholds = GetSavedT8PlusThresholds();
+                    RecordingInfoResult info = _getRecordingInfoUseCase.Execute(data, state.SourceRoot, thresholds);
                     var infoForm = new RecordingInfoForm(
                         info,
                         this.Icon,
-                        thresholds => _getRecordingInfoUseCase.Execute(data, state.SourceRoot, thresholds));
+                        thresholds,
+                        updatedThresholds => _getRecordingInfoUseCase.Execute(data, state.SourceRoot, updatedThresholds),
+                        SaveT8PlusThresholds);
                     state.InfoForm = infoForm;
                     infoForm.FormClosed += delegate { state.InfoForm = null; };
                     infoForm.Location = new Point(
@@ -3101,6 +3104,34 @@ namespace JSQViewer.UI
             if (ts < TimeSpan.Zero) ts = TimeSpan.Zero;
             int hh = (int)ts.TotalHours;
             return string.Format(CultureInfo.InvariantCulture, "{0:00}:{1:00}:{2:00}", hh, ts.Minutes, ts.Seconds);
+        }
+
+        private T8PlusTemperatureThresholds GetSavedT8PlusThresholds()
+        {
+            ViewerSettingsModel settings = _viewerSettingsSanitizer.Sanitize(_viewerSettings);
+            T8PlusThresholdSettings source = settings.t8_plus_thresholds ?? T8PlusThresholdSettings.CreateDefault();
+            return new T8PlusTemperatureThresholds(source.average, source.minimum, source.maximum);
+        }
+
+        private void SaveT8PlusThresholds(T8PlusTemperatureThresholds thresholds)
+        {
+            if (thresholds == null)
+            {
+                return;
+            }
+
+            ViewerSettingsModel settings = _viewerSettingsSanitizer.Sanitize(_viewerSettings);
+            settings.t8_plus_thresholds = new T8PlusThresholdSettings
+            {
+                average = thresholds.AverageThreshold,
+                minimum = thresholds.MinimumThreshold,
+                maximum = thresholds.MaximumThreshold
+            };
+            _viewerSettings = _viewerSettingsSanitizer.Sanitize(settings);
+            if (!_viewerSettingsRepository.Save(_viewerSettings))
+            {
+                _logger.LogError("T8+ threshold settings save failed.", null);
+            }
         }
 
         private static string BuildSeriesLegendText(TestData data, string code)

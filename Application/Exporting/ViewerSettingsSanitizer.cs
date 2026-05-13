@@ -21,6 +21,8 @@ namespace JSQViewer.Application.Exporting
             sanitized.suction_mark.threshold = source.suction_mark != null ? source.suction_mark.threshold : null;
             sanitized.suction_mark.color = NormalizeHex(source.suction_mark != null ? source.suction_mark.color : null, "#00B0F0");
 
+            sanitized.t8_plus_thresholds = SanitizeT8PlusThresholds(source.t8_plus_thresholds);
+
             sanitized.scales = new Dictionary<string, ScaleSettings>(StringComparer.OrdinalIgnoreCase);
             string[] keys = new[] { "W", "X", "Y" };
             for (int i = 0; i < keys.Length; i++)
@@ -52,6 +54,32 @@ namespace JSQViewer.Application.Exporting
             }
 
             return sanitized;
+        }
+
+        private static T8PlusThresholdSettings SanitizeT8PlusThresholds(T8PlusThresholdSettings source)
+        {
+            T8PlusThresholdSettings fallback = T8PlusThresholdSettings.CreateDefault();
+            if (source == null)
+            {
+                return fallback;
+            }
+
+            return new T8PlusThresholdSettings
+            {
+                average = NormalizeThreshold(source.average, fallback.average),
+                minimum = NormalizeThreshold(source.minimum, fallback.minimum),
+                maximum = NormalizeThreshold(source.maximum, fallback.maximum)
+            };
+        }
+
+        private static double NormalizeThreshold(double value, double fallback)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value) || value < -1000d || value > 1000d)
+            {
+                return fallback;
+            }
+
+            return value;
         }
 
         private static string NormalizeHex(string value, string fallback)

@@ -110,6 +110,22 @@ namespace JSQViewer.Tests
             Assert.AreEqual("#00FF00", sanitized.scales["W"].colors.opt);
             Assert.AreEqual("#F3919B", sanitized.scales["W"].colors.max);
         }
+
+        [TestMethod]
+        public void Sanitize_PreservesT8PlusThresholdSettings()
+        {
+            var sanitizer = new ViewerSettingsSanitizer();
+            var settings = ViewerSettingsModel.CreateDefault();
+            settings.t8_plus_thresholds.average = 7.5;
+            settings.t8_plus_thresholds.minimum = 2.5;
+            settings.t8_plus_thresholds.maximum = 10.5;
+
+            ViewerSettingsModel sanitized = sanitizer.Sanitize(settings);
+
+            Assert.AreEqual(7.5, sanitized.t8_plus_thresholds.average, 0.001);
+            Assert.AreEqual(2.5, sanitized.t8_plus_thresholds.minimum, 0.001);
+            Assert.AreEqual(10.5, sanitized.t8_plus_thresholds.maximum, 0.001);
+        }
     }
 
     internal sealed class FakeTemplateExporter : ITemplateExporter

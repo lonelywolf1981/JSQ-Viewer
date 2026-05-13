@@ -265,6 +265,47 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Constructor_WithInitialT8PlusThresholds_UsesSavedEditorValuesAndReportsChanges()
+        {
+            var initial = new RecordingInfoResult
+            {
+                SourceRoot = @"C:\Data\Test",
+                T1Min = 4.9,
+                T8PlusStats = new T8PlusTemperatureStats
+                {
+                    HasChannels = true,
+                    AverageReached = false,
+                    AverageValue = 8.0,
+                    AverageElapsedMs = 120_000L,
+                    AverageTime = new DateTime(2026, 4, 2, 16, 1, 0, DateTimeKind.Local)
+                },
+                Meta = new List<KeyValuePair<string, string>>()
+            };
+            T8PlusTemperatureThresholds reported = null;
+
+            using (var form = new RecordingInfoForm(
+                initial,
+                null,
+                new T8PlusTemperatureThresholds(7.5, 2.5, 10.5),
+                thresholds => initial,
+                thresholds => reported = thresholds))
+            {
+                NumericUpDown averageThreshold = FindControls<NumericUpDown>(form)
+                    .FirstOrDefault(control => control.Name == "AverageT8PlusThresholdUpDown");
+
+                Assert.IsNotNull(averageThreshold);
+                Assert.AreEqual(7.5m, averageThreshold.Value);
+
+                averageThreshold.Value = 8.5m;
+
+                Assert.IsNotNull(reported);
+                Assert.AreEqual(8.5, reported.AverageThreshold, 0.001);
+                Assert.AreEqual(2.5, reported.MinimumThreshold, 0.001);
+                Assert.AreEqual(10.5, reported.MaximumThreshold, 0.001);
+            }
+        }
+
+        [TestMethod]
         public void Constructor_RendersUnreachedT8PlusThresholdsInRedWithValueAndTimes()
         {
             var result = new RecordingInfoResult

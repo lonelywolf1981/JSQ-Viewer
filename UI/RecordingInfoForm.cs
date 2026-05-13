@@ -10,6 +10,7 @@ namespace JSQViewer.UI
     public sealed class RecordingInfoForm : Form
     {
         private readonly Func<T8PlusTemperatureThresholds, RecordingInfoResult> _recalculate;
+        private readonly Action<T8PlusTemperatureThresholds> _thresholdsChanged;
         private readonly TableLayoutPanel _table;
         private RecordingInfoResult _result;
         private T8PlusTemperatureThresholds _thresholds = T8PlusTemperatureThresholds.Default;
@@ -37,12 +38,24 @@ namespace JSQViewer.UI
             RecordingInfoResult result,
             Icon appIcon,
             Func<T8PlusTemperatureThresholds, RecordingInfoResult> recalculate)
+            : this(result, appIcon, T8PlusTemperatureThresholds.Default, recalculate, null)
+        {
+        }
+
+        public RecordingInfoForm(
+            RecordingInfoResult result,
+            Icon appIcon,
+            T8PlusTemperatureThresholds initialThresholds,
+            Func<T8PlusTemperatureThresholds, RecordingInfoResult> recalculate,
+            Action<T8PlusTemperatureThresholds> thresholdsChanged)
         {
             if (result == null) throw new ArgumentNullException(nameof(result));
             if (appIcon != null) Icon = appIcon;
 
             _result = result;
+            _thresholds = initialThresholds ?? T8PlusTemperatureThresholds.Default;
             _recalculate = recalculate;
+            _thresholdsChanged = thresholdsChanged;
 
             Text = TruncatePath(result.SourceRoot ?? string.Empty);
             FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -267,6 +280,10 @@ namespace JSQViewer.UI
                 (double)average.Value,
                 (double)minimum.Value,
                 (double)maximum.Value);
+            if (_thresholdsChanged != null)
+            {
+                _thresholdsChanged(_thresholds);
+            }
             RecordingInfoResult recalculated = _recalculate(_thresholds);
             if (recalculated != null)
             {
