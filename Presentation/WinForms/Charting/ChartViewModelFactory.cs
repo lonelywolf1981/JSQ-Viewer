@@ -26,6 +26,7 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 {
                     Code = item.Code,
                     LegendText = item.LegendText,
+                    SourceRoot = item.SourceRoot,
                     XValues = ConvertXValues(item.XValues, result.OverlayMode),
                     YValues = item.YValues ?? new double[0],
                     BorderWidth = item.BorderWidth,

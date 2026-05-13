@@ -89,6 +89,7 @@ namespace JSQViewer.Application.Charting
                     {
                         Code = code,
                         LegendText = BuildSeriesLegendText(data, code),
+                        SourceRoot = ResolveSeriesSourceRoot(data, code),
                         XValues = new double[0],
                         YValues = new double[0],
                         BorderWidth = 1,
@@ -124,6 +125,7 @@ namespace JSQViewer.Application.Charting
                 {
                     Code = code,
                     LegendText = BuildSeriesLegendText(data, code),
+                    SourceRoot = ResolveSeriesSourceRoot(data, code),
                     XValues = xArr,
                     YValues = yArr,
                     BorderWidth = 1,
@@ -356,6 +358,20 @@ namespace JSQViewer.Application.Charting
             }
 
             return string.Format(CultureInfo.InvariantCulture, "[{0}] {1}", sourceName, displayCode);
+        }
+
+        private static string ResolveSeriesSourceRoot(TestData data, string code)
+        {
+            string source;
+            if (data != null
+                && data.CodeSources != null
+                && data.CodeSources.TryGetValue(code, out source)
+                && !string.IsNullOrWhiteSpace(source))
+            {
+                return source;
+            }
+
+            return data == null ? string.Empty : data.Root ?? string.Empty;
         }
 
         private static string NormalizeChannelCodeForDisplay(string code)

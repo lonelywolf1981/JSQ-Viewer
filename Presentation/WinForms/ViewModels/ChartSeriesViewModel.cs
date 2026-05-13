@@ -6,6 +6,8 @@ namespace JSQViewer.Presentation.WinForms.ViewModels
 
         public string LegendText { get; set; }
 
+        public string SourceRoot { get; set; }
+
         public double[] XValues { get; set; }
 
         public double[] YValues { get; set; }

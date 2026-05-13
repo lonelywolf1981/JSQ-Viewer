@@ -13,6 +13,7 @@ namespace JSQViewer.Presentation.WinForms.Charting
             if (viewModel == null) throw new ArgumentNullException(nameof(viewModel));
 
             chart.Series.Clear();
+            chart.Tag = viewModel;
             if (chart.Legends.Count > 0)
             {
                 chart.Legends[0].Enabled = viewModel.ShowLegend;

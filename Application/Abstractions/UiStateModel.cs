@@ -15,6 +15,7 @@ namespace JSQViewer.Application.Abstractions
         public bool? include_extra { get; set; }
         public string refrigerant { get; set; }
         public int? splitter_distance { get; set; }
+        public int? source_window_width { get; set; }
         public List<string> checked_channels { get; set; }
     }
 }

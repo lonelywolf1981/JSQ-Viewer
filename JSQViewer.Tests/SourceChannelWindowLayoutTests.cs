@@ -44,6 +44,42 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void GetBounds_UsesSavedSourceWindowWidthWhenAvailable()
+        {
+            Rectangle workingArea = new Rectangle(0, 0, 1920, 1080);
+            Rectangle ownerBounds = new Rectangle(0, 0, 1920, 430);
+
+            Rectangle bounds = SourceChannelWindowLayout.GetBounds(workingArea, ownerBounds, 0, 520);
+
+            Assert.AreEqual(520, bounds.Width);
+        }
+
+        [TestMethod]
+        public void GetBounds_GrowsHeightToFitChannelCountWhenScreenAllows()
+        {
+            Rectangle workingArea = new Rectangle(0, 0, 1920, 1080);
+            Rectangle ownerBounds = new Rectangle(0, 0, 1920, 160);
+
+            Rectangle small = SourceChannelWindowLayout.GetBounds(workingArea, ownerBounds, 0, 440, 10);
+            Rectangle large = SourceChannelWindowLayout.GetBounds(workingArea, ownerBounds, 0, 440, 34);
+
+            Assert.IsTrue(large.Height > small.Height, "large=" + large + " small=" + small);
+            Assert.IsTrue(workingArea.Contains(large), large.ToString());
+        }
+
+        [TestMethod]
+        public void GetBounds_DoesNotCapLargeChannelListsAtDefaultHeightWhenScreenAllows()
+        {
+            Rectangle workingArea = new Rectangle(0, 0, 1920, 1200);
+            Rectangle ownerBounds = new Rectangle(0, 0, 1920, 160);
+
+            Rectangle bounds = SourceChannelWindowLayout.GetBounds(workingArea, ownerBounds, 0, 440, 58);
+
+            Assert.IsTrue(bounds.Height > 640, bounds.ToString());
+            Assert.IsTrue(workingArea.Contains(bounds), bounds.ToString());
+        }
+
+        [TestMethod]
         public void GetBounds_WhenOwnerLeavesNoRoomBelow_KeepsWindowNearBottom()
         {
             Rectangle workingArea = new Rectangle(0, 0, 1920, 1080);

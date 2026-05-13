@@ -123,7 +123,7 @@ namespace JSQViewer.UI
         private bool _closingSourceChannelWindows;
         private bool _suppressRecentFolderSelectionChanged;
         private int _loadGeneration;
-        private int _fixedControlPanelHeight = 430;
+        private int _fixedControlPanelHeight = 180;
         private readonly IAppPaths _appPaths;
         private readonly IFileSystem _fileSystem;
         private readonly ILogger _logger;
@@ -150,6 +150,7 @@ namespace JSQViewer.UI
         private WorkspaceLayoutState _workspaceLayoutState;
         private string _currentWorkspaceKey;
         private ViewerSettingsModel _viewerSettings;
+        private int _sourceWindowWidth = 440;
         private ChartViewModel _lastChartViewModel;
         private static readonly Regex NaturalSplitRegex = new Regex("(\\d+)", RegexOptions.Compiled);
 
@@ -239,8 +240,8 @@ namespace JSQViewer.UI
             Height = _fixedControlPanelHeight;
             StartPosition = FormStartPosition.Manual;
             Location = new Point(wa.Left, wa.Top);
-            MaximizeBox = true;
-            MinimumSize = new Size(980, 260);
+            MaximizeBox = false;
+            MinimumSize = new Size(980, 140);
             KeyPreview = true;
 
             _splitMain = new SplitContainer();
@@ -260,23 +261,19 @@ namespace JSQViewer.UI
             var smallFont = new Font("Microsoft Sans Serif", 8.25f);
 
             var folderRow = NewRow(); left.Controls.Add(folderRow, 0, 0);
-            _folderBox = new TextBox(); _folderBox.Width = 600; folderRow.Controls.Add(_folderBox);
+            _folderBox = new TextBox(); _folderBox.Width = 520; folderRow.Controls.Add(_folderBox);
+            _browseButton = new Button(); _browseButton.Text = Loc.Get("Browse"); _browseButton.AutoSize = true; _browseButton.Click += BrowseButtonOnClick; folderRow.Controls.Add(_browseButton);
+            _addDataButton = new Button(); _addDataButton.Text = Loc.Get("AddData"); _addDataButton.AutoSize = true; _addDataButton.Click += AddDataButtonOnClick; folderRow.Controls.Add(_addDataButton);
+            _refreshButton = new Button(); _refreshButton.Text = Loc.Get("Refresh"); _refreshButton.AutoSize = true; _refreshButton.Click += RefreshButtonOnClick; folderRow.Controls.Add(_refreshButton);
+            _closeAllButton = new Button(); _closeAllButton.Text = Loc.Get("CloseAll"); _closeAllButton.AutoSize = true; _closeAllButton.Click += CloseAllButtonOnClick; folderRow.Controls.Add(_closeAllButton);
+            _langButton = new Button(); _langButton.Text = Loc.Get("Language"); _langButton.Width = 40; _langButton.Click += LangButtonOnClick; folderRow.Controls.Add(_langButton);
 
-            var folderButtonsRow = NewRow(); left.Controls.Add(folderButtonsRow, 0, 1);
-            _browseButton = new Button(); _browseButton.Text = Loc.Get("Browse"); _browseButton.AutoSize = true; _browseButton.Click += BrowseButtonOnClick; folderButtonsRow.Controls.Add(_browseButton);
-            _addDataButton = new Button(); _addDataButton.Text = Loc.Get("AddData"); _addDataButton.AutoSize = true; _addDataButton.Click += AddDataButtonOnClick; folderButtonsRow.Controls.Add(_addDataButton);
-            _refreshButton = new Button(); _refreshButton.Text = Loc.Get("Refresh"); _refreshButton.AutoSize = true; _refreshButton.Click += RefreshButtonOnClick; folderButtonsRow.Controls.Add(_refreshButton);
-            _closeAllButton = new Button(); _closeAllButton.Text = Loc.Get("CloseAll"); _closeAllButton.AutoSize = true; _closeAllButton.Click += CloseAllButtonOnClick; folderButtonsRow.Controls.Add(_closeAllButton);
-            _langButton = new Button(); _langButton.Text = Loc.Get("Language"); _langButton.Width = 40; _langButton.Click += LangButtonOnClick; folderButtonsRow.Controls.Add(_langButton);
-
-            var recentRow = NewRow(); left.Controls.Add(recentRow, 0, 2);
+            var recentRow = NewRow(); left.Controls.Add(recentRow, 0, 1);
             _recentLabel = new Label(); _recentLabel.Text = Loc.Get("Recent"); _recentLabel.AutoSize = true; _recentLabel.Padding = new Padding(0, 6, 4, 0); recentRow.Controls.Add(_recentLabel);
-            _recentFoldersBox = new ComboBox(); _recentFoldersBox.Width = 600; _recentFoldersBox.DropDownStyle = ComboBoxStyle.DropDownList; _recentFoldersBox.SelectedIndexChanged += RecentFoldersBoxOnSelectedIndexChanged; recentRow.Controls.Add(_recentFoldersBox);
+            _recentFoldersBox = new ComboBox(); _recentFoldersBox.Width = 560; _recentFoldersBox.DropDownStyle = ComboBoxStyle.DropDownList; _recentFoldersBox.SelectedIndexChanged += RecentFoldersBoxOnSelectedIndexChanged; recentRow.Controls.Add(_recentFoldersBox);
+            _summaryLabel = new Label(); _summaryLabel.Font = smallFont; _summaryLabel.AutoSize = true; _summaryLabel.Padding = new Padding(12, 6, 4, 4); _summaryLabel.Text = Loc.Get("NoTestLoaded"); recentRow.Controls.Add(_summaryLabel);
 
-            _summaryLabel = new Label(); _summaryLabel.Font = smallFont; _summaryLabel.AutoSize = true; _summaryLabel.Padding = new Padding(4, 6, 4, 4); _summaryLabel.Text = Loc.Get("NoTestLoaded"); left.Controls.Add(_summaryLabel, 0, 3);
-            _selectionInfoLabel = new Label(); _selectionInfoLabel.Font = smallFont; _selectionInfoLabel.AutoSize = true; _selectionInfoLabel.Padding = new Padding(4, 2, 4, 6); _selectionInfoLabel.Text = Loc.Get("Selected"); left.Controls.Add(_selectionInfoLabel, 0, 4);
-
-            var stepRow = NewRow(); left.Controls.Add(stepRow, 0, 5);
+            var stepRow = NewRow(); stepRow.WrapContents = true; left.Controls.Add(stepRow, 0, 2);
             _autoStepCheck = new CheckBox(); _autoStepCheck.Text = Loc.Get("AutoStep"); _autoStepCheck.Checked = true; _autoStepCheck.AutoSize = true; _autoStepCheck.CheckedChanged += StepControlsOnChanged; stepRow.Controls.Add(_autoStepCheck);
             _targetLabel = new Label(); _targetLabel.Text = Loc.Get("Target"); _targetLabel.AutoSize = true; _targetLabel.Padding = new Padding(8, 5, 2, 0); stepRow.Controls.Add(_targetLabel);
             _targetPointsBox = new ComboBox(); _targetPointsBox.DropDownStyle = ComboBoxStyle.DropDownList; _targetPointsBox.Width = 90; _targetPointsBox.Items.Add("1000"); _targetPointsBox.Items.Add("2000"); _targetPointsBox.Items.Add("5000"); _targetPointsBox.Items.Add("10000"); _targetPointsBox.Items.Add("20000"); _targetPointsBox.SelectedIndex = 2; _targetPointsBox.SelectedIndexChanged += StepControlsOnChanged; stepRow.Controls.Add(_targetPointsBox);
@@ -285,21 +282,20 @@ namespace JSQViewer.UI
             _compareOverlayCheck = new CheckBox(); _compareOverlayCheck.Text = Loc.Get("CompareOverlayMode"); _compareOverlayCheck.AutoSize = true; _compareOverlayCheck.Padding = new Padding(12, 2, 0, 0); _compareOverlayCheck.Enabled = false; _compareOverlayCheck.CheckedChanged += CompareOverlayCheckOnCheckedChanged; stepRow.Controls.Add(_compareOverlayCheck);
             _relativeTimeAxisCheck = new CheckBox(); _relativeTimeAxisCheck.Text = Loc.Get("RelativeTimeAxisMode"); _relativeTimeAxisCheck.AutoSize = true; _relativeTimeAxisCheck.Padding = new Padding(12, 2, 0, 0); _relativeTimeAxisCheck.Enabled = false; _relativeTimeAxisCheck.CheckedChanged += RelativeTimeAxisCheckOnCheckedChanged; stepRow.Controls.Add(_relativeTimeAxisCheck);
 
-            var axisRow = NewRow(); axisRow.WrapContents = true; left.Controls.Add(axisRow, 0, 6);
-            _manualXAxisCheck = new CheckBox(); _manualXAxisCheck.Text = "Ось X"; _manualXAxisCheck.AutoSize = true; _manualXAxisCheck.CheckedChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualXAxisCheck);
-            axisRow.Controls.Add(CreateAxisValueLabel("мин"));
-            _manualXAxisMinBox = CreateAxisValueTextBox(); _manualXAxisMinBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualXAxisMinBox);
-            axisRow.Controls.Add(CreateAxisValueLabel("макс"));
-            _manualXAxisMaxBox = CreateAxisValueTextBox(); _manualXAxisMaxBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualXAxisMaxBox);
-            axisRow.Controls.Add(CreateAxisValueLabel("шаг"));
-            _manualXAxisStepBox = CreateAxisValueTextBox(); _manualXAxisStepBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualXAxisStepBox);
-            _manualYAxisCheck = new CheckBox(); _manualYAxisCheck.Text = "Ось Y"; _manualYAxisCheck.AutoSize = true; _manualYAxisCheck.Padding = new Padding(12, 2, 0, 0); _manualYAxisCheck.CheckedChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualYAxisCheck);
-            axisRow.Controls.Add(CreateAxisValueLabel("мин"));
-            _manualYAxisMinBox = CreateAxisValueTextBox(); _manualYAxisMinBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualYAxisMinBox);
-            axisRow.Controls.Add(CreateAxisValueLabel("макс"));
-            _manualYAxisMaxBox = CreateAxisValueTextBox(); _manualYAxisMaxBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualYAxisMaxBox);
-            axisRow.Controls.Add(CreateAxisValueLabel("шаг"));
-            _manualYAxisStepBox = CreateAxisValueTextBox(); _manualYAxisStepBox.TextChanged += AxisControlsOnChanged; axisRow.Controls.Add(_manualYAxisStepBox);
+            _manualXAxisCheck = new CheckBox(); _manualXAxisCheck.Text = "Ось X"; _manualXAxisCheck.AutoSize = true; _manualXAxisCheck.Padding = new Padding(12, 2, 0, 0); _manualXAxisCheck.CheckedChanged += AxisControlsOnChanged; stepRow.Controls.Add(_manualXAxisCheck);
+            stepRow.Controls.Add(CreateAxisValueLabel("мин"));
+            _manualXAxisMinBox = CreateAxisValueTextBox(); _manualXAxisMinBox.TextChanged += AxisControlsOnChanged; stepRow.Controls.Add(_manualXAxisMinBox);
+            stepRow.Controls.Add(CreateAxisValueLabel("макс"));
+            _manualXAxisMaxBox = CreateAxisValueTextBox(); _manualXAxisMaxBox.TextChanged += AxisControlsOnChanged; stepRow.Controls.Add(_manualXAxisMaxBox);
+            stepRow.Controls.Add(CreateAxisValueLabel("шаг"));
+            _manualXAxisStepBox = CreateAxisValueTextBox(); _manualXAxisStepBox.TextChanged += AxisControlsOnChanged; stepRow.Controls.Add(_manualXAxisStepBox);
+            _manualYAxisCheck = new CheckBox(); _manualYAxisCheck.Text = "Ось Y"; _manualYAxisCheck.AutoSize = true; _manualYAxisCheck.Padding = new Padding(12, 2, 0, 0); _manualYAxisCheck.CheckedChanged += AxisControlsOnChanged; stepRow.Controls.Add(_manualYAxisCheck);
+            stepRow.Controls.Add(CreateAxisValueLabel("мин"));
+            _manualYAxisMinBox = CreateAxisValueTextBox(); _manualYAxisMinBox.TextChanged += AxisControlsOnChanged; stepRow.Controls.Add(_manualYAxisMinBox);
+            stepRow.Controls.Add(CreateAxisValueLabel("макс"));
+            _manualYAxisMaxBox = CreateAxisValueTextBox(); _manualYAxisMaxBox.TextChanged += AxisControlsOnChanged; stepRow.Controls.Add(_manualYAxisMaxBox);
+            stepRow.Controls.Add(CreateAxisValueLabel("шаг"));
+            _manualYAxisStepBox = CreateAxisValueTextBox(); _manualYAxisStepBox.TextChanged += AxisControlsOnChanged; stepRow.Controls.Add(_manualYAxisStepBox);
 
             var channelsHeaderRow = NewRow(); left.Controls.Add(channelsHeaderRow, 0, 7);
             _channelsHeader = new Label(); _channelsHeader.Text = Loc.Get("Channels"); _channelsHeader.AutoSize = true; _channelsHeader.Padding = new Padding(4, 6, 2, 0); channelsHeaderRow.Controls.Add(_channelsHeader);
@@ -313,7 +309,7 @@ namespace JSQViewer.UI
             _channelsList = new CheckedListBox(); _channelsList.Dock = DockStyle.Fill; _channelsList.CheckOnClick = true; _channelsList.AllowDrop = true; _channelsList.ItemCheck += ChannelsListOnItemCheck; _channelsList.MouseDown += ChannelsListOnMouseDown; _channelsList.MouseMove += ChannelsListOnMouseMove; _channelsList.DragOver += ChannelsListOnDragOver; _channelsList.DragDrop += ChannelsListOnDragDrop; left.Controls.Add(_channelsList, 0, 8);
             _channelsList.IntegralHeight = false;
 
-            var templateOptionsRow = NewRow(); left.Controls.Add(templateOptionsRow, 0, 9);
+            var templateOptionsRow = NewRow(); left.Controls.Add(templateOptionsRow, 0, 3);
             _includeExtraCheck = new CheckBox(); _includeExtraCheck.Text = Loc.Get("IncludeExtra"); _includeExtraCheck.Checked = true; _includeExtraCheck.AutoSize = true; templateOptionsRow.Controls.Add(_includeExtraCheck);
             _refrigLabel = new Label(); _refrigLabel.Text = Loc.Get("Refrigerant"); _refrigLabel.AutoSize = true; _refrigLabel.Padding = new Padding(8, 5, 2, 0); templateOptionsRow.Controls.Add(_refrigLabel);
             _refrigerantBox = new ComboBox(); _refrigerantBox.DropDownStyle = ComboBoxStyle.DropDownList; _refrigerantBox.Width = 90; _refrigerantBox.Items.Add("R290"); _refrigerantBox.Items.Add("R600a"); _refrigerantBox.SelectedIndex = 0; templateOptionsRow.Controls.Add(_refrigerantBox);
@@ -321,10 +317,10 @@ namespace JSQViewer.UI
             _templateModeBox = new ComboBox(); _templateModeBox.DropDownStyle = ComboBoxStyle.DropDownList; _templateModeBox.Width = 130; templateOptionsRow.Controls.Add(_templateModeBox);
             RefreshTemplateModeItems();
 
-            var exportButtonsRow = NewRow(); left.Controls.Add(exportButtonsRow, 0, 10);
-            _exportTemplateButton = new Button(); _exportTemplateButton.Text = Loc.Get("ExportTemplate"); _exportTemplateButton.AutoSize = true; _exportTemplateButton.Enabled = false; _exportTemplateButton.Click += ExportTemplateButtonOnClick; exportButtonsRow.Controls.Add(_exportTemplateButton);
-            _showChartButton = new Button(); _showChartButton.Text = Loc.Get("ShowChart"); _showChartButton.AutoSize = true; _showChartButton.Enabled = false; _showChartButton.Click += ShowChartButtonOnClick; exportButtonsRow.Controls.Add(_showChartButton);
-            _settingsButton = new Button(); _settingsButton.Text = Loc.Get("Styles"); _settingsButton.AutoSize = true; _settingsButton.Click += SettingsButtonOnClick; exportButtonsRow.Controls.Add(_settingsButton);
+            _exportTemplateButton = new Button(); _exportTemplateButton.Text = Loc.Get("ExportTemplate"); _exportTemplateButton.AutoSize = true; _exportTemplateButton.Enabled = false; _exportTemplateButton.Click += ExportTemplateButtonOnClick; templateOptionsRow.Controls.Add(_exportTemplateButton);
+            _showChartButton = new Button(); _showChartButton.Text = Loc.Get("ShowChart"); _showChartButton.AutoSize = true; _showChartButton.Enabled = false; _showChartButton.Click += ShowChartButtonOnClick; templateOptionsRow.Controls.Add(_showChartButton);
+            _settingsButton = new Button(); _settingsButton.Text = Loc.Get("Styles"); _settingsButton.AutoSize = true; _settingsButton.Click += SettingsButtonOnClick; templateOptionsRow.Controls.Add(_settingsButton);
+            _selectionInfoLabel = new Label(); _selectionInfoLabel.Font = smallFont; _selectionInfoLabel.AutoSize = true; _selectionInfoLabel.Padding = new Padding(8, 6, 4, 4); _selectionInfoLabel.Text = Loc.Get("Selected"); templateOptionsRow.Controls.Add(_selectionInfoLabel);
 
             var presetSaveRow = NewRow(); left.Controls.Add(presetSaveRow, 0, 11);
             _presetNameBox = new TextBox(); _presetNameBox.Width = 200; _presetNameBox.Text = Loc.Get("PresetName"); presetSaveRow.Controls.Add(_presetNameBox);
@@ -932,11 +928,11 @@ namespace JSQViewer.UI
         {
             if (_splitMain == null || _splitMain.Panel1.Controls.Count == 0) return 430;
             Control content = _splitMain.Panel1.Controls[0];
-            int targetClientHeight = content.GetPreferredSize(new Size(Math.Max(860, ClientSize.Width - 24), 0)).Height + 16;
+            int targetClientHeight = content.GetPreferredSize(new Size(Math.Max(860, ClientSize.Width - 24), 0)).Height + 6;
             int frameHeight = Height - ClientSize.Height;
             int calculated = targetClientHeight + frameHeight;
             Rectangle wa = Screen.FromControl(this).WorkingArea;
-            return Math.Max(260, Math.Min(calculated, wa.Height));
+            return Math.Max(140, Math.Min(calculated, wa.Height));
         }
 
         private void EnsureChartHostForm()
@@ -1474,7 +1470,7 @@ namespace JSQViewer.UI
                     string ext = Path.GetExtension(dialog.FileName).ToLowerInvariant();
                     if (ext == ".jpg" || ext == ".jpeg") format = ChartImageFormat.Jpeg;
                     else if (ext == ".bmp") format = ChartImageFormat.Bmp;
-                    _chart.SaveImage(dialog.FileName, format);
+                    ChartImageAnnotation.SaveChartImage(_chart, dialog.FileName, format, _lastChartViewModel);
                     NotifySuccess(Loc.Get("ChartImageSaved"));
                 }
                 catch (Exception ex) { _logger.LogError("Save chart image failed.", ex); NotifyError(ex.Message); }
@@ -1727,7 +1723,7 @@ namespace JSQViewer.UI
                         string ext = Path.GetExtension(dlg.FileName).ToLowerInvariant();
                         if (ext == ".jpg" || ext == ".jpeg") fmt = ChartImageFormat.Jpeg;
                         else if (ext == ".bmp") fmt = ChartImageFormat.Bmp;
-                        chart.SaveImage(dlg.FileName, fmt);
+                        ChartImageAnnotation.SaveChartImage(chart, dlg.FileName, fmt, chart.Tag as ChartViewModel);
                     }
                     catch { }
                 }
@@ -2158,7 +2154,7 @@ namespace JSQViewer.UI
                     && !existingState.List.IsDisposed)
                 {
                     existingState.ViewModel = window;
-                    existingState.Form.Bounds = SourceChannelWindowLayout.GetBounds(wa, Bounds, col);
+                    existingState.Form.Bounds = SourceChannelWindowLayout.GetBounds(wa, Bounds, col, _sourceWindowWidth, GetSourceWindowChannelCount(window));
                     ApplySourceWindowViewModelToControls(existingState);
                     RebuildSourceWindowList(existingState);
                     col++;
@@ -2175,19 +2171,15 @@ namespace JSQViewer.UI
                 var form = new Form();
                 form.Text = string.Format(Loc.Get("ChannelsForSource"), window.Title);
                 form.StartPosition = FormStartPosition.Manual;
-                form.Bounds = SourceChannelWindowLayout.GetBounds(wa, Bounds, col);
+                form.Bounds = SourceChannelWindowLayout.GetBounds(wa, Bounds, col, _sourceWindowWidth, GetSourceWindowChannelCount(window));
                 form.ShowInTaskbar = false;
                 form.FormBorderStyle = FormBorderStyle.SizableToolWindow;
+                form.MinimumSize = new Size(360, 360);
                 var top = new FlowLayoutPanel();
                 top.Dock = DockStyle.Top;
                 top.Height = 32;
                 top.WrapContents = false;
                 top.Padding = new Padding(4, 4, 4, 2);
-
-                var filterBox = new TextBox();
-                filterBox.Width = 95;
-                filterBox.Text = window.FilterText;
-                top.Controls.Add(filterBox);
 
                 var selectedOnly = new CheckBox();
                 selectedOnly.Text = Loc.Get("SelectedOnly");
@@ -2235,7 +2227,7 @@ namespace JSQViewer.UI
                 {
                     SourceRoot = sourceRoot,
                     Form = form,
-                    FilterBox = filterBox,
+                    FilterBox = null,
                     SortModeBox = null,
                     SelectedOnlyCheck = selectedOnly,
                     SelectAllButton = selectAll,
@@ -2250,7 +2242,6 @@ namespace JSQViewer.UI
                     ViewModel = window
                 };
 
-                filterBox.TextChanged += delegate { SourceWindowOptionsChanged(state); };
                 selectedOnly.CheckedChanged += delegate { SourceWindowOptionsChanged(state); };
                 selectAll.Click += delegate { SelectAllInSource(state); };
                 clear.Click += delegate { ClearAllInSource(state); };
@@ -2283,12 +2274,14 @@ namespace JSQViewer.UI
                 list.MouseMove += delegate(object s, MouseEventArgs me) { SourceListMouseMove(state, me); };
                 list.DragOver += ChannelsListOnDragOver;
                 list.DragDrop += delegate(object s, DragEventArgs de) { SourceListDragDrop(state, de); };
+                form.ResizeEnd += delegate { RememberSourceWindowWidth(form); };
 
                 form.Controls.Add(list);
                 form.Controls.Add(bottom);
                 form.Controls.Add(top);
                 form.FormClosed += delegate
                 {
+                    RememberSourceWindowWidth(form);
                     if (state.InfoForm != null && !state.InfoForm.IsDisposed)
                     {
                         state.InfoForm.Close();
@@ -2885,6 +2878,7 @@ namespace JSQViewer.UI
                 return;
             }
 
+            state.ViewModel = viewModel;
             RunWithoutRangeSync(delegate
             {
                 state.RangeBar.Minimum = _rangeTrackBar.Minimum;
@@ -3711,6 +3705,24 @@ namespace JSQViewer.UI
             }
         }
 
+        private void RememberSourceWindowWidth(Form form)
+        {
+            if (form == null || form.IsDisposed)
+            {
+                return;
+            }
+
+            if (form.Width >= 360 && form.Width <= 900)
+            {
+                _sourceWindowWidth = form.Width;
+            }
+        }
+
+        private static int GetSourceWindowChannelCount(SourceChannelWindowViewModel window)
+        {
+            return window == null || window.Items == null ? 0 : window.Items.Count;
+        }
+
         private void SelectAllInSource(SourceWindowState state)
         {
             if (state == null) return;
@@ -4267,6 +4279,7 @@ namespace JSQViewer.UI
                 state.include_extra = _includeExtraCheck.Checked;
                 state.refrigerant = _refrigerantBox.SelectedItem == null ? "R290" : _refrigerantBox.SelectedItem.ToString();
                 state.splitter_distance = _splitMain.SplitterDistance;
+                state.source_window_width = _sourceWindowWidth;
                 state.checked_channels = GetSelectedCodes();
                 _uiShellStateService.SaveUiState(state);
             }
@@ -4313,6 +4326,10 @@ namespace JSQViewer.UI
                 if (state.splitter_distance.HasValue && state.splitter_distance.Value > 220)
                 {
                     _splitMain.SplitterDistance = state.splitter_distance.Value;
+                }
+                if (state.source_window_width.HasValue)
+                {
+                    _sourceWindowWidth = Math.Max(360, Math.Min(900, state.source_window_width.Value));
                 }
 
                 _pendingCheckedCodes.Clear();
@@ -4397,6 +4414,7 @@ namespace JSQViewer.UI
             public Form Form { get; set; }
             public Chart Chart { get; set; }
             public RangeTrackBar RangeBar { get; set; }
+            public ChartViewModel ViewModel { get; set; }
         }
 
         private sealed class SortModeItem
