@@ -2120,8 +2120,6 @@ namespace JSQViewer.UI
             CloseRemovedSourceChannelWindows(incomingRoots);
 
             Rectangle wa = Screen.FromControl(this).WorkingArea;
-            int baseX = wa.Left + 12;
-            int baseY = Bottom + 10;
             int col = 0;
 
             foreach (SourceChannelWindowViewModel window in windows)
@@ -2136,6 +2134,7 @@ namespace JSQViewer.UI
                     && !existingState.List.IsDisposed)
                 {
                     existingState.ViewModel = window;
+                    existingState.Form.Bounds = SourceChannelWindowLayout.GetBounds(wa, Bounds, col);
                     ApplySourceWindowViewModelToControls(existingState);
                     RebuildSourceWindowList(existingState);
                     col++;
@@ -2151,10 +2150,8 @@ namespace JSQViewer.UI
 
                 var form = new Form();
                 form.Text = string.Format(Loc.Get("ChannelsForSource"), window.Title);
-                form.Width = 610;
-                form.Height = 640;
                 form.StartPosition = FormStartPosition.Manual;
-                form.Location = new Point(baseX + (col * 570), baseY);
+                form.Bounds = SourceChannelWindowLayout.GetBounds(wa, Bounds, col);
                 form.ShowInTaskbar = false;
                 form.FormBorderStyle = FormBorderStyle.SizableToolWindow;
                 var top = new FlowLayoutPanel();
