@@ -159,6 +159,112 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Constructor_WithT8PlusRecalculator_UpdatesRowsWhenThresholdChanges()
+        {
+            var initial = new RecordingInfoResult
+            {
+                SourceRoot = @"C:\Data\Test",
+                T1Min = 4.9,
+                T8PlusStats = new T8PlusTemperatureStats
+                {
+                    HasChannels = true,
+                    AverageReached = false,
+                    AverageValue = 8.0,
+                    AverageElapsedMs = 120_000L,
+                    AverageTime = new DateTime(2026, 4, 2, 16, 1, 0, DateTimeKind.Local)
+                },
+                Meta = new List<KeyValuePair<string, string>>()
+            };
+            var recalculated = new RecordingInfoResult
+            {
+                SourceRoot = initial.SourceRoot,
+                T1Min = 4.9,
+                T8PlusStats = new T8PlusTemperatureStats
+                {
+                    HasChannels = true,
+                    AverageReached = true,
+                    AverageValue = 6.0,
+                    AverageElapsedMs = 60_000L,
+                    AverageTime = new DateTime(2026, 4, 2, 16, 0, 0, DateTimeKind.Local)
+                },
+                Meta = new List<KeyValuePair<string, string>>()
+            };
+
+            using (var form = new RecordingInfoForm(initial, null, thresholds => recalculated))
+            {
+                NumericUpDown averageThreshold = FindControls<NumericUpDown>(form)
+                    .FirstOrDefault(control => control.Name == "AverageT8PlusThresholdUpDown");
+
+                Assert.IsNotNull(averageThreshold);
+
+                averageThreshold.Value = 7.0m;
+
+                TextBox averageBox = FindControls<TextBox>(form)
+                    .FirstOrDefault(box => box.Text == recalculated.T8PlusStats.AverageValue.Value.ToString("F1") + " °C");
+
+                Assert.IsNotNull(averageBox);
+                Assert.AreEqual(Color.Green, averageBox.ForeColor);
+            }
+        }
+
+        [TestMethod]
+        public void Constructor_WithT8PlusRecalculator_KeepsExistingControlsWhenThresholdChanges()
+        {
+            var initial = new RecordingInfoResult
+            {
+                SourceRoot = @"C:\Data\Test",
+                T1Min = 4.9,
+                T8PlusStats = new T8PlusTemperatureStats
+                {
+                    HasChannels = true,
+                    AverageReached = false,
+                    AverageValue = 8.0,
+                    AverageElapsedMs = 120_000L,
+                    AverageTime = new DateTime(2026, 4, 2, 16, 1, 0, DateTimeKind.Local)
+                },
+                Meta = new List<KeyValuePair<string, string>>()
+            };
+            var recalculated = new RecordingInfoResult
+            {
+                SourceRoot = initial.SourceRoot,
+                T1Min = 4.9,
+                T8PlusStats = new T8PlusTemperatureStats
+                {
+                    HasChannels = true,
+                    AverageReached = true,
+                    AverageValue = 6.0,
+                    AverageElapsedMs = 60_000L,
+                    AverageTime = new DateTime(2026, 4, 2, 16, 0, 0, DateTimeKind.Local)
+                },
+                Meta = new List<KeyValuePair<string, string>>()
+            };
+
+            using (var form = new RecordingInfoForm(initial, null, thresholds => recalculated))
+            {
+                NumericUpDown averageThreshold = FindControls<NumericUpDown>(form)
+                    .FirstOrDefault(control => control.Name == "AverageT8PlusThresholdUpDown");
+                TextBox originalAverageBox = FindControls<TextBox>(form)
+                    .FirstOrDefault(box => box.Name == "AverageT8PlusValueBox");
+                int originalControlCount = FindControls<Control>(form).Count();
+
+                Assert.IsNotNull(averageThreshold);
+                Assert.IsNotNull(originalAverageBox);
+
+                averageThreshold.Value = 7.0m;
+
+                TextBox updatedAverageBox = FindControls<TextBox>(form)
+                    .FirstOrDefault(box => box.Name == "AverageT8PlusValueBox");
+                Label updatedAverageLabel = FindControls<Label>(form)
+                    .FirstOrDefault(label => label.Text == "Средняя <= 7 °C");
+
+                Assert.AreSame(originalAverageBox, updatedAverageBox);
+                Assert.AreEqual(originalControlCount, FindControls<Control>(form).Count());
+                Assert.AreEqual(recalculated.T8PlusStats.AverageValue.Value.ToString("F1") + " °C", updatedAverageBox.Text);
+                Assert.IsNotNull(updatedAverageLabel);
+            }
+        }
+
+        [TestMethod]
         public void Constructor_RendersUnreachedT8PlusThresholdsInRedWithValueAndTimes()
         {
             var result = new RecordingInfoResult

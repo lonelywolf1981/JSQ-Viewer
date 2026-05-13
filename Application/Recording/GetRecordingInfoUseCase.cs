@@ -30,8 +30,20 @@ namespace JSQViewer.Application.Recording
 
         public RecordingInfoResult Execute(TestData data, string sourceRoot)
         {
+            return Execute(data, sourceRoot, T8PlusTemperatureThresholds.Default);
+        }
+
+        public RecordingInfoResult Execute(
+            TestData data,
+            string sourceRoot,
+            T8PlusTemperatureThresholds t8PlusThresholds)
+        {
             if (data == null) throw new ArgumentNullException(nameof(data));
             if (sourceRoot == null) throw new ArgumentNullException(nameof(sourceRoot));
+            if (t8PlusThresholds == null)
+            {
+                t8PlusThresholds = T8PlusTemperatureThresholds.Default;
+            }
 
             // Читаем метаданные напрямую из .dat-файла источника, если reader доступен.
             // data.Meta — слитый словарь всех источников (первый выигрывает), поэтому
@@ -77,7 +89,7 @@ namespace JSQViewer.Application.Recording
             if (i1 <= i0)
                 return result;
 
-            result.T8PlusStats = CalculateT8PlusStats(data, sourceRoot, i0, i1, startMs);
+            result.T8PlusStats = CalculateT8PlusStats(data, sourceRoot, i0, i1, startMs, t8PlusThresholds);
 
             string t1Column = FindT1Column(data, sourceRoot);
             if (t1Column == null)
@@ -258,7 +270,8 @@ namespace JSQViewer.Application.Recording
             string sourceRoot,
             int i0,
             int i1,
-            long startMs)
+            long startMs,
+            T8PlusTemperatureThresholds thresholds)
         {
             List<string> columns = FindTColumns(data, sourceRoot, 8);
             if (columns.Count == 0)
@@ -341,7 +354,7 @@ namespace JSQViewer.Application.Recording
                     hasMaximum = true;
                 }
 
-                if (!stats.AverageReached && average <= 5.0)
+                if (!stats.AverageReached && average <= thresholds.AverageThreshold)
                 {
                     stats.AverageReached = true;
                     stats.AverageValue = average;
@@ -349,7 +362,7 @@ namespace JSQViewer.Application.Recording
                     stats.AverageTime = _timestampRangeService.UnixMsToLocalDateTime(timestampMs);
                 }
 
-                if (!stats.MinimumReached && min <= 1.0)
+                if (!stats.MinimumReached && min <= thresholds.MinimumThreshold)
                 {
                     stats.MinimumReached = true;
                     stats.MinimumValue = min;
@@ -357,7 +370,7 @@ namespace JSQViewer.Application.Recording
                     stats.MinimumTime = _timestampRangeService.UnixMsToLocalDateTime(timestampMs);
                 }
 
-                if (!stats.MaximumReached && max <= 9.0)
+                if (!stats.MaximumReached && max <= thresholds.MaximumThreshold)
                 {
                     stats.MaximumReached = true;
                     stats.MaximumValue = max;

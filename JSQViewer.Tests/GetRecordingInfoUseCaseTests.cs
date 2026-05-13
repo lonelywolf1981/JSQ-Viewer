@@ -528,6 +528,30 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Execute_WithCustomT8PlusThresholds_RecalculatesReachedFlags()
+        {
+            var columns = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["T1"] = new double?[] { 30.0, 20.0, 10.0 },
+                ["C-T8"] = new double?[] { 10.0, 4.0, 0.0 },
+                ["C-T9"] = new double?[] { 8.0, 6.0, 2.0 },
+                ["C-T10"] = new double?[] { 12.0, 8.0, 4.0 }
+            };
+            var data = MakeData(Root, new long[] { 0L, 60_000L, 120_000L }, columns);
+            var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
+
+            RecordingInfoResult r = uc.Execute(
+                data,
+                Root,
+                new T8PlusTemperatureThresholds(7.0, 1.0, 9.0));
+
+            Assert.IsNotNull(r.T8PlusStats);
+            Assert.IsTrue(r.T8PlusStats.AverageReached);
+            Assert.AreEqual(6.0, r.T8PlusStats.AverageValue.Value, 0.001);
+            Assert.AreEqual(60_000L, r.T8PlusStats.AverageElapsedMs.Value);
+        }
+
+        [TestMethod]
         public void Execute_WithT8PlusChannels_WhenThresholdsNotReached_ReturnsBestObservedValuesAndTimes()
         {
             var columns = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase)

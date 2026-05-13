@@ -48,4 +48,31 @@ namespace JSQViewer.Application.Recording
 
         public double? AverageDropRatePerMinute { get; set; }
     }
+
+    public sealed class T8PlusTemperatureThresholds
+    {
+        public const double DefaultAverageThreshold = 5.0;
+        public const double DefaultMinimumThreshold = 1.0;
+        public const double DefaultMaximumThreshold = 9.0;
+
+        public static readonly T8PlusTemperatureThresholds Default =
+            new T8PlusTemperatureThresholds(
+                DefaultAverageThreshold,
+                DefaultMinimumThreshold,
+                DefaultMaximumThreshold);
+
+        public T8PlusTemperatureThresholds(
+            double averageThreshold,
+            double minimumThreshold,
+            double maximumThreshold)
+        {
+            AverageThreshold = averageThreshold;
+            MinimumThreshold = minimumThreshold;
+            MaximumThreshold = maximumThreshold;
+        }
+
+        public double AverageThreshold { get; private set; }
+        public double MinimumThreshold { get; private set; }
+        public double MaximumThreshold { get; private set; }
+    }
 }
