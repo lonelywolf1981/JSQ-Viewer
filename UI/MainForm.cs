@@ -1825,12 +1825,7 @@ namespace JSQViewer.UI
 
         private string SelectSingleSource(string initial)
         {
-            DialogResult choice = MessageBox.Show(
-                this,
-                Loc.Get("SelectSourcePrompt"),
-                Loc.Get("SelectSourceTitle"),
-                MessageBoxButtons.YesNoCancel,
-                MessageBoxIcon.Question);
+            DialogResult choice = ShowSourceSelectionDialog();
 
             if (choice == DialogResult.Yes)
             {
@@ -1843,6 +1838,49 @@ namespace JSQViewer.UI
             }
 
             return string.Empty;
+        }
+
+        private DialogResult ShowSourceSelectionDialog()
+        {
+            using (var dialog = new Form())
+            using (var prompt = new Label())
+            using (var folderButton = new Button())
+            using (var fileButton = new Button())
+            using (var cancelButton = new Button())
+            {
+                dialog.Text = Loc.Get("SelectSourceTitle");
+                dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dialog.StartPosition = FormStartPosition.CenterParent;
+                dialog.MinimizeBox = false;
+                dialog.MaximizeBox = false;
+                dialog.ShowInTaskbar = false;
+                dialog.ClientSize = new Size(360, 118);
+
+                prompt.Text = Loc.Get("SelectSourcePrompt");
+                prompt.AutoSize = false;
+                prompt.TextAlign = ContentAlignment.MiddleLeft;
+                prompt.SetBounds(12, 12, 336, 32);
+                dialog.Controls.Add(prompt);
+
+                folderButton.Text = Loc.Get("SelectSourceFolder");
+                folderButton.DialogResult = DialogResult.Yes;
+                folderButton.SetBounds(72, 68, 82, 28);
+                dialog.Controls.Add(folderButton);
+
+                fileButton.Text = Loc.Get("SelectSourceFile");
+                fileButton.DialogResult = DialogResult.No;
+                fileButton.SetBounds(162, 68, 82, 28);
+                dialog.Controls.Add(fileButton);
+
+                cancelButton.Text = Loc.Get("Cancel");
+                cancelButton.DialogResult = DialogResult.Cancel;
+                cancelButton.SetBounds(252, 68, 82, 28);
+                dialog.Controls.Add(cancelButton);
+
+                dialog.AcceptButton = folderButton;
+                dialog.CancelButton = cancelButton;
+                return dialog.ShowDialog(this);
+            }
         }
 
         private string SelectSingleFolder(string initial)
