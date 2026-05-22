@@ -190,6 +190,60 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Execute_LoadsSingleExportedProtocolWithoutFolderReaders()
+        {
+            string protocol = Path.GetFullPath("C:\\protocol.xlsx");
+            var folderReader = new FakeDataSourceReader(new Dictionary<string, TestData>(StringComparer.OrdinalIgnoreCase));
+            var protocolReader = new FakeDataSourceReader(new Dictionary<string, TestData>(StringComparer.OrdinalIgnoreCase)
+            {
+                [protocol] = CreateData(protocol, new[] { "Pc" }, 10L)
+            });
+            var useCase = new LoadWorkspaceDataUseCase(
+                new WorkspaceFolderSpecParser(),
+                new ThrowingRootLocator(),
+                new FakeMetadataReader(),
+                new FakeCanaliReader(),
+                folderReader,
+                new MergeLoadedSourcesUseCase(),
+                protocolReader);
+
+            WorkspaceLoadResult result = useCase.Execute(new WorkspaceLoadRequest(protocol));
+
+            Assert.AreEqual(protocol, result.NormalizedFolderSpec);
+            Assert.AreEqual(protocol, result.Data.Root);
+            Assert.AreEqual(0, folderReader.ReadRoots.Count);
+            CollectionAssert.AreEqual(new[] { protocol }, protocolReader.ReadRoots);
+        }
+
+        [TestMethod]
+        public void Execute_MergesFolderAndExportedProtocol()
+        {
+            string protocol = Path.GetFullPath("C:\\protocol.xlsx");
+            var rootLocator = new FakeRootLocator("C:\\src", "C:\\root");
+            var folderReader = new FakeDataSourceReader(new Dictionary<string, TestData>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["C:\\root"] = CreateData("C:\\root", new[] { "Pc" }, 10L)
+            });
+            var protocolReader = new FakeDataSourceReader(new Dictionary<string, TestData>(StringComparer.OrdinalIgnoreCase)
+            {
+                [protocol] = CreateData(protocol, new[] { "Pc" }, 20L)
+            });
+            var useCase = new LoadWorkspaceDataUseCase(
+                new WorkspaceFolderSpecParser(),
+                rootLocator,
+                new FakeMetadataReader(),
+                new FakeCanaliReader(),
+                folderReader,
+                new MergeLoadedSourcesUseCase(),
+                protocolReader);
+
+            WorkspaceLoadResult result = useCase.Execute(new WorkspaceLoadRequest("C:\\src ; " + protocol));
+
+            Assert.AreEqual(2, result.Data.RowCount);
+            CollectionAssert.AreEquivalent(new[] { "root::Pc", "protocol.xlsx::Pc" }, result.Data.ColumnNames);
+        }
+
+        [TestMethod]
         public void Execute_MergesMultipleFoldersWithOverlapSplit()
         {
             var roots = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -283,6 +337,14 @@ namespace JSQViewer.Tests
             public string FindRoot(string folder)
             {
                 return _roots[folder];
+            }
+        }
+
+        private sealed class ThrowingRootLocator : ITestRootLocator
+        {
+            public string FindRoot(string folder)
+            {
+                throw new AssertFailedException("Folder root locator should not be used for exported protocols.");
             }
         }
 

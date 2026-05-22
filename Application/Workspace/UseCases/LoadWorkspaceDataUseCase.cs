@@ -14,6 +14,7 @@ namespace JSQViewer.Application.Workspace.UseCases
         private readonly ICanaliDefinitionReader _canaliDefinitionReader;
         private readonly ITestDataSourceReader _testDataSourceReader;
         private readonly MergeLoadedSourcesUseCase _mergeLoadedSourcesUseCase;
+        private readonly ITestDataSourceReader _exportedProtocolDataSourceReader;
 
         public LoadWorkspaceDataUseCase(
             WorkspaceFolderSpecParser folderSpecParser,
@@ -21,7 +22,8 @@ namespace JSQViewer.Application.Workspace.UseCases
             ITestMetadataReader testMetadataReader,
             ICanaliDefinitionReader canaliDefinitionReader,
             ITestDataSourceReader testDataSourceReader,
-            MergeLoadedSourcesUseCase mergeLoadedSourcesUseCase)
+            MergeLoadedSourcesUseCase mergeLoadedSourcesUseCase,
+            ITestDataSourceReader exportedProtocolDataSourceReader = null)
         {
             _folderSpecParser = folderSpecParser ?? throw new ArgumentNullException(nameof(folderSpecParser));
             _testRootLocator = testRootLocator ?? throw new ArgumentNullException(nameof(testRootLocator));
@@ -29,6 +31,7 @@ namespace JSQViewer.Application.Workspace.UseCases
             _canaliDefinitionReader = canaliDefinitionReader ?? throw new ArgumentNullException(nameof(canaliDefinitionReader));
             _testDataSourceReader = testDataSourceReader ?? throw new ArgumentNullException(nameof(testDataSourceReader));
             _mergeLoadedSourcesUseCase = mergeLoadedSourcesUseCase ?? throw new ArgumentNullException(nameof(mergeLoadedSourcesUseCase));
+            _exportedProtocolDataSourceReader = exportedProtocolDataSourceReader;
         }
 
         public WorkspaceLoadResult Execute(WorkspaceLoadRequest request)
@@ -49,7 +52,7 @@ namespace JSQViewer.Application.Workspace.UseCases
             }
 
             List<string> resolvedRoots = folders
-                .Select(folder => _testRootLocator.FindRoot(folder))
+                .Select(ResolveSourceRoot)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
@@ -57,6 +60,20 @@ namespace JSQViewer.Application.Workspace.UseCases
             for (int i = 0; i < resolvedRoots.Count; i++)
             {
                 string root = resolvedRoots[i];
+                if (IsExportedProtocolPath(root))
+                {
+                    if (_exportedProtocolDataSourceReader == null)
+                    {
+                        throw new InvalidOperationException("Exported protocol reader is not configured.");
+                    }
+
+                    loadedSources.Add(_exportedProtocolDataSourceReader.Read(
+                        root,
+                        new Dictionary<string, ChannelInfo>(StringComparer.OrdinalIgnoreCase),
+                        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)));
+                    continue;
+                }
+
                 Dictionary<string, string> metadata = _testMetadataReader.Read(root);
                 Dictionary<string, ChannelInfo> channels = _canaliDefinitionReader.Read(root);
                 loadedSources.Add(_testDataSourceReader.Read(root, channels, metadata));
@@ -67,6 +84,22 @@ namespace JSQViewer.Application.Workspace.UseCases
                 : _mergeLoadedSourcesUseCase.Execute(loadedSources, request.SplitOverlappingCodes);
 
             return new WorkspaceLoadResult(_folderSpecParser.Join(resolvedRoots), resolvedRoots, merged);
+        }
+
+        private string ResolveSourceRoot(string source)
+        {
+            if (IsExportedProtocolPath(source))
+            {
+                return System.IO.Path.GetFullPath(source);
+            }
+
+            return _testRootLocator.FindRoot(source);
+        }
+
+        private static bool IsExportedProtocolPath(string source)
+        {
+            return !string.IsNullOrWhiteSpace(source)
+                && string.Equals(System.IO.Path.GetExtension(source), ".xlsx", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

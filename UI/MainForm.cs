@@ -1772,8 +1772,8 @@ namespace JSQViewer.UI
         private void BrowseButtonOnClick(object sender, EventArgs e)
         {
             List<string> current = ParseFolderSpec(_folderBox.Text);
-            string initial = current.Count > 0 && _fileSystem.DirectoryExists(current[0]) ? current[0] : string.Empty;
-            string picked = SelectSingleFolder(initial);
+            string initial = current.Count > 0 ? GetInitialSourceDirectory(current[0]) : string.Empty;
+            string picked = SelectSingleSource(initial);
             if (!string.IsNullOrWhiteSpace(picked))
             {
                 string spec = JoinFolderSpec(new List<string> { picked });
@@ -1797,12 +1797,12 @@ namespace JSQViewer.UI
                     NotifyError(Loc.Get("TooManyFolders"));
                     return;
                 }
-                string initial = _fileSystem.DirectoryExists(current[current.Count - 1]) ? current[current.Count - 1] : string.Empty;
-                string picked = SelectSingleFolder(initial);
+                string initial = GetInitialSourceDirectory(current[current.Count - 1]);
+                string picked = SelectSingleSource(initial);
                 if (string.IsNullOrWhiteSpace(picked)) return;
                 if (current.Any(f => string.Equals(f, picked, StringComparison.OrdinalIgnoreCase)))
                 {
-                    NotifyError(Loc.Get("FolderAlreadyAdded"));
+                    NotifyError(Loc.Get("SourceAlreadyAdded"));
                     return;
                 }
                 current.Add(picked);
@@ -1823,6 +1823,28 @@ namespace JSQViewer.UI
             LoadFolder(_folderBox.Text, false, true, overlayMode, true);
         }
 
+        private string SelectSingleSource(string initial)
+        {
+            DialogResult choice = MessageBox.Show(
+                this,
+                Loc.Get("SelectSourcePrompt"),
+                Loc.Get("SelectSourceTitle"),
+                MessageBoxButtons.YesNoCancel,
+                MessageBoxIcon.Question);
+
+            if (choice == DialogResult.Yes)
+            {
+                return SelectSingleFolder(initial);
+            }
+
+            if (choice == DialogResult.No)
+            {
+                return SelectSingleProtocolFile(initial);
+            }
+
+            return string.Empty;
+        }
+
         private string SelectSingleFolder(string initial)
         {
             using (var dialog = new FolderBrowserDialog())
@@ -1830,6 +1852,43 @@ namespace JSQViewer.UI
                 dialog.SelectedPath = initial ?? string.Empty;
                 return dialog.ShowDialog(this) == DialogResult.OK ? dialog.SelectedPath : string.Empty;
             }
+        }
+
+        private string SelectSingleProtocolFile(string initial)
+        {
+            using (var dialog = new OpenFileDialog())
+            {
+                dialog.Filter = Loc.Get("ProtocolFileFilter");
+                dialog.CheckFileExists = true;
+                dialog.Multiselect = false;
+                if (!string.IsNullOrWhiteSpace(initial) && _fileSystem.DirectoryExists(initial))
+                {
+                    dialog.InitialDirectory = initial;
+                }
+
+                return dialog.ShowDialog(this) == DialogResult.OK ? dialog.FileName : string.Empty;
+            }
+        }
+
+        private string GetInitialSourceDirectory(string source)
+        {
+            if (string.IsNullOrWhiteSpace(source))
+            {
+                return string.Empty;
+            }
+
+            if (_fileSystem.DirectoryExists(source))
+            {
+                return source;
+            }
+
+            if (_fileSystem.FileExists(source))
+            {
+                string directory = Path.GetDirectoryName(source);
+                return string.IsNullOrWhiteSpace(directory) ? string.Empty : directory;
+            }
+
+            return string.Empty;
         }
 
         private void RecentFoldersBoxOnSelectedIndexChanged(object sender, EventArgs e)

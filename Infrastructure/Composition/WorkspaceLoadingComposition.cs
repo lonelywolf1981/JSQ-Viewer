@@ -20,7 +20,8 @@ namespace JSQViewer.Infrastructure.Composition
                 new ProvaMetadataReader(),
                 new CanaliDefinitionReader(),
                 new DbfTestDataSourceReader(),
-                new MergeLoadedSourcesUseCase());
+                new MergeLoadedSourcesUseCase(),
+                new ExportedProtocolDataSourceReader());
         }
 
         public static ITestRootLocator CreateTestRootLocator()

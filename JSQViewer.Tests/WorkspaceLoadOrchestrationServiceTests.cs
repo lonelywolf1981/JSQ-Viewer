@@ -86,6 +86,29 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void IsValidSpec_ReturnsTrue_WhenExportedProtocolFileExists()
+        {
+            var fs = new FakeFileSystem();
+            fs.ExistingFiles.Add("A.xlsx");
+
+            var service = CreateService(fs);
+
+            bool result = service.IsValidSpec("A.xlsx");
+
+            Assert.IsTrue(result);
+        }
+
+        [TestMethod]
+        public void IsValidSpec_ReturnsFalse_WhenExportedProtocolFileMissing()
+        {
+            var service = CreateService(new FakeFileSystem());
+
+            bool result = service.IsValidSpec("A.xlsx");
+
+            Assert.IsFalse(result);
+        }
+
+        [TestMethod]
         public void CreateLoadRequest_SetsSpecAndSplitTrue()
         {
             var service = CreateService(new FakeFileSystem());
@@ -117,9 +140,11 @@ namespace JSQViewer.Tests
         {
             public HashSet<string> ExistingDirectories { get; } = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
 
+            public HashSet<string> ExistingFiles { get; } = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+
             public bool DirectoryExists(string path) => ExistingDirectories.Contains(path);
 
-            public bool FileExists(string path) => false;
+            public bool FileExists(string path) => ExistingFiles.Contains(path);
 
             public void WriteAllBytes(string path, byte[] contents) { }
 

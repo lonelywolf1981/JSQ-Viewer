@@ -38,7 +38,8 @@ namespace JSQViewer.Application.Workspace
 
             for (int i = 0; i < folders.Count; i++)
             {
-                if (!_fileSystem.DirectoryExists(folders[i]))
+                if (!_fileSystem.DirectoryExists(folders[i])
+                    && !(IsExportedProtocolPath(folders[i]) && _fileSystem.FileExists(folders[i])))
                 {
                     return false;
                 }
@@ -55,6 +56,12 @@ namespace JSQViewer.Application.Workspace
         public string BuildWorkspaceKey(IEnumerable<string> folders)
         {
             return _parser.BuildWorkspaceKey(folders);
+        }
+
+        private static bool IsExportedProtocolPath(string path)
+        {
+            return !string.IsNullOrWhiteSpace(path)
+                && string.Equals(System.IO.Path.GetExtension(path), ".xlsx", StringComparison.OrdinalIgnoreCase);
         }
     }
 }
