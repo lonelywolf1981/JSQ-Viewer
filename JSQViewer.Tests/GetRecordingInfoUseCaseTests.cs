@@ -87,6 +87,21 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Execute_WithT1Channel_IgnoresMinus99SentinelValues()
+        {
+            var data = MakeData(Root, 0, 120_000, "T1",
+                new double?[] { -99.0, 27.6, 10.0, -99.0, 5.0, 6.0 });
+            var uc = new GetRecordingInfoUseCase(new TimestampRangeService());
+
+            RecordingInfoResult r = uc.Execute(data, Root);
+
+            Assert.AreEqual(27.6, r.T1InitialTemperature.Value, 0.001);
+            Assert.AreEqual(5.0, r.T1Min.Value, 0.001);
+            Assert.AreEqual(96_000L, r.T1MinElapsedMs.Value);
+            Assert.AreEqual(-14.125, r.T1DropRatePerMinute.Value, 0.001);
+        }
+
+        [TestMethod]
         public void Execute_WithT1Channel_ReturnsInitialTemperatureFromFirstValidPoint()
         {
             var data = MakeData(Root, 0, 60_000, "T1",

@@ -105,6 +105,7 @@ namespace JSQViewer.Application.Recording
             for (int i = i0; i < i1; i++)
             {
                 if (!values[i].HasValue) continue;
+                if (!IsValidRecordingTemperature(values[i].Value)) continue;
                 if (firstVal == null)
                 {
                     firstVal = values[i];
@@ -209,6 +210,11 @@ namespace JSQViewer.Application.Recording
                 }
 
                 double value = values[i].Value;
+                if (!IsValidRecordingTemperature(value))
+                {
+                    continue;
+                }
+
                 if (firstValue.Value - value < FirstCoolingMinimumDropThreshold)
                 {
                     continue;
@@ -230,6 +236,11 @@ namespace JSQViewer.Application.Recording
                     }
 
                     double future = values[j].Value;
+                    if (!IsValidRecordingTemperature(future))
+                    {
+                        continue;
+                    }
+
                     if (timestamps[j] <= reboundEnd && future > futureMax)
                     {
                         futureMax = future;
@@ -309,7 +320,7 @@ namespace JSQViewer.Application.Recording
                     }
 
                     double value = values[i].Value;
-                    if (!IsValidT8PlusAggregateTemperature(value))
+                    if (!IsValidRecordingTemperature(value))
                     {
                         continue;
                     }
@@ -412,7 +423,7 @@ namespace JSQViewer.Application.Recording
             return stats;
         }
 
-        private static bool IsValidT8PlusAggregateTemperature(double value)
+        private static bool IsValidRecordingTemperature(double value)
         {
             return value > -90.0;
         }
