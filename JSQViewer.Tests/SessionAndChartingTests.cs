@@ -142,6 +142,42 @@ namespace JSQViewer.Tests
             CollectionAssert.AreEqual(new long[] { 100L, 300L }, first.Timestamps);
             CollectionAssert.AreEqual(new double?[] { 2d, 4d }, first.Series["A-01"]);
         }
+
+        [TestMethod]
+        public void GetOrBuild_FiltersInvalidTemperatureValuesFromTChannels()
+        {
+            var cache = new MemorySeriesSliceCache();
+            var service = new SeriesSliceService(cache, new TimestampRangeService());
+            var data = SessionAndChartingTestData.CreateData(
+                new long[] { 0L, 100L, 200L, 300L },
+                new Dictionary<string, double?[]>
+                {
+                    ["source-a::C-T10#2"] = new double?[] { 12d, -99d, -90d, -89.9d }
+                });
+
+            SeriesSlice slice = service.GetOrBuild(1, data, new[] { "source-a::C-T10#2" }, 0L, 300L, 1);
+
+            CollectionAssert.AreEqual(
+                new double?[] { 12d, null, null, -89.9d },
+                slice.Series["source-a::C-T10#2"]);
+        }
+
+        [TestMethod]
+        public void GetOrBuild_DoesNotApplyTemperatureFilterToNonTemperatureChannels()
+        {
+            var cache = new MemorySeriesSliceCache();
+            var service = new SeriesSliceService(cache, new TimestampRangeService());
+            var data = SessionAndChartingTestData.CreateData(
+                new long[] { 0L, 100L },
+                new Dictionary<string, double?[]>
+                {
+                    ["Pressure"] = new double?[] { -99d, -90d }
+                });
+
+            SeriesSlice slice = service.GetOrBuild(1, data, new[] { "Pressure" }, 0L, 100L, 1);
+
+            CollectionAssert.AreEqual(new double?[] { -99d, -90d }, slice.Series["Pressure"]);
+        }
     }
 
     internal sealed class RecordingSeriesSliceCache : ISeriesSliceCache

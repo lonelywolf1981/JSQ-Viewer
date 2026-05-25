@@ -425,7 +425,7 @@ namespace JSQViewer.Application.Recording
 
         private static bool IsValidRecordingTemperature(double value)
         {
-            return value > -90.0;
+            return RecordingTemperatureValueFilter.IsValidTemperature(value);
         }
 
         private static string FindT1Column(TestData data, string sourceRoot)

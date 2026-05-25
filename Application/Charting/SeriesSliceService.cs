@@ -98,9 +98,18 @@ namespace JSQViewer.Application.Charting
 
                 var target = new double?[len];
                 int seriesIndex = 0;
+                bool isTemperatureChannel = RecordingTemperatureValueFilter.IsTemperatureChannel(code);
                 for (int i = i0; i < i1; i += step)
                 {
-                    target[seriesIndex++] = source[i];
+                    double? value = source[i];
+                    if (isTemperatureChannel
+                        && value.HasValue
+                        && !RecordingTemperatureValueFilter.IsValidTemperature(value.Value))
+                    {
+                        value = null;
+                    }
+
+                    target[seriesIndex++] = value;
                 }
 
                 series[code] = target;
