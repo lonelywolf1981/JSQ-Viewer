@@ -15,5 +15,7 @@ namespace JSQViewer.Presentation.WinForms.ViewModels
         public int BorderWidth { get; set; }
 
         public bool IsVisibleInLegend { get; set; }
+
+        public bool IsForecast { get; set; }
     }
 }

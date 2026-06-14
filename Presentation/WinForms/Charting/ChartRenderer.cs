@@ -38,6 +38,7 @@ namespace JSQViewer.Presentation.WinForms.Charting
                     series.ChartType = SeriesChartType.FastLine;
                     series.XValueType = viewModel.OverlayMode ? ChartValueType.Double : ChartValueType.DateTime;
                     series.BorderWidth = model.BorderWidth;
+                    series.BorderDashStyle = model.IsForecast ? ChartDashStyle.Dash : ChartDashStyle.Solid;
                     series.IsVisibleInLegend = model.IsVisibleInLegend;
                     series.LegendText = model.LegendText;
                     series.Points.DataBindXY(model.XValues ?? new double[0], model.YValues ?? new double[0]);

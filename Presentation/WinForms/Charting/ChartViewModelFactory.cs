@@ -30,7 +30,8 @@ namespace JSQViewer.Presentation.WinForms.Charting
                     XValues = ConvertXValues(item.XValues, result.OverlayMode),
                     YValues = item.YValues ?? new double[0],
                     BorderWidth = item.BorderWidth,
-                    IsVisibleInLegend = item.IsVisibleInLegend
+                    IsVisibleInLegend = item.IsVisibleInLegend,
+                    IsForecast = item.IsForecast
                 });
             }
 

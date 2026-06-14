@@ -73,6 +73,10 @@ namespace JSQViewer.Application.Charting
 
         public ChartAxisSettings YAxis { get; private set; }
 
+        public bool IncludeDynamicsForecast { get; private set; }
+
+        public DynamicsForecastRoleSelection DynamicsForecastRoleSelection { get; private set; }
+
         public static ChartPipelineRequest ForChart(
             TestData data,
             IEnumerable<string> selectedCodes,
@@ -85,7 +89,9 @@ namespace JSQViewer.Application.Charting
             double selectedRangeStart = double.NaN,
             double selectedRangeEnd = double.NaN,
             ChartAxisSettings xAxisSettings = null,
-            ChartAxisSettings yAxisSettings = null)
+            ChartAxisSettings yAxisSettings = null,
+            bool includeDynamicsForecast = false,
+            DynamicsForecastRoleSelection dynamicsForecastRoleSelection = null)
         {
             IReadOnlyList<string> codes;
             if (selectedCodes == null)
@@ -110,7 +116,9 @@ namespace JSQViewer.Application.Charting
                 SelectedRangeStart = selectedRangeStart,
                 SelectedRangeEnd = selectedRangeEnd,
                 XAxis = xAxisSettings ?? ChartAxisSettings.Automatic(),
-                YAxis = yAxisSettings ?? ChartAxisSettings.Automatic()
+                YAxis = yAxisSettings ?? ChartAxisSettings.Automatic(),
+                IncludeDynamicsForecast = includeDynamicsForecast,
+                DynamicsForecastRoleSelection = dynamicsForecastRoleSelection
             };
         }
     }

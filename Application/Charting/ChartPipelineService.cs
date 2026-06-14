@@ -9,10 +9,17 @@ namespace JSQViewer.Application.Charting
     public sealed class ChartPipelineService
     {
         private readonly SeriesSliceService _seriesSliceService;
+        private readonly DynamicsForecastService _dynamicsForecastService;
 
         public ChartPipelineService(SeriesSliceService seriesSliceService)
+            : this(seriesSliceService, new DynamicsForecastService())
+        {
+        }
+
+        public ChartPipelineService(SeriesSliceService seriesSliceService, DynamicsForecastService dynamicsForecastService)
         {
             _seriesSliceService = seriesSliceService ?? throw new ArgumentNullException(nameof(seriesSliceService));
+            _dynamicsForecastService = dynamicsForecastService ?? throw new ArgumentNullException(nameof(dynamicsForecastService));
         }
 
         public ChartPipelineResult Execute(ChartPipelineRequest request)
@@ -131,6 +138,16 @@ namespace JSQViewer.Application.Charting
                     BorderWidth = 1,
                     IsVisibleInLegend = showLegend
                 });
+            }
+
+            if (overlayMode && request.IncludeDynamicsForecast)
+            {
+                ChartPipelineSeries forecast = _dynamicsForecastService.BuildForecast(series, request.DynamicsForecastRoleSelection);
+                if (forecast != null)
+                {
+                    series.Add(forecast);
+                    showLegend = true;
+                }
             }
 
             double dataMin = double.NaN;

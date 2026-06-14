@@ -61,6 +61,7 @@ namespace JSQViewer.UI
         private readonly ComboBox _templateModeBox;
         private readonly Button _exportTemplateButton;
         private readonly Button _showChartButton;
+        private readonly Button _forecastDynamicsButton;
         private readonly Button _settingsButton;
         private readonly Button _langButton;
         private readonly Label _recentLabel;
@@ -152,6 +153,8 @@ namespace JSQViewer.UI
         private ViewerSettingsModel _viewerSettings;
         private int _sourceWindowWidth = 440;
         private ChartViewModel _lastChartViewModel;
+        private bool _includeDynamicsForecastOnNextRedraw;
+        private DynamicsForecastRoleSelection _pendingDynamicsForecastRoleSelection;
         private static readonly Regex NaturalSplitRegex = new Regex("(\\d+)", RegexOptions.Compiled);
 
         public MainForm(
@@ -319,6 +322,7 @@ namespace JSQViewer.UI
 
             _exportTemplateButton = new Button(); _exportTemplateButton.Text = Loc.Get("ExportTemplate"); _exportTemplateButton.AutoSize = true; _exportTemplateButton.Enabled = false; _exportTemplateButton.Click += ExportTemplateButtonOnClick; templateOptionsRow.Controls.Add(_exportTemplateButton);
             _showChartButton = new Button(); _showChartButton.Text = Loc.Get("ShowChart"); _showChartButton.AutoSize = true; _showChartButton.Enabled = false; _showChartButton.Click += ShowChartButtonOnClick; templateOptionsRow.Controls.Add(_showChartButton);
+            _forecastDynamicsButton = new Button(); _forecastDynamicsButton.Text = Loc.Get("ForecastDynamics"); _forecastDynamicsButton.AutoSize = true; _forecastDynamicsButton.Enabled = false; _forecastDynamicsButton.Click += ForecastDynamicsButtonOnClick; templateOptionsRow.Controls.Add(_forecastDynamicsButton);
             _settingsButton = new Button(); _settingsButton.Text = Loc.Get("Styles"); _settingsButton.AutoSize = true; _settingsButton.Click += SettingsButtonOnClick; templateOptionsRow.Controls.Add(_settingsButton);
             _selectionInfoLabel = new Label(); _selectionInfoLabel.Font = smallFont; _selectionInfoLabel.AutoSize = true; _selectionInfoLabel.Padding = new Padding(8, 6, 4, 4); _selectionInfoLabel.Text = Loc.Get("Selected"); templateOptionsRow.Controls.Add(_selectionInfoLabel);
 
@@ -721,6 +725,7 @@ namespace JSQViewer.UI
             RefreshTemplateModeItems();
             _exportTemplateButton.Text = Loc.Get("ExportTemplate");
             _showChartButton.Text = Loc.Get("ShowChart");
+            _forecastDynamicsButton.Text = Loc.Get("ForecastDynamics");
             _settingsButton.Text = Loc.Get("Styles");
             _savePresetButton.Text = Loc.Get("SavePreset");
             _loadPresetButton.Text = Loc.Get("Load");
@@ -801,6 +806,7 @@ namespace JSQViewer.UI
             _toolTip.SetToolTip(_templateModeBox, Loc.Get("TipTemplateMode"));
             _toolTip.SetToolTip(_exportTemplateButton, Loc.Get("TipExportTemplate"));
             _toolTip.SetToolTip(_showChartButton, Loc.Get("TipShowChart"));
+            _toolTip.SetToolTip(_forecastDynamicsButton, Loc.Get("TipForecastDynamics"));
             _toolTip.SetToolTip(_settingsButton, Loc.Get("TipStyles"));
             _toolTip.SetToolTip(_presetNameBox, Loc.Get("TipPresetName"));
             _toolTip.SetToolTip(_savePresetButton, Loc.Get("TipSavePreset"));
@@ -1010,6 +1016,7 @@ namespace JSQViewer.UI
             _selectionInfoLabel.Text = Loc.Get("Selected");
             _exportTemplateButton.Enabled = _savePresetButton.Enabled = false;
             _showChartButton.Enabled = false;
+            _forecastDynamicsButton.Enabled = false;
             _saveOrderButton.Enabled = false;
             _loadPresetButton.Enabled = _deletePresetButton.Enabled = _presetsBox.Items.Count > 0;
             _loadOrderButton.Enabled = _deleteOrderButton.Enabled = _ordersBox.Items.Count > 0;
@@ -1825,86 +1832,15 @@ namespace JSQViewer.UI
 
         private string SelectSingleSource(string initial)
         {
-            DialogResult choice = ShowSourceSelectionDialog();
-
-            if (choice == DialogResult.Yes)
-            {
-                return SelectSingleFolder(initial);
-            }
-
-            if (choice == DialogResult.No)
-            {
-                return SelectSingleProtocolFile(initial);
-            }
-
-            return string.Empty;
-        }
-
-        private DialogResult ShowSourceSelectionDialog()
-        {
-            using (var dialog = new Form())
-            using (var prompt = new Label())
-            using (var folderButton = new Button())
-            using (var fileButton = new Button())
-            using (var cancelButton = new Button())
-            {
-                dialog.Text = Loc.Get("SelectSourceTitle");
-                dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
-                dialog.StartPosition = FormStartPosition.CenterParent;
-                dialog.MinimizeBox = false;
-                dialog.MaximizeBox = false;
-                dialog.ShowInTaskbar = false;
-                dialog.ClientSize = new Size(360, 118);
-
-                prompt.Text = Loc.Get("SelectSourcePrompt");
-                prompt.AutoSize = false;
-                prompt.TextAlign = ContentAlignment.MiddleLeft;
-                prompt.SetBounds(12, 12, 336, 32);
-                dialog.Controls.Add(prompt);
-
-                folderButton.Text = Loc.Get("SelectSourceFolder");
-                folderButton.DialogResult = DialogResult.Yes;
-                folderButton.SetBounds(72, 68, 82, 28);
-                dialog.Controls.Add(folderButton);
-
-                fileButton.Text = Loc.Get("SelectSourceFile");
-                fileButton.DialogResult = DialogResult.No;
-                fileButton.SetBounds(162, 68, 82, 28);
-                dialog.Controls.Add(fileButton);
-
-                cancelButton.Text = Loc.Get("Cancel");
-                cancelButton.DialogResult = DialogResult.Cancel;
-                cancelButton.SetBounds(252, 68, 82, 28);
-                dialog.Controls.Add(cancelButton);
-
-                dialog.AcceptButton = folderButton;
-                dialog.CancelButton = cancelButton;
-                return dialog.ShowDialog(this);
-            }
-        }
-
-        private string SelectSingleFolder(string initial)
-        {
             using (var dialog = new FolderBrowserDialog())
             {
                 dialog.SelectedPath = initial ?? string.Empty;
-                return dialog.ShowDialog(this) == DialogResult.OK ? dialog.SelectedPath : string.Empty;
-            }
-        }
-
-        private string SelectSingleProtocolFile(string initial)
-        {
-            using (var dialog = new OpenFileDialog())
-            {
-                dialog.Filter = Loc.Get("ProtocolFileFilter");
-                dialog.CheckFileExists = true;
-                dialog.Multiselect = false;
-                if (!string.IsNullOrWhiteSpace(initial) && _fileSystem.DirectoryExists(initial))
+                if (dialog.ShowDialog(this) != DialogResult.OK)
                 {
-                    dialog.InitialDirectory = initial;
+                    return string.Empty;
                 }
 
-                return dialog.ShowDialog(this) == DialogResult.OK ? dialog.FileName : string.Empty;
+                return _workspaceLoadOrchestrationService.ResolveSelectedFolderSource(dialog.SelectedPath);
             }
         }
 
@@ -2185,9 +2121,11 @@ namespace JSQViewer.UI
             RebuildChannelList();
             bool canOverlay = IsOverlayCompareModeAvailable(data);
             _compareOverlayCheck.Enabled = canOverlay;
+            _forecastDynamicsButton.Enabled = canOverlay;
             if (!canOverlay)
             {
                 _compareOverlayCheck.Checked = false;
+                _includeDynamicsForecastOnNextRedraw = false;
             }
             bool canRelativeTimeAxis = IsRelativeTimeAxisModeAvailable(data);
             UpdateRelativeTimeAxisControlState(canRelativeTimeAxis);
@@ -2216,6 +2154,7 @@ namespace JSQViewer.UI
             }
             _exportTemplateButton.Enabled = _savePresetButton.Enabled = true;
             _showChartButton.Enabled = true;
+            _forecastDynamicsButton.Enabled = canOverlay;
             _loadPresetButton.Enabled = _deletePresetButton.Enabled = _presetsBox.Items.Count > 0;
             _saveOrderButton.Enabled = true;
             _loadOrderButton.Enabled = _deleteOrderButton.Enabled = _ordersBox.Items.Count > 0;
@@ -2880,6 +2819,10 @@ namespace JSQViewer.UI
                 ShowChartHost();
             }
               ChartAxisSettings xAxisSettings = BuildManualXAxisSettings(overlayMode);
+              bool includeDynamicsForecast = _includeDynamicsForecastOnNextRedraw;
+              DynamicsForecastRoleSelection forecastRoles = _pendingDynamicsForecastRoleSelection;
+              _includeDynamicsForecastOnNextRedraw = false;
+              _pendingDynamicsForecastRoleSelection = null;
               var request = ChartPipelineRequest.ForChart(
                   data,
                   selectedCodes,
@@ -2892,8 +2835,14 @@ namespace JSQViewer.UI
                   xAxisSettings.IsManualEnabled ? double.NaN : ConvertTrackRangeToChartSpaceStart(overlayMode),
                   xAxisSettings.IsManualEnabled ? double.NaN : ConvertTrackRangeToChartSpaceEnd(overlayMode),
                   xAxisSettings,
-                  BuildYAxisSettingsViewModel().ToChartAxisSettings());
+                  BuildYAxisSettingsViewModel().ToChartAxisSettings(),
+                  includeDynamicsForecast,
+                  forecastRoles);
               ChartPipelineResult chartState = _buildChartViewUseCase.Execute(request);
+              if (includeDynamicsForecast && !chartState.Series.Any(series => series.IsForecast))
+              {
+                  ShowForecastError(Loc.Get("ForecastUnavailable"));
+              }
               ChartViewModel viewModel = _chartViewModelFactory.Create(chartState, Loc.Get("OverlayXAxisTitle"));
               _chartRenderer.Render(_chart, viewModel);
               ApplyChartViewToRangeControls(viewModel);
@@ -3367,6 +3316,251 @@ namespace JSQViewer.UI
             UpdateSelectionInfo();
             _chartDisplayPresenter.RequestOpen();
             RedrawChart();
+        }
+
+        private void ForecastDynamicsButtonOnClick(object sender, EventArgs e)
+        {
+            if (_viewerSession.Data == null || !_viewerSession.IsLoaded)
+            {
+                NotifyError(Loc.Get("NoTestLoaded"));
+                return;
+            }
+
+            if (!IsOverlayCompareModeActive())
+            {
+                ShowForecastError(Loc.Get("ForecastRequiresOverlay"));
+                return;
+            }
+
+            List<string> selected = GetSelectedCodes();
+            if (selected.Count < 3)
+            {
+                ShowForecastError(Loc.Get("ForecastRoleNeedThree"));
+                return;
+            }
+
+            DynamicsForecastRoleSelection roleSelection;
+            if (!TrySelectDynamicsForecastRoles(selected, out roleSelection))
+            {
+                return;
+            }
+
+            _includeDynamicsForecastOnNextRedraw = true;
+            _pendingDynamicsForecastRoleSelection = roleSelection;
+            UpdateSelectionInfo();
+            _chartDisplayPresenter.RequestOpen();
+            RedrawChart();
+        }
+
+        private void ShowForecastError(string message)
+        {
+            _notificationService.ShowError(this, Loc.Get("ForecastDynamics"), message);
+        }
+
+        private bool TrySelectDynamicsForecastRoles(List<string> selectedCodes, out DynamicsForecastRoleSelection roleSelection)
+        {
+            roleSelection = null;
+            List<ForecastRoleItem> items = BuildForecastRoleItems(selectedCodes);
+            if (items.Count < 3)
+            {
+                ShowForecastError(Loc.Get("ForecastRoleNeedThree"));
+                return false;
+            }
+
+            using (var dialog = new Form())
+            using (var oldFuncBox = new ComboBox())
+            using (var targetBox = new ComboBox())
+            using (var newFuncBox = new ComboBox())
+            using (var buildButton = new Button())
+            using (var cancelButton = new Button())
+            {
+                dialog.Text = Loc.Get("ForecastRoleTitle");
+                dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dialog.StartPosition = FormStartPosition.CenterParent;
+                dialog.MinimizeBox = false;
+                dialog.MaximizeBox = false;
+                dialog.ShowInTaskbar = false;
+                dialog.ClientSize = new Size(640, 190);
+
+                AddForecastRoleLabel(dialog, Loc.Get("ForecastOldFunc"), 14, 18);
+                AddForecastRoleLabel(dialog, Loc.Get("ForecastOldFullHalf"), 14, 62);
+                AddForecastRoleLabel(dialog, Loc.Get("ForecastNewFunc"), 14, 106);
+
+                ConfigureForecastRoleBox(oldFuncBox, items, 170, 14);
+                ConfigureForecastRoleBox(targetBox, items, 170, 58);
+                ConfigureForecastRoleBox(newFuncBox, items, 170, 102);
+                dialog.Controls.Add(oldFuncBox);
+                dialog.Controls.Add(targetBox);
+                dialog.Controls.Add(newFuncBox);
+
+                PreselectForecastRoles(items, oldFuncBox, targetBox, newFuncBox);
+
+                buildButton.Text = Loc.Get("BuildForecast");
+                buildButton.DialogResult = DialogResult.OK;
+                buildButton.SetBounds(402, 150, 104, 28);
+                dialog.Controls.Add(buildButton);
+
+                cancelButton.Text = Loc.Get("Cancel");
+                cancelButton.DialogResult = DialogResult.Cancel;
+                cancelButton.SetBounds(516, 150, 104, 28);
+                dialog.Controls.Add(cancelButton);
+
+                dialog.AcceptButton = buildButton;
+                dialog.CancelButton = cancelButton;
+
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return false;
+                }
+
+                var oldFunc = oldFuncBox.SelectedItem as ForecastRoleItem;
+                var target = targetBox.SelectedItem as ForecastRoleItem;
+                var newFunc = newFuncBox.SelectedItem as ForecastRoleItem;
+                if (oldFunc == null || target == null || newFunc == null)
+                {
+                    ShowForecastError(Loc.Get("ForecastRoleNeedSelection"));
+                    return false;
+                }
+
+                if (string.Equals(oldFunc.Code, target.Code, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(oldFunc.Code, newFunc.Code, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(target.Code, newFunc.Code, StringComparison.OrdinalIgnoreCase))
+                {
+                    ShowForecastError(Loc.Get("ForecastRoleDuplicate"));
+                    return false;
+                }
+
+                roleSelection = new DynamicsForecastRoleSelection(oldFunc.Code, target.Code, newFunc.Code);
+                return true;
+            }
+        }
+
+        private static void AddForecastRoleLabel(Control parent, string text, int x, int y)
+        {
+            var label = new Label();
+            label.Text = text;
+            label.AutoSize = false;
+            label.TextAlign = ContentAlignment.MiddleLeft;
+            label.SetBounds(x, y, 145, 24);
+            parent.Controls.Add(label);
+        }
+
+        private static void ConfigureForecastRoleBox(ComboBox box, List<ForecastRoleItem> items, int x, int y)
+        {
+            box.DropDownStyle = ComboBoxStyle.DropDownList;
+            box.SetBounds(x, y, 450, 24);
+            for (int i = 0; i < items.Count; i++)
+            {
+                box.Items.Add(items[i]);
+            }
+        }
+
+        private void PreselectForecastRoles(List<ForecastRoleItem> items, ComboBox oldFuncBox, ComboBox targetBox, ComboBox newFuncBox)
+        {
+            ForecastRoleItem target = items.FirstOrDefault(item => ContainsForecastToken(item.Label, "FULL") || ContainsForecastToken(item.Label, "HALF"));
+            List<ForecastRoleItem> funcs = items.Where(item => ContainsForecastToken(item.Label, "FUNC")).OrderBy(item => item.DurationHours).ToList();
+
+            SelectForecastRoleItem(targetBox, target ?? items.FirstOrDefault());
+            if (funcs.Count >= 2)
+            {
+                SelectForecastRoleItem(newFuncBox, funcs[0]);
+                SelectForecastRoleItem(oldFuncBox, funcs[funcs.Count - 1]);
+            }
+            else
+            {
+                SelectForecastRoleItem(oldFuncBox, items.FirstOrDefault(item => target == null || !string.Equals(item.Code, target.Code, StringComparison.OrdinalIgnoreCase)) ?? items.FirstOrDefault());
+                SelectForecastRoleItem(newFuncBox, items.LastOrDefault(item => target == null || !string.Equals(item.Code, target.Code, StringComparison.OrdinalIgnoreCase)) ?? items.LastOrDefault());
+            }
+        }
+
+        private static void SelectForecastRoleItem(ComboBox box, ForecastRoleItem item)
+        {
+            if (box == null || item == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < box.Items.Count; i++)
+            {
+                var candidate = box.Items[i] as ForecastRoleItem;
+                if (candidate != null && string.Equals(candidate.Code, item.Code, StringComparison.OrdinalIgnoreCase))
+                {
+                    box.SelectedIndex = i;
+                    return;
+                }
+            }
+        }
+
+        private List<ForecastRoleItem> BuildForecastRoleItems(List<string> selectedCodes)
+        {
+            var items = new List<ForecastRoleItem>();
+            TestData data = _viewerSession.Data;
+            if (selectedCodes == null || data == null)
+            {
+                return items;
+            }
+
+            for (int i = 0; i < selectedCodes.Count; i++)
+            {
+                string code = selectedCodes[i];
+                string source = ResolveSourceRootForCode(data, code);
+                string sourceName = GetSourceDisplayName(source);
+                string displayCode = NormalizeChannelCodeForDisplay(code);
+                string label = string.IsNullOrWhiteSpace(sourceName)
+                    ? displayCode
+                    : string.Format(CultureInfo.InvariantCulture, "[{0}] {1}", sourceName, displayCode);
+                items.Add(new ForecastRoleItem(code, label, ResolveSourceDurationHours(data, source)));
+            }
+
+            return items;
+        }
+
+        private static string ResolveSourceRootForCode(TestData data, string code)
+        {
+            string source;
+            if (data != null
+                && data.CodeSources != null
+                && data.CodeSources.TryGetValue(code, out source))
+            {
+                return source;
+            }
+
+            return string.Empty;
+        }
+
+        private static string GetSourceDisplayName(string source)
+        {
+            if (string.IsNullOrWhiteSpace(source))
+            {
+                return string.Empty;
+            }
+
+            string trimmed = source.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string name = Path.GetFileName(trimmed);
+            return string.IsNullOrWhiteSpace(name) ? source : name;
+        }
+
+        private static double ResolveSourceDurationHours(TestData data, string source)
+        {
+            if (data == null || string.IsNullOrWhiteSpace(source) || data.SourceStartMs == null || data.SourceEndMs == null)
+            {
+                return double.PositiveInfinity;
+            }
+
+            long start;
+            long end;
+            if (!data.SourceStartMs.TryGetValue(source, out start) || !data.SourceEndMs.TryGetValue(source, out end))
+            {
+                return double.PositiveInfinity;
+            }
+
+            return Math.Max(0d, (end - start) / 3600000d);
+        }
+
+        private static bool ContainsForecastToken(string text, string token)
+        {
+            return !string.IsNullOrEmpty(text)
+                && text.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private void SavePresetButtonOnClick(object sender, EventArgs e)
@@ -4125,6 +4319,7 @@ namespace JSQViewer.UI
             _closeAllButton.Enabled = !busy;
             _exportTemplateButton.Enabled = !busy && _viewerSession.IsLoaded;
             _showChartButton.Enabled = !busy && _viewerSession.IsLoaded;
+            _forecastDynamicsButton.Enabled = !busy && IsOverlayCompareModeAvailable(_viewerSession.Data);
             _savePresetButton.Enabled = !busy && _viewerSession.IsLoaded;
             _saveOrderButton.Enabled = !busy && _viewerSession.IsLoaded;
             _settingsButton.Enabled = !busy;
@@ -4459,6 +4654,27 @@ namespace JSQViewer.UI
             public string Unit { get; private set; }
             public ChannelItem(string code, string label, string unit) { Code = code; Label = label; Unit = unit ?? string.Empty; }
             public override string ToString() { return Label; }
+        }
+
+        private sealed class ForecastRoleItem
+        {
+            public string Code { get; private set; }
+
+            public string Label { get; private set; }
+
+            public double DurationHours { get; private set; }
+
+            public ForecastRoleItem(string code, string label, double durationHours)
+            {
+                Code = code ?? string.Empty;
+                Label = label ?? string.Empty;
+                DurationHours = durationHours;
+            }
+
+            public override string ToString()
+            {
+                return Label;
+            }
         }
 
         private sealed class PresetItem
