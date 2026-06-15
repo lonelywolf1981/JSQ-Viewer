@@ -7,6 +7,11 @@ namespace JSQViewer.Application.Charting
     public sealed class DynamicsForecastService
     {
         private const int MinimumObservedPoints = 2;
+        private const double FirstCoolingMinimumDropThreshold = 5.0;
+        private const double FirstCoolingMinimumReboundThreshold = 0.5;
+        private const double FirstCoolingMinimumLowerTolerance = 0.3;
+        private const double FirstCoolingMinimumReboundLookAheadHours = 0.5;
+        private const double FirstCoolingMinimumStabilityLookAheadHours = 2.0;
 
         public ChartPipelineSeries BuildForecast(IReadOnlyList<ChartPipelineSeries> sourceSeries)
         {
@@ -34,29 +39,39 @@ namespace JSQViewer.Application.Charting
                 return null;
             }
 
-            var xValues = new List<double>(targetCount);
-            var yValues = new List<double>(targetCount);
-            double targetOriginX = roles.Target.XValues[0];
-            double newFuncStartY = roles.NewFunc.YValues[0];
-            double verticalOffset = newFuncStartY - roles.Target.YValues[0];
-            bool cooling = IsCoolingPair(roles.OldFunc, roles.NewFunc);
-            double loadedProgressRange = ResolveLoadedProgressRange(roles.Target, cooling);
-            double maxLoadedProgress = 0d;
-
-            for (int i = 0; i < targetCount; i++)
+            int oldFuncMinIndex = FindFirstCoolingMinimumIndex(roles.OldFunc);
+            int targetMinIndex = FindFirstCoolingMinimumIndex(roles.Target);
+            int newFuncMinIndex = FindFirstCoolingMinimumIndex(roles.NewFunc);
+            if (oldFuncMinIndex <= 0 || targetMinIndex <= 0 || newFuncMinIndex <= 0)
             {
-                double x = roles.Target.XValues[i];
-                double loadedProgress = DirectionalDeltaFromStart(roles.Target, roles.Target.YValues[i], cooling);
-                if (loadedProgress > maxLoadedProgress)
+                return null;
+            }
+
+            var xValues = new List<double>(targetMinIndex + 1);
+            var yValues = new List<double>(targetMinIndex + 1);
+            double targetOriginX = roles.Target.XValues[0];
+            double verticalOffset = roles.NewFunc.YValues[0] - roles.Target.YValues[0];
+            double maxProgress = 0d;
+
+            for (int i = 0; i <= targetMinIndex; i++)
+            {
+                double progress = CoolingProgressAt(roles.Target, targetMinIndex, roles.Target.YValues[i]);
+                if (progress > maxProgress)
                 {
-                    maxLoadedProgress = loadedProgress;
+                    maxProgress = progress;
                 }
 
-                double offsetFactor = loadedProgressRange > 1e-9
-                    ? 1d - Math.Min(1d, Math.Max(0d, maxLoadedProgress / loadedProgressRange))
-                    : 0d;
-                xValues.Add(targetOriginX + MapOldElapsedToNewElapsed(roles.OldFunc, roles.NewFunc, x - roles.Target.XValues[0], cooling));
-                yValues.Add(roles.Target.YValues[i] + (verticalOffset * offsetFactor));
+                double predictedElapsed = MapNewFuncElapsedToPredictedFullElapsed(
+                    roles.OldFunc,
+                    oldFuncMinIndex,
+                    roles.Target,
+                    targetMinIndex,
+                    roles.NewFunc,
+                    newFuncMinIndex,
+                    maxProgress);
+
+                xValues.Add(targetOriginX + predictedElapsed);
+                yValues.Add(roles.Target.YValues[i] + verticalOffset);
             }
 
             if (xValues.Count < MinimumObservedPoints)
@@ -77,175 +92,140 @@ namespace JSQViewer.Application.Charting
             };
         }
 
-        private static bool IsCoolingPair(ChartPipelineSeries oldFunc, ChartPipelineSeries newFunc)
+        private static double MapNewFuncElapsedToPredictedFullElapsed(
+            ChartPipelineSeries oldFunc,
+            int oldFuncMinIndex,
+            ChartPipelineSeries oldFull,
+            int oldFullMinIndex,
+            ChartPipelineSeries newFunc,
+            int newFuncMinIndex,
+            double progress)
         {
-            int oldCount = CountPoints(oldFunc);
-            int newCount = CountPoints(newFunc);
-            if (oldCount < MinimumObservedPoints || newCount < MinimumObservedPoints)
-            {
-                return true;
-            }
-
-            double oldDelta = oldFunc.YValues[oldCount - 1] - oldFunc.YValues[0];
-            double newDelta = newFunc.YValues[newCount - 1] - newFunc.YValues[0];
-            if (Math.Abs(oldDelta) <= 1e-9 || Math.Abs(newDelta) <= 1e-9)
-            {
-                return true;
-            }
-
-            return oldDelta + newDelta < 0d;
-        }
-
-        private static double MapOldElapsedToNewElapsed(ChartPipelineSeries oldFunc, ChartPipelineSeries newFunc, double oldElapsed, bool cooling)
-        {
-            int oldCount = CountPoints(oldFunc);
-            int newCount = CountPoints(newFunc);
-            if (oldCount < MinimumObservedPoints || newCount < MinimumObservedPoints)
-            {
-                return oldElapsed;
-            }
-
-            double oldStartX = oldFunc.XValues[0];
-            double oldEndElapsed = oldFunc.XValues[oldCount - 1] - oldStartX;
-            double clampedOldElapsed = Math.Max(0d, Math.Min(oldElapsed, oldEndElapsed));
-            double oldX = oldStartX + clampedOldElapsed;
-            double oldDelta = SampleDirectionalDelta(oldFunc, oldX, cooling);
-            double newStartX = newFunc.XValues[0];
-            double newEndElapsed = newFunc.XValues[newCount - 1] - newStartX;
-            double? mappedX = InterpolateXForDirectionalDelta(newFunc, oldDelta, cooling);
-            if (mappedX.HasValue)
-            {
-                double mappedElapsed = mappedX.Value - newStartX;
-                if (oldElapsed <= oldEndElapsed)
-                {
-                    return mappedElapsed;
-                }
-
-                return mappedElapsed + ((oldElapsed - oldEndElapsed) * EstimateTailScale(oldFunc, newFunc, cooling));
-            }
-
-            double maxNewDelta = MaxDirectionalDelta(newFunc, cooling);
-            double? oldAtMaxNewDeltaX = InterpolateXForDirectionalDelta(oldFunc, maxNewDelta, cooling);
-            if (!oldAtMaxNewDeltaX.HasValue)
-            {
-                return oldElapsed;
-            }
-
-            double oldAtMaxNewDeltaElapsed = oldAtMaxNewDeltaX.Value - oldStartX;
-            double tailScale = EstimateScaleNearDelta(oldFunc, newFunc, maxNewDelta, cooling);
-            return newEndElapsed + ((oldElapsed - oldAtMaxNewDeltaElapsed) * tailScale);
-        }
-
-        private static double EstimateTailScale(ChartPipelineSeries oldFunc, ChartPipelineSeries newFunc, bool cooling)
-        {
-            double maxOldDelta = MaxDirectionalDelta(oldFunc, cooling);
-            return EstimateScaleNearDelta(oldFunc, newFunc, maxOldDelta, cooling);
-        }
-
-        private static double EstimateScaleNearDelta(ChartPipelineSeries oldFunc, ChartPipelineSeries newFunc, double endDelta, bool cooling)
-        {
-            if (endDelta <= 1e-9)
-            {
-                return 1d;
-            }
-
-            double startDelta = endDelta * 0.5d;
-            double? oldStartX = InterpolateXForDirectionalDelta(oldFunc, startDelta, cooling);
-            double? oldEndX = InterpolateXForDirectionalDelta(oldFunc, endDelta, cooling);
-            double? newStartX = InterpolateXForDirectionalDelta(newFunc, startDelta, cooling);
-            double? newEndX = InterpolateXForDirectionalDelta(newFunc, endDelta, cooling);
-            if (!oldStartX.HasValue || !oldEndX.HasValue || !newStartX.HasValue || !newEndX.HasValue)
-            {
-                return 1d;
-            }
-
-            double oldSpan = oldEndX.Value - oldStartX.Value;
-            double newSpan = newEndX.Value - newStartX.Value;
-            if (oldSpan <= 1e-9 || newSpan <= 1e-9)
-            {
-                return 1d;
-            }
-
-            double scale = newSpan / oldSpan;
-            if (double.IsNaN(scale) || double.IsInfinity(scale) || scale <= 0d)
-            {
-                return 1d;
-            }
-
-            return Math.Max(0.1d, Math.Min(20d, scale));
-        }
-
-        private static double SampleDirectionalDelta(ChartPipelineSeries series, double x, bool cooling)
-        {
-            double y = SampleWithHold(series, x);
-            return DirectionalDeltaFromStart(series, y, cooling);
-        }
-
-        private static double MaxDirectionalDelta(ChartPipelineSeries series, bool cooling)
-        {
-            int count = CountPoints(series);
-            if (count == 0)
+            if (progress <= 1e-9)
             {
                 return 0d;
             }
 
-            double maxDelta = 0d;
-            for (int i = 0; i < count; i++)
+            double oldFuncElapsed = ElapsedAtProgress(oldFunc, oldFuncMinIndex, progress);
+            double oldFullElapsed = ElapsedAtProgress(oldFull, oldFullMinIndex, progress);
+            double newFuncElapsed = ElapsedAtProgress(newFunc, newFuncMinIndex, progress);
+            if (oldFuncElapsed <= 1e-9)
             {
-                double delta = cooling ? series.YValues[0] - series.YValues[i] : series.YValues[i] - series.YValues[0];
-                if (delta > maxDelta)
-                {
-                    maxDelta = delta;
-                }
+                return oldFullElapsed;
             }
 
-            return maxDelta;
+            return newFuncElapsed * (oldFullElapsed / oldFuncElapsed);
         }
 
-        private static double ResolveLoadedProgressRange(ChartPipelineSeries series, bool cooling)
+        private static double ElapsedAtProgress(ChartPipelineSeries series, int minIndex, double targetProgress)
         {
-            return MaxDirectionalDelta(series, cooling);
-        }
-
-        private static double DirectionalDeltaFromStart(ChartPipelineSeries series, double y, bool cooling)
-        {
-            return cooling ? series.YValues[0] - y : y - series.YValues[0];
-        }
-
-        private static double SampleWithHold(ChartPipelineSeries series, double x)
-        {
-            int count = CountPoints(series);
-            if (count == 0)
+            double startX = series.XValues[0];
+            if (targetProgress <= 1e-9)
             {
                 return 0d;
             }
 
-            if (x <= series.XValues[0])
+            for (int i = 1; i <= minIndex; i++)
             {
-                return series.YValues[0];
-            }
-
-            if (x >= series.XValues[count - 1])
-            {
-                return series.YValues[count - 1];
-            }
-
-            for (int i = 1; i < count; i++)
-            {
-                double x0 = series.XValues[i - 1];
-                double x1 = series.XValues[i];
-                if (x < x0 || x > x1 || x1 <= x0)
+                double p0 = CoolingProgressAt(series, minIndex, series.YValues[i - 1]);
+                double p1 = CoolingProgressAt(series, minIndex, series.YValues[i]);
+                bool contains = targetProgress >= Math.Min(p0, p1) && targetProgress <= Math.Max(p0, p1);
+                if (!contains || Math.Abs(p1 - p0) <= 1e-9)
                 {
                     continue;
                 }
 
-                double y0 = series.YValues[i - 1];
-                double y1 = series.YValues[i];
-                double t = (x - x0) / (x1 - x0);
-                return y0 + ((y1 - y0) * t);
+                double t = (targetProgress - p0) / (p1 - p0);
+                double x = series.XValues[i - 1] + ((series.XValues[i] - series.XValues[i - 1]) * t);
+                return Math.Max(0d, x - startX);
             }
 
-            return series.YValues[count - 1];
+            return Math.Max(0d, series.XValues[minIndex] - startX);
+        }
+
+        private static double CoolingProgressAt(ChartPipelineSeries series, int minIndex, double value)
+        {
+            double range = series.YValues[0] - series.YValues[minIndex];
+            if (Math.Abs(range) <= 1e-9)
+            {
+                return 0d;
+            }
+
+            return Math.Max(0d, Math.Min(1d, (series.YValues[0] - value) / range));
+        }
+
+        private static int FindFirstCoolingMinimumIndex(ChartPipelineSeries series)
+        {
+            int count = CountPoints(series);
+            if (count < MinimumObservedPoints)
+            {
+                return -1;
+            }
+
+            int fallbackMinIndex = 0;
+            double fallbackMin = series.YValues[0];
+            for (int i = 1; i < count; i++)
+            {
+                if (series.YValues[i] < fallbackMin)
+                {
+                    fallbackMin = series.YValues[i];
+                    fallbackMinIndex = i;
+                }
+            }
+
+            double firstValue = series.YValues[0];
+            for (int i = 0; i < count; i++)
+            {
+                double value = series.YValues[i];
+                if (firstValue - value < FirstCoolingMinimumDropThreshold)
+                {
+                    continue;
+                }
+
+                double reboundEnd = series.XValues[i] + FirstCoolingMinimumReboundLookAheadHours;
+                double stabilityEnd = series.XValues[i] + FirstCoolingMinimumStabilityLookAheadHours;
+                double futureMax = value;
+                double futureMin = value;
+                double reboundWindowMin = value;
+                int reboundWindowMinIndex = i;
+                bool hasFuture = false;
+
+                for (int j = i + 1; j < count && series.XValues[j] <= stabilityEnd; j++)
+                {
+                    double future = series.YValues[j];
+                    if (series.XValues[j] <= reboundEnd && future > futureMax)
+                    {
+                        futureMax = future;
+                    }
+
+                    if (series.XValues[j] <= reboundEnd && future < reboundWindowMin)
+                    {
+                        reboundWindowMin = future;
+                        reboundWindowMinIndex = j;
+                    }
+
+                    if (future < futureMin)
+                    {
+                        futureMin = future;
+                    }
+
+                    hasFuture = true;
+                }
+
+                if (!hasFuture)
+                {
+                    continue;
+                }
+
+                bool hasRebound = futureMax - value >= FirstCoolingMinimumReboundThreshold;
+                bool doesNotContinueCooling = futureMin >= value - FirstCoolingMinimumLowerTolerance;
+                if (hasRebound && doesNotContinueCooling)
+                {
+                    return reboundWindowMinIndex;
+                }
+            }
+
+            return fallbackMinIndex;
         }
 
         private static ForecastRoles ResolveExplicitRoles(IReadOnlyList<ChartPipelineSeries> sourceSeries, DynamicsForecastRoleSelection selection)
@@ -378,42 +358,6 @@ namespace JSQViewer.Application.Charting
         {
             return !string.IsNullOrEmpty(text)
                 && text.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private static double? InterpolateXForDirectionalDelta(ChartPipelineSeries series, double targetDelta, bool cooling)
-        {
-            int count = CountPoints(series);
-            if (count == 0)
-            {
-                return null;
-            }
-
-            for (int i = 0; i < count; i++)
-            {
-                double delta = cooling ? series.YValues[0] - series.YValues[i] : series.YValues[i] - series.YValues[0];
-                if (Math.Abs(delta - targetDelta) <= 1e-9)
-                {
-                    return series.XValues[i];
-                }
-            }
-
-            for (int i = 1; i < count; i++)
-            {
-                double d0 = cooling ? series.YValues[0] - series.YValues[i - 1] : series.YValues[i - 1] - series.YValues[0];
-                double d1 = cooling ? series.YValues[0] - series.YValues[i] : series.YValues[i] - series.YValues[0];
-                bool contains = targetDelta >= Math.Min(d0, d1) && targetDelta <= Math.Max(d0, d1);
-                if (!contains || Math.Abs(d1 - d0) <= 1e-9)
-                {
-                    continue;
-                }
-
-                double x0 = series.XValues[i - 1];
-                double x1 = series.XValues[i];
-                double t = (targetDelta - d0) / (d1 - d0);
-                return x0 + ((x1 - x0) * t);
-            }
-
-            return null;
         }
 
         private sealed class ForecastRoles

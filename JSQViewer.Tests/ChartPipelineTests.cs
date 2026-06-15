@@ -21,7 +21,7 @@ namespace JSQViewer.Tests
                 LegendText = "[old FUNC] A-01",
                 SourceRoot = "C:\\tests\\old FUNC",
                 XValues = new[] { 0d, 1d, 2d, 3d },
-                YValues = new[] { 10d, 8d, 7d, 6d }
+                YValues = new[] { 20d, 15d, 10d, 5d }
             };
             var oldFull = new ChartPipelineSeries
             {
@@ -29,7 +29,7 @@ namespace JSQViewer.Tests
                 LegendText = "[old FULL] A-01",
                 SourceRoot = "C:\\tests\\old FULL",
                 XValues = new[] { 0d, 1d, 2d, 3d },
-                YValues = new[] { 20d, 15d, 13d, 10d }
+                YValues = new[] { 20d, 17d, 14d, 12d }
             };
             var newFunc = new ChartPipelineSeries
             {
@@ -37,7 +37,7 @@ namespace JSQViewer.Tests
                 LegendText = "[new FUNC] A-01",
                 SourceRoot = "C:\\tests\\new FUNC",
                 XValues = new[] { 0d, 1d, 2d, 3d },
-                YValues = new[] { 10d, 8d, 7d, 6d }
+                YValues = new[] { 20d, 15d, 10d, 5d }
             };
 
             ChartPipelineSeries forecast = service.BuildForecast(
@@ -47,15 +47,15 @@ namespace JSQViewer.Tests
             Assert.IsNotNull(forecast);
             Assert.IsTrue(forecast.IsForecast);
             CollectionAssert.AreEqual(new[] { 0d, 1d, 2d, 3d }, forecast.XValues);
-            Assert.AreEqual(10d, forecast.YValues[0], 1e-9);
-            Assert.AreEqual(10d, forecast.YValues[1], 1e-9);
-            Assert.AreEqual(10d, forecast.YValues[2], 1e-9);
-            Assert.AreEqual(10d, forecast.YValues[3], 1e-9);
+            Assert.AreEqual(20d, forecast.YValues[0], 1e-9);
+            Assert.AreEqual(17d, forecast.YValues[1], 1e-9);
+            Assert.AreEqual(14d, forecast.YValues[2], 1e-9);
+            Assert.AreEqual(12d, forecast.YValues[3], 1e-9);
             StringAssert.Contains(forecast.LegendText, "Прогноз");
         }
 
         [TestMethod]
-        public void DynamicsForecastService_PreservesFullDefrostPulseAfterRampIn()
+        public void DynamicsForecastService_StopsAtFirstFullMinimum()
         {
             var service = new DynamicsForecastService();
             var oldFunc = new ChartPipelineSeries
@@ -88,8 +88,128 @@ namespace JSQViewer.Tests
                 new DynamicsForecastRoleSelection("old-func::C-T1", "old-full::C-T1", "new-func::C-T1"));
 
             Assert.IsNotNull(forecast);
-            Assert.IsTrue(forecast.YValues[5] > forecast.YValues[4]);
-            Assert.IsTrue(forecast.YValues[5] > forecast.YValues[6]);
+            Assert.AreEqual(5, forecast.YValues.Length);
+            Assert.AreEqual(-1d, forecast.YValues[forecast.YValues.Length - 1], 1e-9);
+        }
+
+        [TestMethod]
+        public void DynamicsForecastService_NormalizesOldPairStartTemperatures()
+        {
+            var service = new DynamicsForecastService();
+            var oldFunc = new ChartPipelineSeries
+            {
+                Code = "old-func::C-T1",
+                LegendText = "[old FUNC] C-T1",
+                SourceRoot = "C:\\tests\\old FUNC",
+                XValues = new[] { 0d, 1d, 2d },
+                YValues = new[] { 25d, 20d, 15d }
+            };
+            var oldFull = new ChartPipelineSeries
+            {
+                Code = "old-full::C-T1",
+                LegendText = "[old FULL] C-T1",
+                SourceRoot = "C:\\tests\\old FULL",
+                XValues = new[] { 0d, 1d, 2d },
+                YValues = new[] { 32d, 27d, 22d }
+            };
+            var newFunc = new ChartPipelineSeries
+            {
+                Code = "new-func::C-T1",
+                LegendText = "[new FUNC] C-T1",
+                SourceRoot = "C:\\tests\\new FUNC",
+                XValues = new[] { 0d, 1d, 2d },
+                YValues = new[] { 31d, 21d, 11d }
+            };
+
+            ChartPipelineSeries forecast = service.BuildForecast(
+                new[] { oldFunc, oldFull, newFunc },
+                new DynamicsForecastRoleSelection("old-func::C-T1", "old-full::C-T1", "new-func::C-T1"));
+
+            Assert.IsNotNull(forecast);
+            CollectionAssert.AreEqual(new[] { 0d, 1d, 2d }, forecast.XValues);
+            Assert.AreEqual(31d, forecast.YValues[0], 1e-9);
+            Assert.AreEqual(26d, forecast.YValues[1], 1e-9);
+            Assert.AreEqual(21d, forecast.YValues[2], 1e-9);
+        }
+
+        [TestMethod]
+        public void DynamicsForecastService_ShiftsFullTemplateToNewFuncStartWithoutTimeCompression()
+        {
+            var service = new DynamicsForecastService();
+            var oldFunc = new ChartPipelineSeries
+            {
+                Code = "old-func::C-T1",
+                LegendText = "[old FUNC] C-T1",
+                SourceRoot = "C:\\tests\\old FUNC",
+                XValues = new[] { 0d, 1d, 2d },
+                YValues = new[] { 30d, 15d, 5d }
+            };
+            var oldFull = new ChartPipelineSeries
+            {
+                Code = "old-full::C-T1",
+                LegendText = "[old FULL] C-T1",
+                SourceRoot = "C:\\tests\\old FULL",
+                XValues = new[] { 0d, 10d, 20d },
+                YValues = new[] { 33d, 18d, 8d }
+            };
+            var newFunc = new ChartPipelineSeries
+            {
+                Code = "new-func::C-T1",
+                LegendText = "[new FUNC] C-T1",
+                SourceRoot = "C:\\tests\\new FUNC",
+                XValues = new[] { 0d, 4d },
+                YValues = new[] { 31d, 5d }
+            };
+
+            ChartPipelineSeries forecast = service.BuildForecast(
+                new[] { oldFunc, oldFull, newFunc },
+                new DynamicsForecastRoleSelection("old-func::C-T1", "old-full::C-T1", "new-func::C-T1"));
+
+            Assert.IsNotNull(forecast);
+            CollectionAssert.AreEqual(new[] { 0d, 24d, 40d }, forecast.XValues);
+            Assert.AreEqual(31d, forecast.YValues[0], 1e-9);
+            Assert.AreEqual(16d, forecast.YValues[1], 1e-9);
+            Assert.AreEqual(6d, forecast.YValues[2], 1e-9);
+        }
+
+        [TestMethod]
+        public void DynamicsForecastService_MapsT1FullTimeByFuncToFullProgressRatio()
+        {
+            var service = new DynamicsForecastService();
+            var oldFunc = new ChartPipelineSeries
+            {
+                Code = "old-func::C-T1",
+                LegendText = "[old FUNC] C-T1",
+                SourceRoot = "C:\\tests\\old FUNC",
+                XValues = new[] { 0d, 1d, 2d },
+                YValues = new[] { 30d, 20d, 10d }
+            };
+            var oldFull = new ChartPipelineSeries
+            {
+                Code = "old-full::C-T1",
+                LegendText = "[old FULL] C-T1",
+                SourceRoot = "C:\\tests\\old FULL",
+                XValues = new[] { 0d, 5d, 10d },
+                YValues = new[] { 30d, 20d, 10d }
+            };
+            var newFunc = new ChartPipelineSeries
+            {
+                Code = "new-func::C-T1",
+                LegendText = "[new FUNC] C-T1",
+                SourceRoot = "C:\\tests\\new FUNC",
+                XValues = new[] { 0d, 2d, 4d },
+                YValues = new[] { 32d, 22d, 12d }
+            };
+
+            ChartPipelineSeries forecast = service.BuildForecast(
+                new[] { oldFunc, oldFull, newFunc },
+                new DynamicsForecastRoleSelection("old-func::C-T1", "old-full::C-T1", "new-func::C-T1"));
+
+            Assert.IsNotNull(forecast);
+            CollectionAssert.AreEqual(new[] { 0d, 10d, 20d }, forecast.XValues);
+            Assert.AreEqual(32d, forecast.YValues[0], 1e-9);
+            Assert.AreEqual(22d, forecast.YValues[1], 1e-9);
+            Assert.AreEqual(12d, forecast.YValues[2], 1e-9);
         }
 
         [TestMethod]
@@ -127,8 +247,8 @@ namespace JSQViewer.Tests
 
             Assert.IsNotNull(forecast);
             Assert.AreEqual(7, forecast.XValues.Length);
-            Assert.IsTrue(forecast.XValues[6] > oldFull.XValues[6]);
-            Assert.AreEqual(newFunc.YValues[0], forecast.YValues[0], 1e-9);
+            Assert.AreEqual(80d, forecast.XValues[6], 1e-9);
+            Assert.AreEqual(32d, forecast.YValues[0], 1e-9);
             Assert.IsTrue(forecast.YValues[5] > forecast.YValues[4]);
             Assert.IsTrue(forecast.YValues[5] > forecast.YValues[6]);
         }
@@ -167,19 +287,18 @@ namespace JSQViewer.Tests
                 new DynamicsForecastRoleSelection("old-func::C-T1", "old-full::C-T1", "new-func::C-T1"));
 
             Assert.IsNotNull(forecast);
-            CollectionAssert.AreEqual(new[] { 0d, 5d, 10d, 15d, 20d }, forecast.XValues);
+            CollectionAssert.AreEqual(new[] { 0d, 2d, 4d, 4d, 8d }, forecast.XValues);
             Assert.AreEqual(30d, forecast.YValues[0], 1e-9);
-            Assert.AreEqual(23.7777777777778d, forecast.YValues[1], 1e-9);
-            Assert.AreEqual(17.5555555555556d, forecast.YValues[2], 1e-9);
-            Assert.AreEqual(20.5555555555556d, forecast.YValues[3], 1e-9);
-            Assert.AreEqual(16d, forecast.YValues[4], 1e-9);
-            Assert.AreEqual(newFunc.YValues[0], forecast.YValues[0], 1e-9);
+            Assert.AreEqual(26d, forecast.YValues[1], 1e-9);
+            Assert.AreEqual(22d, forecast.YValues[2], 1e-9);
+            Assert.AreEqual(25d, forecast.YValues[3], 1e-9);
+            Assert.AreEqual(21d, forecast.YValues[4], 1e-9);
             Assert.IsTrue(forecast.YValues[3] > forecast.YValues[2]);
             Assert.IsTrue(forecast.YValues[3] > forecast.YValues[4]);
         }
 
         [TestMethod]
-        public void DynamicsForecastService_UsesLocalFuncTimeWarpForChangingCoolingRate()
+        public void DynamicsForecastService_PreservesFullTemplateTimeWhenFuncRatesDiffer()
         {
             var service = new DynamicsForecastService();
             var oldFunc = new ChartPipelineSeries
@@ -212,13 +331,12 @@ namespace JSQViewer.Tests
                 new DynamicsForecastRoleSelection("old-func::C-T1", "old-full::C-T1", "new-func::C-T1"));
 
             Assert.IsNotNull(forecast);
-            CollectionAssert.AreEqual(new[] { 0d, 3d, 4d, 5d, 6d }, forecast.XValues);
+            CollectionAssert.AreEqual(new[] { 0d, 3d, 4.25d, 4.25d, 8d }, forecast.XValues);
             Assert.AreEqual(30d, forecast.YValues[0], 1e-9);
-            Assert.AreEqual(23.3333333333333d, forecast.YValues[1], 1e-9);
-            Assert.AreEqual(16.6666666666667d, forecast.YValues[2], 1e-9);
-            Assert.AreEqual(19.6666666666667d, forecast.YValues[3], 1e-9);
-            Assert.AreEqual(15d, forecast.YValues[4], 1e-9);
-            Assert.IsTrue(forecast.XValues[1] - forecast.XValues[0] > forecast.XValues[2] - forecast.XValues[1]);
+            Assert.AreEqual(26d, forecast.YValues[1], 1e-9);
+            Assert.AreEqual(22d, forecast.YValues[2], 1e-9);
+            Assert.AreEqual(25d, forecast.YValues[3], 1e-9);
+            Assert.AreEqual(21d, forecast.YValues[4], 1e-9);
         }
 
         [TestMethod]
@@ -255,10 +373,10 @@ namespace JSQViewer.Tests
                 new DynamicsForecastRoleSelection("old-func::C-T1", "old-full::C-T1", "new-func::C-T1"));
 
             Assert.IsNotNull(forecast);
+            Assert.AreEqual(3, forecast.YValues.Length);
             Assert.AreEqual(35d, forecast.YValues[0], 1e-9);
-            Assert.AreEqual(20d, forecast.YValues[1], 1e-9);
-            Assert.AreEqual(5d, forecast.YValues[2], 1e-9);
-            Assert.AreEqual(7d, forecast.YValues[3], 1e-9);
+            Assert.AreEqual(25d, forecast.YValues[1], 1e-9);
+            Assert.AreEqual(15d, forecast.YValues[2], 1e-9);
         }
 
         [TestMethod]
@@ -374,9 +492,9 @@ namespace JSQViewer.Tests
                 new long[] { 0L, 3600000L, 7200000L, 10800000L },
                 new Dictionary<string, double?[]>
                 {
-                    ["old-func::A-01"] = new double?[] { 10d, 8d, 7d, 6d },
-                    ["old-full::A-01"] = new double?[] { 20d, 15d, 13d, 10d },
-                    ["new-func::A-01"] = new double?[] { 10d, 8d, 7d, 6d }
+                    ["old-func::A-01"] = new double?[] { 20d, 15d, 10d, 5d },
+                    ["old-full::A-01"] = new double?[] { 20d, 17d, 14d, 12d },
+                    ["new-func::A-01"] = new double?[] { 20d, 15d, 10d, 5d }
                 });
             data.SourceColumns["old FUNC"] = new[] { "old-func::A-01" };
             data.SourceColumns["old FULL"] = new[] { "old-full::A-01" };
@@ -407,10 +525,10 @@ namespace JSQViewer.Tests
             Assert.AreEqual(4, result.Series.Count);
             ChartPipelineSeries forecast = result.Series.Single(series => series.IsForecast);
             CollectionAssert.AreEqual(new[] { 0d, 1d, 2d, 3d }, forecast.XValues);
-            Assert.AreEqual(10d, forecast.YValues[0], 1e-9);
-            Assert.AreEqual(10d, forecast.YValues[1], 1e-9);
-            Assert.AreEqual(10d, forecast.YValues[2], 1e-9);
-            Assert.AreEqual(10d, forecast.YValues[3], 1e-9);
+            Assert.AreEqual(20d, forecast.YValues[0], 1e-9);
+            Assert.AreEqual(17d, forecast.YValues[1], 1e-9);
+            Assert.AreEqual(14d, forecast.YValues[2], 1e-9);
+            Assert.AreEqual(12d, forecast.YValues[3], 1e-9);
         }
 
         [TestMethod]
