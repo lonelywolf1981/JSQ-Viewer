@@ -6,12 +6,37 @@ namespace JSQViewer.Application.Charting
 {
     public sealed class DynamicsForecastService
     {
+        // The predicted FULL duration is governed mostly by the load thermal mass, not
+        // by how fast the FUNC test cooled. Applying the raw FUNC speed ratio over-
+        // stretches the timeline (a 2x slower new FUNC tripled the predicted span on
+        // real data). Damping pulls that ratio toward 1: 0 ignores FUNC speed entirely
+        // (keep the old FULL timeline), 1 is the original multiplicative warp.
+        // Damping pulls the FUNC speed ratio toward 1 (0 = keep old FULL timeline,
+        // 1 = full multiplicative warp). 0.45 is the compromise across the validated
+        // real pairs: near-perfect on NUY45RA (MAE ~0.5 C) and good in the early region
+        // on OMEGA NPT14, without the 3x timeline overshoot of the original full warp.
+        private const double DefaultFuncWarpDamping = 0.45;
+
         private const int MinimumObservedPoints = 2;
+        private const double ReferenceFuncStartToleranceCelsius = 3.0;
+        private const double ReferenceFuncDurationRatioTolerance = 2.0;
         private const double FirstCoolingMinimumDropThreshold = 5.0;
         private const double FirstCoolingMinimumReboundThreshold = 0.5;
         private const double FirstCoolingMinimumLowerTolerance = 0.3;
         private const double FirstCoolingMinimumReboundLookAheadHours = 0.5;
         private const double FirstCoolingMinimumStabilityLookAheadHours = 2.0;
+
+        private readonly double _funcWarpDamping;
+
+        public DynamicsForecastService()
+            : this(DefaultFuncWarpDamping)
+        {
+        }
+
+        public DynamicsForecastService(double funcWarpDamping)
+        {
+            _funcWarpDamping = Math.Max(0d, Math.Min(1d, funcWarpDamping));
+        }
 
         public ChartPipelineSeries BuildForecast(IReadOnlyList<ChartPipelineSeries> sourceSeries)
         {
@@ -47,11 +72,15 @@ namespace JSQViewer.Application.Charting
                 return null;
             }
 
-            var xValues = new List<double>(targetMinIndex + 1);
-            var yValues = new List<double>(targetMinIndex + 1);
+            int pointCount = targetMinIndex + 1;
+            var envelopeX = new double[pointCount];
+            var targetX = new double[pointCount];
+            var rawY = new double[pointCount];
+            var coolingEnvelopeY = new double[pointCount];
             double targetOriginX = roles.Target.XValues[0];
             double verticalOffset = roles.NewFunc.YValues[0] - roles.Target.YValues[0];
             double maxProgress = 0d;
+            double runningMinTemperature = double.PositiveInfinity;
 
             for (int i = 0; i <= targetMinIndex; i++)
             {
@@ -70,29 +99,146 @@ namespace JSQViewer.Application.Charting
                     newFuncMinIndex,
                     maxProgress);
 
-                xValues.Add(targetOriginX + predictedElapsed);
-                yValues.Add(roles.Target.YValues[i] + verticalOffset);
+                envelopeX[i] = targetOriginX + predictedElapsed;
+                targetX[i] = roles.Target.XValues[i];
+                if (roles.Target.YValues[i] < runningMinTemperature)
+                {
+                    runningMinTemperature = roles.Target.YValues[i];
+                }
+
+                rawY[i] = roles.Target.YValues[i] + verticalOffset;
+                coolingEnvelopeY[i] = runningMinTemperature + verticalOffset;
             }
 
-            if (xValues.Count < MinimumObservedPoints)
+            if (pointCount < MinimumObservedPoints)
             {
                 return null;
             }
+
+            double[] xValues = SpreadFrozenProgressSegments(envelopeX, targetX);
+
+            // While the new FUNC still has measured data the forecast follows the
+            // monotonic cooling trend, so an early FULL defrost rebound does not show
+            // up as a temperature hump in a region where the new test was still
+            // cooling. The full FULL template (with defrosts) resumes only after the
+            // new FUNC data ends.
+            double[] yValues = ApplyNewFuncRegion(rawY, coolingEnvelopeY, xValues, targetOriginX, roles.NewFunc);
 
             return new ChartPipelineSeries
             {
                 Code = roles.NewFunc.Code + "::forecast",
                 LegendText = string.Format(CultureInfo.InvariantCulture, "Прогноз: {0}", roles.Target.LegendText ?? roles.Target.Code),
                 SourceRoot = roles.NewFunc.SourceRoot,
-                XValues = xValues.ToArray(),
-                YValues = yValues.ToArray(),
+                XValues = xValues,
+                YValues = yValues,
                 BorderWidth = 2,
                 IsVisibleInLegend = true,
-                IsForecast = true
+                IsForecast = true,
+                ForecastWarnings = BuildReferenceQualityWarnings(roles)
             };
         }
 
-        private static double MapNewFuncElapsedToPredictedFullElapsed(
+        // Non-blocking diagnostics: the forecast assumes the old FUNC is a good analogy
+        // for the new FUNC. When the reference starts at a very different temperature or
+        // ran for a very different duration the analogy is weak, so flag it without
+        // aborting the calculation.
+        private static IReadOnlyList<DynamicsForecastWarning> BuildReferenceQualityWarnings(ForecastRoles roles)
+        {
+            var warnings = new List<DynamicsForecastWarning>();
+
+            double startDelta = roles.NewFunc.YValues[0] - roles.OldFunc.YValues[0];
+            if (Math.Abs(startDelta) > ReferenceFuncStartToleranceCelsius)
+            {
+                warnings.Add(new DynamicsForecastWarning(
+                    DynamicsForecastWarningCode.ReferenceFuncStartTemperatureMismatch, startDelta));
+            }
+
+            double oldDuration = SeriesDuration(roles.OldFunc);
+            double newDuration = SeriesDuration(roles.NewFunc);
+            if (oldDuration > 1e-9 && newDuration > 1e-9)
+            {
+                double ratio = newDuration / oldDuration;
+                double magnitude = Math.Max(ratio, 1d / ratio);
+                if (magnitude > ReferenceFuncDurationRatioTolerance)
+                {
+                    warnings.Add(new DynamicsForecastWarning(
+                        DynamicsForecastWarningCode.ReferenceFuncDurationMismatch, ratio));
+                }
+            }
+
+            return warnings;
+        }
+
+        private static double SeriesDuration(ChartPipelineSeries series)
+        {
+            int count = CountPoints(series);
+            if (count < 1)
+            {
+                return 0d;
+            }
+
+            return series.XValues[count - 1] - series.XValues[0];
+        }
+
+        // The cooling-progress mapping freezes predicted time whenever the target
+        // temperature rises (defrost rebound), which collapses every rebound point
+        // onto a single X and produces the torn, vertical-step look. Here those
+        // frozen runs are spread across the predicted time gap proportionally to the
+        // target's own elapsed time, so rebound peaks stay visible but the forecast
+        // advances smoothly instead of jumping.
+        private static double[] ApplyNewFuncRegion(
+            double[] rawY,
+            double[] coolingEnvelopeY,
+            double[] xValues,
+            double targetOriginX,
+            ChartPipelineSeries newFunc)
+        {
+            int newFuncCount = CountPoints(newFunc);
+            double newFuncSpan = newFuncCount > 0
+                ? newFunc.XValues[newFuncCount - 1] - newFunc.XValues[0]
+                : 0d;
+
+            var result = new double[rawY.Length];
+            for (int i = 0; i < rawY.Length; i++)
+            {
+                double elapsed = xValues[i] - targetOriginX;
+                result[i] = elapsed <= newFuncSpan + 1e-9
+                    ? coolingEnvelopeY[i]
+                    : rawY[i];
+            }
+
+            return result;
+        }
+
+        private static double[] SpreadFrozenProgressSegments(double[] envelopeX, double[] targetX)
+        {
+            var result = (double[])envelopeX.Clone();
+            int anchor = 0;
+            for (int i = 1; i < envelopeX.Length; i++)
+            {
+                if (envelopeX[i] <= envelopeX[anchor] + 1e-9)
+                {
+                    continue;
+                }
+
+                double timeSpan = targetX[i] - targetX[anchor];
+                double xSpan = envelopeX[i] - envelopeX[anchor];
+                for (int m = anchor + 1; m < i; m++)
+                {
+                    double fraction = timeSpan > 1e-9
+                        ? (targetX[m] - targetX[anchor]) / timeSpan
+                        : 0d;
+                    fraction = Math.Max(0d, Math.Min(1d, fraction));
+                    result[m] = envelopeX[anchor] + (xSpan * fraction);
+                }
+
+                anchor = i;
+            }
+
+            return result;
+        }
+
+        private double MapNewFuncElapsedToPredictedFullElapsed(
             ChartPipelineSeries oldFunc,
             int oldFuncMinIndex,
             ChartPipelineSeries oldFull,
@@ -114,7 +260,9 @@ namespace JSQViewer.Application.Charting
                 return oldFullElapsed;
             }
 
-            return newFuncElapsed * (oldFullElapsed / oldFuncElapsed);
+            double funcSpeedRatio = newFuncElapsed / oldFuncElapsed;
+            double dampedRatio = Math.Pow(funcSpeedRatio, _funcWarpDamping);
+            return oldFullElapsed * dampedRatio;
         }
 
         private static double ElapsedAtProgress(ChartPipelineSeries series, int minIndex, double targetProgress)

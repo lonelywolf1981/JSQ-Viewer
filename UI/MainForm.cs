@@ -2843,6 +2843,10 @@ namespace JSQViewer.UI
               {
                   ShowForecastError(Loc.Get("ForecastUnavailable"));
               }
+              if (includeDynamicsForecast)
+              {
+                  ShowForecastReferenceWarnings(chartState);
+              }
               ChartViewModel viewModel = _chartViewModelFactory.Create(chartState, Loc.Get("OverlayXAxisTitle"));
               _chartRenderer.Render(_chart, viewModel);
               ApplyChartViewToRangeControls(viewModel);
@@ -3355,6 +3359,37 @@ namespace JSQViewer.UI
         private void ShowForecastError(string message)
         {
             _notificationService.ShowError(this, Loc.Get("ForecastDynamics"), message);
+        }
+
+        // Non-blocking: the forecast is already drawn. Surface reference-quality
+        // warnings as a toast so the operator is told the analogy may be weak without
+        // interrupting the calculation or the redraw.
+        private void ShowForecastReferenceWarnings(ChartPipelineResult chartState)
+        {
+            ChartPipelineSeries forecast = chartState.Series.FirstOrDefault(series => series.IsForecast);
+            if (forecast == null || forecast.ForecastWarnings == null || forecast.ForecastWarnings.Count == 0)
+            {
+                return;
+            }
+
+            var lines = new List<string>();
+            foreach (DynamicsForecastWarning warning in forecast.ForecastWarnings)
+            {
+                switch (warning.Code)
+                {
+                    case DynamicsForecastWarningCode.ReferenceFuncStartTemperatureMismatch:
+                        lines.Add(string.Format(CultureInfo.CurrentCulture, Loc.Get("ForecastWarnFuncStartTemp"), warning.Value));
+                        break;
+                    case DynamicsForecastWarningCode.ReferenceFuncDurationMismatch:
+                        lines.Add(string.Format(CultureInfo.CurrentCulture, Loc.Get("ForecastWarnFuncDuration"), warning.Value));
+                        break;
+                }
+            }
+
+            if (lines.Count > 0)
+            {
+                _notificationService.ShowInfoToast(this, string.Join(Environment.NewLine, lines));
+            }
         }
 
         private bool TrySelectDynamicsForecastRoles(List<string> selectedCodes, out DynamicsForecastRoleSelection roleSelection)

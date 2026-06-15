@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace JSQViewer.Application.Charting
 {
     public sealed class ChartPipelineSeries
@@ -17,5 +19,7 @@ namespace JSQViewer.Application.Charting
         public bool IsVisibleInLegend { get; set; }
 
         public bool IsForecast { get; set; }
+
+        public IReadOnlyList<DynamicsForecastWarning> ForecastWarnings { get; set; }
     }
 }

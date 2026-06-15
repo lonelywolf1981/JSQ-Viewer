@@ -135,7 +135,7 @@ namespace JSQViewer.Tests
         [TestMethod]
         public void DynamicsForecastService_ShiftsFullTemplateToNewFuncStartWithoutTimeCompression()
         {
-            var service = new DynamicsForecastService();
+            var service = new DynamicsForecastService(1.0);
             var oldFunc = new ChartPipelineSeries
             {
                 Code = "old-func::C-T1",
@@ -175,7 +175,7 @@ namespace JSQViewer.Tests
         [TestMethod]
         public void DynamicsForecastService_MapsT1FullTimeByFuncToFullProgressRatio()
         {
-            var service = new DynamicsForecastService();
+            var service = new DynamicsForecastService(1.0);
             var oldFunc = new ChartPipelineSeries
             {
                 Code = "old-func::C-T1",
@@ -213,9 +213,208 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
-        public void DynamicsForecastService_ContinuesFromFullWhenOldFuncIsShorterThanTarget()
+        public void DynamicsForecastService_WarnsWhenReferenceFuncStartAndDurationMismatch()
         {
             var service = new DynamicsForecastService();
+            var oldFunc = new ChartPipelineSeries
+            {
+                Code = "old-func::C-T1",
+                LegendText = "[old FUNC] C-T1",
+                SourceRoot = "C:\\tests\\old FUNC",
+                XValues = new[] { 0d, 1d, 2d },
+                YValues = new[] { 25d, 15d, 5d }
+            };
+            var oldFull = new ChartPipelineSeries
+            {
+                Code = "old-full::C-T1",
+                LegendText = "[old FULL] C-T1",
+                SourceRoot = "C:\\tests\\old FULL",
+                XValues = new[] { 0d, 1d, 2d },
+                YValues = new[] { 32d, 20d, 10d }
+            };
+            var newFunc = new ChartPipelineSeries
+            {
+                Code = "new-func::C-T1",
+                LegendText = "[new FUNC] C-T1",
+                SourceRoot = "C:\\tests\\new FUNC",
+                XValues = new[] { 0d, 2.5d, 5d },
+                YValues = new[] { 31d, 16d, 6d }
+            };
+
+            ChartPipelineSeries forecast = service.BuildForecast(
+                new[] { oldFunc, oldFull, newFunc },
+                new DynamicsForecastRoleSelection("old-func::C-T1", "old-full::C-T1", "new-func::C-T1"));
+
+            Assert.IsNotNull(forecast);
+            Assert.IsNotNull(forecast.ForecastWarnings);
+            var codes = forecast.ForecastWarnings.Select(w => w.Code).ToList();
+            CollectionAssert.Contains(codes, DynamicsForecastWarningCode.ReferenceFuncStartTemperatureMismatch);
+            CollectionAssert.Contains(codes, DynamicsForecastWarningCode.ReferenceFuncDurationMismatch);
+        }
+
+        [TestMethod]
+        public void DynamicsForecastService_NoWarningsForComparableReferenceFunc()
+        {
+            var service = new DynamicsForecastService();
+            var oldFunc = new ChartPipelineSeries
+            {
+                Code = "old-func::C-T1",
+                LegendText = "[old FUNC] C-T1",
+                SourceRoot = "C:\\tests\\old FUNC",
+                XValues = new[] { 0d, 1d, 2d },
+                YValues = new[] { 30d, 20d, 10d }
+            };
+            var oldFull = new ChartPipelineSeries
+            {
+                Code = "old-full::C-T1",
+                LegendText = "[old FULL] C-T1",
+                SourceRoot = "C:\\tests\\old FULL",
+                XValues = new[] { 0d, 1d, 2d },
+                YValues = new[] { 32d, 22d, 12d }
+            };
+            var newFunc = new ChartPipelineSeries
+            {
+                Code = "new-func::C-T1",
+                LegendText = "[new FUNC] C-T1",
+                SourceRoot = "C:\\tests\\new FUNC",
+                XValues = new[] { 0d, 1d, 2d },
+                YValues = new[] { 31d, 21d, 11d }
+            };
+
+            ChartPipelineSeries forecast = service.BuildForecast(
+                new[] { oldFunc, oldFull, newFunc },
+                new DynamicsForecastRoleSelection("old-func::C-T1", "old-full::C-T1", "new-func::C-T1"));
+
+            Assert.IsNotNull(forecast);
+            Assert.IsNotNull(forecast.ForecastWarnings);
+            Assert.AreEqual(0, forecast.ForecastWarnings.Count);
+        }
+
+        [TestMethod]
+        public void DynamicsForecastService_DampingZeroKeepsFullTemplateTimeline()
+        {
+            var service = new DynamicsForecastService(0.0);
+            var oldFunc = new ChartPipelineSeries
+            {
+                Code = "old-func::C-T1",
+                LegendText = "[old FUNC] C-T1",
+                SourceRoot = "C:\\tests\\old FUNC",
+                XValues = new[] { 0d, 1d, 2d },
+                YValues = new[] { 30d, 20d, 10d }
+            };
+            var oldFull = new ChartPipelineSeries
+            {
+                Code = "old-full::C-T1",
+                LegendText = "[old FULL] C-T1",
+                SourceRoot = "C:\\tests\\old FULL",
+                XValues = new[] { 0d, 5d, 10d },
+                YValues = new[] { 30d, 20d, 10d }
+            };
+            var newFunc = new ChartPipelineSeries
+            {
+                Code = "new-func::C-T1",
+                LegendText = "[new FUNC] C-T1",
+                SourceRoot = "C:\\tests\\new FUNC",
+                XValues = new[] { 0d, 2d, 4d },
+                YValues = new[] { 32d, 22d, 12d }
+            };
+
+            ChartPipelineSeries forecast = service.BuildForecast(
+                new[] { oldFunc, oldFull, newFunc },
+                new DynamicsForecastRoleSelection("old-func::C-T1", "old-full::C-T1", "new-func::C-T1"));
+
+            Assert.IsNotNull(forecast);
+            // With damping 0 the FUNC speed ratio (here 2x slower) is ignored and the
+            // forecast keeps the old FULL timeline instead of stretching it.
+            CollectionAssert.AreEqual(new[] { 0d, 5d, 10d }, forecast.XValues);
+        }
+
+        [TestMethod]
+        public void DynamicsForecastService_DefaultDampingAppliesPartialFuncWarpExponent()
+        {
+            var service = new DynamicsForecastService();
+            var oldFunc = new ChartPipelineSeries
+            {
+                Code = "old-func::C-T1",
+                LegendText = "[old FUNC] C-T1",
+                SourceRoot = "C:\\tests\\old FUNC",
+                XValues = new[] { 0d, 1d, 2d },
+                YValues = new[] { 30d, 20d, 10d }
+            };
+            var oldFull = new ChartPipelineSeries
+            {
+                Code = "old-full::C-T1",
+                LegendText = "[old FULL] C-T1",
+                SourceRoot = "C:\\tests\\old FULL",
+                XValues = new[] { 0d, 5d, 10d },
+                YValues = new[] { 30d, 20d, 10d }
+            };
+            var newFunc = new ChartPipelineSeries
+            {
+                Code = "new-func::C-T1",
+                LegendText = "[new FUNC] C-T1",
+                SourceRoot = "C:\\tests\\new FUNC",
+                XValues = new[] { 0d, 2d, 4d },
+                YValues = new[] { 32d, 22d, 12d }
+            };
+
+            ChartPipelineSeries forecast = service.BuildForecast(
+                new[] { oldFunc, oldFull, newFunc },
+                new DynamicsForecastRoleSelection("old-func::C-T1", "old-full::C-T1", "new-func::C-T1"));
+
+            Assert.IsNotNull(forecast);
+            // FUNC speed ratio = 2; default damping 0.45 -> warp factor 2^0.45 (~1.366)
+            // instead of the raw 2.0, so the old FULL timeline (0,5,10) is stretched by
+            // 2^0.45 rather than doubled.
+            double factor = Math.Pow(2d, 0.45);
+            Assert.AreEqual(0d, forecast.XValues[0], 1e-9);
+            Assert.AreEqual(5d * factor, forecast.XValues[1], 1e-6);
+            Assert.AreEqual(10d * factor, forecast.XValues[2], 1e-6);
+        }
+
+        [TestMethod]
+        public void DynamicsForecastService_StartsAtNewFuncTemperatureWhenOldFullStartsHigherThanOldFunc()
+        {
+            var service = new DynamicsForecastService();
+            var oldFunc = new ChartPipelineSeries
+            {
+                Code = "old-func::C-T1",
+                LegendText = "[old FUNC] C-T1",
+                SourceRoot = "C:\\tests\\old FUNC",
+                XValues = new[] { 0d, 1d, 2d },
+                YValues = new[] { 25d, 15d, 5d }
+            };
+            var oldFull = new ChartPipelineSeries
+            {
+                Code = "old-full::C-T1",
+                LegendText = "[old FULL] C-T1",
+                SourceRoot = "C:\\tests\\old FULL",
+                XValues = new[] { 0d, 5d, 10d },
+                YValues = new[] { 32d, 22d, 12d }
+            };
+            var newFunc = new ChartPipelineSeries
+            {
+                Code = "new-func::C-T1",
+                LegendText = "[new FUNC] C-T1",
+                SourceRoot = "C:\\tests\\new FUNC",
+                XValues = new[] { 0d, 2d, 4d },
+                YValues = new[] { 31d, 21d, 11d }
+            };
+
+            ChartPipelineSeries forecast = service.BuildForecast(
+                new[] { oldFunc, oldFull, newFunc },
+                new DynamicsForecastRoleSelection("old-func::C-T1", "old-full::C-T1", "new-func::C-T1"));
+
+            Assert.IsNotNull(forecast);
+            Assert.AreEqual(31d, forecast.YValues[0], 1e-9);
+            Assert.AreEqual(21d, forecast.YValues[1], 1e-9);
+            Assert.AreEqual(11d, forecast.YValues[2], 1e-9);
+        }
+
+        [TestMethod]
+        public void DynamicsForecastService_ContinuesFromFullWhenOldFuncIsShorterThanTarget()
+        {
+            var service = new DynamicsForecastService(1.0);
             var oldFunc = new ChartPipelineSeries
             {
                 Code = "old-func::C-T1",
@@ -256,7 +455,7 @@ namespace JSQViewer.Tests
         [TestMethod]
         public void DynamicsForecastService_ShiftsLoadedTemplateToNewFuncStartAndPreservesTimeScale()
         {
-            var service = new DynamicsForecastService();
+            var service = new DynamicsForecastService(1.0);
             var oldFunc = new ChartPipelineSeries
             {
                 Code = "old-func::C-T1",
@@ -287,7 +486,7 @@ namespace JSQViewer.Tests
                 new DynamicsForecastRoleSelection("old-func::C-T1", "old-full::C-T1", "new-func::C-T1"));
 
             Assert.IsNotNull(forecast);
-            CollectionAssert.AreEqual(new[] { 0d, 2d, 4d, 4d, 8d }, forecast.XValues);
+            CollectionAssert.AreEqual(new[] { 0d, 2d, 4d, 6d, 8d }, forecast.XValues);
             Assert.AreEqual(30d, forecast.YValues[0], 1e-9);
             Assert.AreEqual(26d, forecast.YValues[1], 1e-9);
             Assert.AreEqual(22d, forecast.YValues[2], 1e-9);
@@ -300,7 +499,7 @@ namespace JSQViewer.Tests
         [TestMethod]
         public void DynamicsForecastService_PreservesFullTemplateTimeWhenFuncRatesDiffer()
         {
-            var service = new DynamicsForecastService();
+            var service = new DynamicsForecastService(1.0);
             var oldFunc = new ChartPipelineSeries
             {
                 Code = "old-func::C-T1",
@@ -331,12 +530,115 @@ namespace JSQViewer.Tests
                 new DynamicsForecastRoleSelection("old-func::C-T1", "old-full::C-T1", "new-func::C-T1"));
 
             Assert.IsNotNull(forecast);
-            CollectionAssert.AreEqual(new[] { 0d, 3d, 4.25d, 4.25d, 8d }, forecast.XValues);
+            CollectionAssert.AreEqual(new[] { 0d, 3d, 4.25d, 6.125d, 8d }, forecast.XValues);
             Assert.AreEqual(30d, forecast.YValues[0], 1e-9);
             Assert.AreEqual(26d, forecast.YValues[1], 1e-9);
             Assert.AreEqual(22d, forecast.YValues[2], 1e-9);
             Assert.AreEqual(25d, forecast.YValues[3], 1e-9);
             Assert.AreEqual(21d, forecast.YValues[4], 1e-9);
+        }
+
+        [TestMethod]
+        public void DynamicsForecastService_SpreadsDefrostReboundAcrossTimeWithoutDuplicateX()
+        {
+            var service = new DynamicsForecastService(1.0);
+            var oldFunc = new ChartPipelineSeries
+            {
+                Code = "old-func::C-T1",
+                LegendText = "[old FUNC] C-T1",
+                SourceRoot = "C:\\tests\\old empty FUNC",
+                XValues = new[] { 0d, 1d, 2d },
+                YValues = new[] { 30d, 20d, 10d }
+            };
+            var oldFull = new ChartPipelineSeries
+            {
+                Code = "old-full::C-T1",
+                LegendText = "[old FULL] C-T1",
+                SourceRoot = "C:\\tests\\old loaded FULL",
+                XValues = new[] { 0d, 1d, 2d, 3d, 4d },
+                YValues = new[] { 25d, 21d, 17d, 20d, 16d }
+            };
+            var newFunc = new ChartPipelineSeries
+            {
+                Code = "new-func::C-T1",
+                LegendText = "[new FUNC] C-T1",
+                SourceRoot = "C:\\tests\\new FUNC",
+                XValues = new[] { 0d, 2d, 4d },
+                YValues = new[] { 30d, 26d, 22d }
+            };
+
+            ChartPipelineSeries forecast = service.BuildForecast(
+                new[] { oldFunc, oldFull, newFunc },
+                new DynamicsForecastRoleSelection("old-func::C-T1", "old-full::C-T1", "new-func::C-T1"));
+
+            Assert.IsNotNull(forecast);
+            // Defrost rebound point (index 3) must spread across time instead of
+            // collapsing onto the previous X, while keeping the temperature peak.
+            CollectionAssert.AreEqual(new[] { 0d, 2d, 4d, 6d, 8d }, forecast.XValues);
+            for (int i = 1; i < forecast.XValues.Length; i++)
+            {
+                Assert.IsTrue(
+                    forecast.XValues[i] > forecast.XValues[i - 1],
+                    "Forecast X values must be strictly increasing (no vertical artifacts).");
+            }
+
+            Assert.AreEqual(25d, forecast.YValues[3], 1e-9);
+            Assert.IsTrue(forecast.YValues[3] > forecast.YValues[2]);
+            Assert.IsTrue(forecast.YValues[3] > forecast.YValues[4]);
+        }
+
+        [TestMethod]
+        public void DynamicsForecastService_FollowsNewFuncInItsRegionAndKeepsLaterFullDefrosts()
+        {
+            var service = new DynamicsForecastService();
+            var oldFunc = new ChartPipelineSeries
+            {
+                Code = "old-func::C-T1",
+                LegendText = "[old FUNC] C-T1",
+                SourceRoot = "C:\\tests\\old FUNC",
+                XValues = new[] { 0d, 1d, 2d, 3d },
+                YValues = new[] { 30d, 20d, 10d, 0d }
+            };
+            var oldFull = new ChartPipelineSeries
+            {
+                Code = "old-full::C-T1",
+                LegendText = "[old FULL] C-T1",
+                SourceRoot = "C:\\tests\\old FULL",
+                XValues = new[] { 0d, 1d, 2d, 3d, 4d, 5d, 6d },
+                // Early rebound (index 2: 24 -> 26) lands inside the new FUNC region.
+                // Late rebound (index 5: 12 -> 14) lands beyond it.
+                YValues = new[] { 30d, 24d, 26d, 18d, 12d, 14d, 6d }
+            };
+            var newFunc = new ChartPipelineSeries
+            {
+                Code = "new-func::C-T1",
+                LegendText = "[new FUNC] C-T1",
+                SourceRoot = "C:\\tests\\new FUNC",
+                XValues = new[] { 0d, 1d, 2d, 3d },
+                YValues = new[] { 30d, 20d, 10d, 0d }
+            };
+
+            ChartPipelineSeries forecast = service.BuildForecast(
+                new[] { oldFunc, oldFull, newFunc },
+                new DynamicsForecastRoleSelection("old-func::C-T1", "old-full::C-T1", "new-func::C-T1"));
+
+            Assert.IsNotNull(forecast);
+            CollectionAssert.AreEqual(new[] { 0d, 1d, 2d, 3d, 4d, 5d, 6d }, forecast.XValues);
+
+            // Inside the new FUNC region (X <= 3) the early FULL rebound is suppressed:
+            // the forecast falls monotonically instead of humping up.
+            CollectionAssert.AreEqual(new[] { 30d, 24d, 24d, 18d }, forecast.YValues.Take(4).ToArray());
+            for (int i = 1; i <= 3; i++)
+            {
+                Assert.IsTrue(
+                    forecast.YValues[i] <= forecast.YValues[i - 1] + 1e-9,
+                    "Forecast must fall monotonically while the new FUNC has data.");
+            }
+
+            // Beyond the new FUNC region the FULL defrost is preserved.
+            Assert.AreEqual(14d, forecast.YValues[5], 1e-9);
+            Assert.IsTrue(forecast.YValues[5] > forecast.YValues[4]);
+            Assert.IsTrue(forecast.YValues[5] > forecast.YValues[6]);
         }
 
         [TestMethod]
