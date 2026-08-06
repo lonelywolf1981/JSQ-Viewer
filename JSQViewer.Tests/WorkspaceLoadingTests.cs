@@ -187,6 +187,8 @@ namespace JSQViewer.Tests
             Assert.AreEqual("C:\\root", result.Data.Root);
             Assert.AreEqual(1, dataSourceReader.ReadRoots.Count);
             Assert.AreEqual("C:\\root", dataSourceReader.ReadRoots[0]);
+            CollectionAssert.AreEqual(new[] { "C:\\root" }, result.Data.SourceOrder);
+            Assert.AreEqual(0, result.Data.SourceDisplayNames.Count);
         }
 
         [TestMethod]
@@ -241,6 +243,7 @@ namespace JSQViewer.Tests
 
             Assert.AreEqual(2, result.Data.RowCount);
             CollectionAssert.AreEquivalent(new[] { "root::Pc", "protocol.xlsx::Pc" }, result.Data.ColumnNames);
+            CollectionAssert.AreEqual(new[] { "C:\\root", protocol }, result.Data.SourceOrder);
         }
 
         [TestMethod]

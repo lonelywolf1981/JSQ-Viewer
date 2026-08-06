@@ -66,6 +66,12 @@ namespace JSQViewer.Application.Workspace.UseCases
             }
 
             long[] timestamps = data.TimestampsMs ?? new long[0];
+            Dictionary<string, string> sourceDisplayNames = FilterDisplayNames(
+                data.SourceDisplayNames,
+                remainingSourceColumns.Keys);
+            string[] sourceOrder = FilterSourceOrder(
+                data.SourceOrder,
+                remainingSourceColumns);
             return new TestData
             {
                 Root = string.Join(" ; ", remainingSourceColumns.Keys),
@@ -74,12 +80,65 @@ namespace JSQViewer.Application.Workspace.UseCases
                 CodeSources = FilterByColumns(data.CodeSources, remainingColumnSet),
                 SourceStartMs = FilterBySources(data.SourceStartMs, remainingSourceColumns.Keys),
                 SourceEndMs = FilterBySources(data.SourceEndMs, remainingSourceColumns.Keys),
+                SourceDisplayNames = sourceDisplayNames,
+                SourceOrder = sourceOrder,
                 TimestampsMs = retainedRows.Select(index => timestamps[index]).ToArray(),
                 Columns = columns,
                 ColumnNames = remainingColumns,
                 SourceColumns = remainingSourceColumns,
                 RowCount = retainedRows.Count
             };
+        }
+
+        private static Dictionary<string, string> FilterDisplayNames(
+            Dictionary<string, string> source,
+            IEnumerable<string> remainingSources)
+        {
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (source == null)
+            {
+                return result;
+            }
+
+            foreach (string remainingSource in remainingSources)
+            {
+                KeyValuePair<string, string> match = source.FirstOrDefault(
+                    pair => string.Equals(pair.Key, remainingSource, StringComparison.OrdinalIgnoreCase));
+                if (match.Key != null)
+                {
+                    result[remainingSource] = match.Value;
+                }
+            }
+
+            return result;
+        }
+
+        private static string[] FilterSourceOrder(
+            string[] sourceOrder,
+            Dictionary<string, string[]> remainingSourceColumns)
+        {
+            IEnumerable<string> candidates;
+            if (sourceOrder == null || sourceOrder.Length == 0)
+            {
+                candidates = remainingSourceColumns.Keys;
+            }
+            else
+            {
+                candidates = sourceOrder;
+            }
+            var result = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string root in candidates)
+            {
+                if (!string.IsNullOrWhiteSpace(root)
+                    && remainingSourceColumns.ContainsKey(root)
+                    && seen.Add(root))
+                {
+                    result.Add(root);
+                }
+            }
+
+            return result.ToArray();
         }
 
         private static List<int> BuildRetainedRows(TestData data, string[] remainingColumns)

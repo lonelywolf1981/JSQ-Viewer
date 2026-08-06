@@ -43,6 +43,19 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Execute_RecordingSource_PreservesDisplayNameAndEstablishesSourceOrder()
+        {
+            var reader = new FakeRecordingDataReader();
+            LoadWorkspaceDataUseCase useCase = CreateUseCase(reader);
+
+            WorkspaceLoadResult result = useCase.Execute(
+                new WorkspaceLoadRequest("jsqdb://recording/recording-42"));
+
+            Assert.AreEqual("Recording 42", result.Data.SourceDisplayNames[result.Data.Root]);
+            CollectionAssert.AreEqual(new[] { result.Data.Root }, result.Data.SourceOrder);
+        }
+
+        [TestMethod]
         public void Execute_RecordingSource_WithoutReaderThrowsInvalidOperationException()
         {
             LoadWorkspaceDataUseCase useCase = CreateUseCase(null);
@@ -146,7 +159,16 @@ namespace JSQViewer.Tests
             public TestData ReadRecording(string recordingId)
             {
                 LastRecordingId = recordingId;
-                return new TestData { Root = RecordingSourceRef.Build(recordingId) };
+                string root = RecordingSourceRef.Build(recordingId);
+                return new TestData
+                {
+                    Root = root,
+                    SourceDisplayNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        [root] = "Recording 42"
+                    },
+                    SourceOrder = new string[0]
+                };
             }
 
             public TestData AppendNewWindows(TestData existing, string recordingId)

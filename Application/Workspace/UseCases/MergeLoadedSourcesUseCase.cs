@@ -28,14 +28,21 @@ namespace JSQViewer.Application.Workspace.UseCases
                 throw new ArgumentException("No loaded sources were provided.", nameof(list));
             }
 
+            Dictionary<string, string> sourceDisplayNames = BuildSourceDisplayNames(list);
+            string[] sourceOrder = BuildSourceOrder(list);
+
             if (list.Count == 1)
             {
+                list[0].SourceDisplayNames = sourceDisplayNames;
+                list[0].SourceOrder = sourceOrder;
                 return list[0];
             }
 
             list = DeduplicateByRoot(list);
             if (list.Count == 1)
             {
+                list[0].SourceDisplayNames = sourceDisplayNames;
+                list[0].SourceOrder = sourceOrder;
                 return list[0];
             }
 
@@ -261,12 +268,77 @@ namespace JSQViewer.Application.Workspace.UseCases
                 CodeSources = codeSources,
                 SourceStartMs = sourceStartMs,
                 SourceEndMs = sourceEndMs,
+                SourceDisplayNames = sourceDisplayNames,
+                SourceOrder = sourceOrder,
                 TimestampsMs = sortedTimestamps,
                 Columns = sortedColumns,
                 ColumnNames = columnNames,
                 SourceColumns = sourceColumnMap,
                 RowCount = totalRows
             };
+        }
+
+        private static Dictionary<string, string> BuildSourceDisplayNames(IList<TestData> list)
+        {
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < list.Count; i++)
+            {
+                Dictionary<string, string> displayNames = list[i].SourceDisplayNames;
+                if (displayNames == null)
+                {
+                    continue;
+                }
+
+                foreach (KeyValuePair<string, string> pair in displayNames)
+                {
+                    if (string.IsNullOrWhiteSpace(pair.Key)
+                        || string.IsNullOrWhiteSpace(pair.Value)
+                        || result.ContainsKey(pair.Key))
+                    {
+                        continue;
+                    }
+
+                    result[pair.Key] = pair.Value.Trim();
+                }
+            }
+
+            return result;
+        }
+
+        private static string[] BuildSourceOrder(IList<TestData> list)
+        {
+            var result = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < list.Count; i++)
+            {
+                TestData data = list[i];
+                AppendDistinctRoots(result, seen, data.SourceOrder);
+                AppendDistinctRoots(
+                    result,
+                    seen,
+                    data.SourceColumns == null ? null : data.SourceColumns.Keys);
+            }
+
+            return result.ToArray();
+        }
+
+        private static void AppendDistinctRoots(
+            List<string> destination,
+            HashSet<string> seen,
+            IEnumerable<string> roots)
+        {
+            if (roots == null)
+            {
+                return;
+            }
+
+            foreach (string root in roots)
+            {
+                if (!string.IsNullOrWhiteSpace(root) && seen.Add(root))
+                {
+                    destination.Add(root);
+                }
+            }
         }
 
         private static Dictionary<string, string> BuildSourceTags(IList<TestData> list)

@@ -64,6 +64,7 @@ namespace JSQViewer.Application.Workspace.UseCases
             for (int i = 0; i < resolvedRoots.Count; i++)
             {
                 string root = resolvedRoots[i];
+                TestData loaded;
                 string recordingId;
                 if (RecordingSourceRef.TryParse(root, out recordingId))
                 {
@@ -72,27 +73,29 @@ namespace JSQViewer.Application.Workspace.UseCases
                         throw new InvalidOperationException("Recording data reader is not configured.");
                     }
 
-                    loadedSources.Add(_recordingDataReader.ReadRecording(recordingId));
-                    continue;
+                    loaded = _recordingDataReader.ReadRecording(recordingId);
                 }
-
-                if (IsExportedProtocolPath(root))
+                else if (IsExportedProtocolPath(root))
                 {
                     if (_exportedProtocolDataSourceReader == null)
                     {
                         throw new InvalidOperationException("Exported protocol reader is not configured.");
                     }
 
-                    loadedSources.Add(_exportedProtocolDataSourceReader.Read(
+                    loaded = _exportedProtocolDataSourceReader.Read(
                         root,
                         new Dictionary<string, ChannelInfo>(StringComparer.OrdinalIgnoreCase),
-                        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)));
-                    continue;
+                        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+                }
+                else
+                {
+                    Dictionary<string, string> metadata = _testMetadataReader.Read(root);
+                    Dictionary<string, ChannelInfo> channels = _canaliDefinitionReader.Read(root);
+                    loaded = _testDataSourceReader.Read(root, channels, metadata);
                 }
 
-                Dictionary<string, string> metadata = _testMetadataReader.Read(root);
-                Dictionary<string, ChannelInfo> channels = _canaliDefinitionReader.Read(root);
-                loadedSources.Add(_testDataSourceReader.Read(root, channels, metadata));
+                EnsureSourceOrder(loaded, root);
+                loadedSources.Add(loaded);
             }
 
             TestData merged = loadedSources.Count == 1
@@ -100,6 +103,41 @@ namespace JSQViewer.Application.Workspace.UseCases
                 : _mergeLoadedSourcesUseCase.Execute(loadedSources, request.SplitOverlappingCodes);
 
             return new WorkspaceLoadResult(_folderSpecParser.Join(resolvedRoots), resolvedRoots, merged);
+        }
+
+        private static void EnsureSourceOrder(TestData data, string fallbackRoot)
+        {
+            var roots = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (data.SourceOrder != null)
+            {
+                foreach (string root in data.SourceOrder)
+                {
+                    if (!string.IsNullOrWhiteSpace(root) && seen.Add(root))
+                    {
+                        roots.Add(root);
+                    }
+                }
+            }
+
+            if (data.SourceColumns != null)
+            {
+                foreach (string root in data.SourceColumns.Keys)
+                {
+                    if (!string.IsNullOrWhiteSpace(root) && seen.Add(root))
+                    {
+                        roots.Add(root);
+                    }
+                }
+            }
+
+            if (roots.Count == 0 && !string.IsNullOrWhiteSpace(fallbackRoot))
+            {
+                roots.Add(fallbackRoot);
+            }
+
+            data.SourceOrder = roots.ToArray();
         }
 
         private string ResolveSourceRoot(string source)

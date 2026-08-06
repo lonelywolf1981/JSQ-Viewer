@@ -24,9 +24,24 @@ namespace JSQViewer.Tests
             CollectionAssert.AreEqual(new double?[] { 2d, 3d }, result.Columns["B-01"]);
             CollectionAssert.AreEqual(new[] { "C:\\srcB" }, result.SourceColumns.Keys.ToArray());
             CollectionAssert.AreEqual(new[] { "B-01" }, result.SourceColumns["C:\\srcB"]);
+            Assert.AreEqual("Repeated title", result.SourceDisplayNames["C:\\srcB"]);
+            CollectionAssert.AreEqual(new[] { "C:\\srcB" }, result.SourceOrder);
+            Assert.AreNotSame(data.SourceDisplayNames, result.SourceDisplayNames);
+            Assert.AreNotSame(data.SourceOrder, result.SourceOrder);
             Assert.IsFalse(result.CodeSources.ContainsKey("A-01"));
             Assert.AreEqual("C:\\srcB", result.CodeSources["B-01"]);
             Assert.AreEqual(2, result.RowCount);
+        }
+
+        [TestMethod]
+        public void Execute_EmptyLegacyOrderFallsBackToRemainingSourceColumnsOrder()
+        {
+            TestData data = CreateMergedData();
+            data.SourceOrder = null;
+
+            TestData result = new RemoveLoadedSourceUseCase().Execute(data, "C:\\srcA");
+
+            CollectionAssert.AreEqual(new[] { "C:\\srcB" }, result.SourceOrder);
         }
 
         private static TestData CreateMergedData()
@@ -51,7 +66,13 @@ namespace JSQViewer.Tests
                 {
                     ["C:\\srcA"] = 40L,
                     ["C:\\srcB"] = 30L
-                }
+                },
+                SourceDisplayNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["C:\\srcA"] = "Repeated title",
+                    ["C:\\srcB"] = "Repeated title"
+                },
+                SourceOrder = new[] { "C:\\srcA", "C:\\srcB" }
             };
 
             data.Columns["A-01"] = new double?[] { 1d, null, null, 4d };
