@@ -157,6 +157,11 @@ namespace JSQViewer.UI
         private readonly Timer _liveRefreshTimer;
         private readonly GetRecordingInfoUseCase _getRecordingInfoUseCase;
         private readonly RemoveLoadedSourceUseCase _removeLoadedSourceUseCase;
+        private readonly SourceDisplayNameResolver _sourceDisplayNameResolver;
+        private readonly WorkspaceTitleBuilder _workspaceTitleBuilder;
+        private readonly DynamicsForecastRoleItemBuilder _dynamicsForecastRoleItemBuilder;
+        private readonly DatabaseRecordingSelectionPresenter _databaseRecordingSelectionPresenter;
+        private readonly WorkspaceLoadRollbackCoordinator _workspaceLoadRollbackCoordinator;
         private string _liveRecordingId;
         private bool _liveRefreshInProgress;
         private bool _liveRefreshConnectionLost;
@@ -253,6 +258,12 @@ namespace JSQViewer.UI
             _workspaceLayoutState = new WorkspaceLayoutState();
             _channelWorkspacePresenter = new ChannelWorkspacePresenter();
             _chartDisplayPresenter = new ChartDisplayPresenter();
+            _sourceDisplayNameResolver = new SourceDisplayNameResolver();
+            _workspaceTitleBuilder = new WorkspaceTitleBuilder(_sourceDisplayNameResolver);
+            _dynamicsForecastRoleItemBuilder = new DynamicsForecastRoleItemBuilder(_sourceDisplayNameResolver);
+            _databaseRecordingSelectionPresenter =
+                new DatabaseRecordingSelectionPresenter(_workspaceLoadOrchestrationService);
+            _workspaceLoadRollbackCoordinator = new WorkspaceLoadRollbackCoordinator();
 
             Font = new Font("Microsoft Sans Serif", 10f);
             Text = Loc.Get("AppTitle") + " " + GetAppVersion();
@@ -774,17 +785,15 @@ namespace JSQViewer.UI
             ((ToolStripMenuItem)_chartContextMenu.Items[9]).Text = Loc.Get("ChartCopyImage");
             _rangeLabel.Text = BuildRangeLabelText(_rangeStartOa, _rangeEndOa);
             _resetRangeButton.Text = Loc.Get("ResetRange");
-            if (_chartHostForm != null && !_chartHostForm.IsDisposed)
-            {
-                _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), _viewerSession.Folder ?? Loc.Get("AppTitle"));
-            }
+            ApplyChartWindowTitles();
             foreach (var kv in _sourceWindows)
             {
                 SourceWindowState sw = kv.Value;
                 if (sw == null) continue;
                 if (sw.Form != null && !sw.Form.IsDisposed)
                 {
-                    sw.Form.Text = string.Format(Loc.Get("ChannelsForSource"), Path.GetFileName(sw.SourceRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
+                    string sourceTitle = sw.ViewModel == null ? sw.SourceRoot : sw.ViewModel.Title;
+                    sw.Form.Text = string.Format(Loc.Get("ChannelsForSource"), sourceTitle);
                 }
                 if (sw.SelectedOnlyCheck != null) sw.SelectedOnlyCheck.Text = Loc.Get("SelectedOnly");
                 if (sw.SelectAllButton != null) sw.SelectAllButton.Text = Loc.Get("SelectAll");
@@ -978,7 +987,6 @@ namespace JSQViewer.UI
         {
             if (_chartHostForm != null && !_chartHostForm.IsDisposed) return;
             _chartHostForm = new Form();
-            _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), Loc.Get("AppTitle"));
             _chartHostForm.Width = 1220;
             _chartHostForm.Height = 760;
             _chartHostForm.StartPosition = FormStartPosition.Manual;
@@ -1006,6 +1014,34 @@ namespace JSQViewer.UI
             _chartHostForm.Controls.Add(_chart);
             _chartHostForm.Controls.Add(_rangeTrackBar);
             _chartHostForm.Controls.Add(_rangePanel);
+            ApplyChartWindowTitles();
+        }
+
+        private string GetWorkspaceDisplayTitle()
+        {
+            return _workspaceTitleBuilder.Build(
+                _viewerSession.Data,
+                _viewerSession.Folder ?? Loc.Get("AppTitle"));
+        }
+
+        private void ApplyChartWindowTitles()
+        {
+            string title = _workspaceTitleBuilder.BuildCaption(
+                _viewerSession.Data,
+                _viewerSession.Folder ?? Loc.Get("AppTitle"),
+                Loc.Get("ChartWindowTitle"));
+            if (_chartHostForm != null && !_chartHostForm.IsDisposed)
+            {
+                _chartHostForm.Text = title;
+            }
+
+            foreach (DetachedChartState state in _detachedCharts)
+            {
+                if (state != null && state.Form != null && !state.Form.IsDisposed)
+                {
+                    state.Form.Text = title;
+                }
+            }
         }
 
         private void ShowChartHost()
@@ -1542,7 +1578,10 @@ namespace JSQViewer.UI
             bool overlayMode = IsRelativeXAxisModeActive();
 
             var form = new Form();
-            form.Text = string.Format(Loc.Get("ChartWindowTitle"), _viewerSession.Folder ?? Loc.Get("AppTitle"));
+            form.Text = _workspaceTitleBuilder.BuildCaption(
+                _viewerSession.Data,
+                _viewerSession.Folder ?? Loc.Get("AppTitle"),
+                Loc.Get("ChartWindowTitle"));
             form.Width = 1200;
             form.Height = 700;
             form.StartPosition = FormStartPosition.CenterScreen;
@@ -1863,24 +1902,26 @@ namespace JSQViewer.UI
             try
             {
                 List<string> current = ParseFolderSpec(_folderBox.Text);
-                int available = WorkspaceFolderSpecParser.MaxFolderCount - current.Count;
-                if (available <= 0)
+                if (current.Count >= WorkspaceFolderSpecParser.MaxFolderCount)
                 {
-                    available = WorkspaceFolderSpecParser.MaxFolderCount;
-                    current.Clear();
+                    NotifyError(Loc.Get("TooManyFolders"));
+                    return;
                 }
 
-                using (var form = new OpenFromDatabaseForm(_recordingCatalog, available))
+                using (var form = new OpenFromDatabaseForm(
+                    _recordingCatalog,
+                    WorkspaceFolderSpecParser.MaxFolderCount))
                 {
                     if (form.ShowDialog(this) != DialogResult.OK)
                     {
                         return;
                     }
 
-                    var combined = new List<string>(form.SelectedSources);
-                    string spec = JoinFolderSpec(combined);
-                    _folderBox.Text = spec;
-                    LoadFolder(spec, true);
+                    _databaseRecordingSelectionPresenter.ApplySelection(
+                        _folderBox.Text,
+                        form.SelectedSources,
+                        spec => LoadFolder(spec, true),
+                        key => NotifyError(Loc.Get(key)));
                 }
             }
             catch (Exception ex)
@@ -2111,13 +2152,15 @@ namespace JSQViewer.UI
             {
                 if (!IsDisposed && generation == _loadGeneration)
                 {
-                    if (!loadSucceeded
-                        && ReferenceEquals(_viewerSession.Data, previousData)
-                        && string.Equals(_viewerSession.Folder, previousSessionFolder, StringComparison.Ordinal))
-                    {
-                        _folderBox.Text = previousSourceText;
-                        RestoreLiveRefreshState(previousLiveRefreshState);
-                    }
+                    _workspaceLoadRollbackCoordinator.RestoreAfterFailure(
+                        loadSucceeded,
+                        generation == _loadGeneration,
+                        previousData,
+                        previousSessionFolder,
+                        _viewerSession.Data,
+                        _viewerSession.Folder,
+                        () => _folderBox.Text = previousSourceText,
+                        () => RestoreLiveRefreshState(previousLiveRefreshState));
 
                     Cursor = Cursors.Default;
                     SetBusy(false, null);
@@ -2147,19 +2190,40 @@ namespace JSQViewer.UI
             return string.Empty;
         }
 
+        private static bool TryGetSingleLiveRecordingId(
+            WorkspaceLoadOrchestrationService service,
+            string spec,
+            out string recordingId)
+        {
+            recordingId = null;
+            if (service == null)
+            {
+                return false;
+            }
+
+            IReadOnlyList<string> sources = service.ParseSpec(spec);
+            if (sources.Count != 1)
+            {
+                return false;
+            }
+
+            string parsedId;
+            if (!RecordingSourceRef.TryParse(sources[0], out parsedId)
+                || !string.Equals(sources[0], RecordingSourceRef.Build(parsedId), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            recordingId = parsedId;
+            return true;
+        }
+
         private void UpdateLiveRefreshState(string spec)
         {
             StopLiveRefresh();
 
-            IReadOnlyList<string> sources = _workspaceLoadOrchestrationService.ParseSpec(spec);
-            if (sources.Count != 1)
-            {
-                return;
-            }
-
             string recordingId;
-            if (!RecordingSourceRef.TryParse(sources[0], out recordingId)
-                || !string.Equals(sources[0], RecordingSourceRef.Build(recordingId), StringComparison.OrdinalIgnoreCase))
+            if (!TryGetSingleLiveRecordingId(_workspaceLoadOrchestrationService, spec, out recordingId))
             {
                 return;
             }
@@ -2451,10 +2515,7 @@ namespace JSQViewer.UI
             }
             DataSummary summary = _buildWorkspaceSummaryUseCase.Execute(data);
             _summaryLabel.Text = string.Format(Loc.Get("Points"), summary.Points, summary.Start, summary.End);
-            if (_chartHostForm != null && !_chartHostForm.IsDisposed)
-            {
-                _chartHostForm.Text = string.Format(Loc.Get("ChartWindowTitle"), _viewerSession.Folder ?? Loc.Get("AppTitle"));
-            }
+            ApplyChartWindowTitles();
             _exportTemplateButton.Enabled = _savePresetButton.Enabled = true;
             _showChartButton.Enabled = true;
             _forecastDynamicsButton.Enabled = canOverlay;
@@ -3448,30 +3509,6 @@ namespace JSQViewer.UI
             }
         }
 
-        private static string BuildSeriesLegendText(TestData data, string code)
-        {
-            string displayCode = NormalizeChannelCodeForDisplay(code);
-            if (data == null || data.SourceColumns == null || data.SourceColumns.Count <= 1 || data.CodeSources == null)
-            {
-                return displayCode;
-            }
-
-            string source;
-            if (!data.CodeSources.TryGetValue(code, out source) || string.IsNullOrWhiteSpace(source))
-            {
-                return displayCode;
-            }
-
-            string trimmed = source.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            string sourceName = Path.GetFileName(trimmed);
-            if (string.IsNullOrWhiteSpace(sourceName))
-            {
-                sourceName = source;
-            }
-
-            return string.Format(CultureInfo.InvariantCulture, "[{0}] {1}", sourceName, displayCode);
-        }
-
         private void RunWithoutRangeSync(Action action)
         {
             if (action == null) return;
@@ -3698,7 +3735,7 @@ namespace JSQViewer.UI
         private bool TrySelectDynamicsForecastRoles(List<string> selectedCodes, out DynamicsForecastRoleSelection roleSelection)
         {
             roleSelection = null;
-            List<ForecastRoleItem> items = BuildForecastRoleItems(selectedCodes);
+            List<DynamicsForecastRoleItemViewModel> items = BuildForecastRoleItems(selectedCodes);
             if (items.Count < 3)
             {
                 ShowForecastError(Loc.Get("ForecastRoleNeedThree"));
@@ -3751,9 +3788,9 @@ namespace JSQViewer.UI
                     return false;
                 }
 
-                var oldFunc = oldFuncBox.SelectedItem as ForecastRoleItem;
-                var target = targetBox.SelectedItem as ForecastRoleItem;
-                var newFunc = newFuncBox.SelectedItem as ForecastRoleItem;
+                var oldFunc = oldFuncBox.SelectedItem as DynamicsForecastRoleItemViewModel;
+                var target = targetBox.SelectedItem as DynamicsForecastRoleItemViewModel;
+                var newFunc = newFuncBox.SelectedItem as DynamicsForecastRoleItemViewModel;
                 if (oldFunc == null || target == null || newFunc == null)
                 {
                     ShowForecastError(Loc.Get("ForecastRoleNeedSelection"));
@@ -3783,7 +3820,7 @@ namespace JSQViewer.UI
             parent.Controls.Add(label);
         }
 
-        private static void ConfigureForecastRoleBox(ComboBox box, List<ForecastRoleItem> items, int x, int y)
+        private static void ConfigureForecastRoleBox(ComboBox box, List<DynamicsForecastRoleItemViewModel> items, int x, int y)
         {
             box.DropDownStyle = ComboBoxStyle.DropDownList;
             box.SetBounds(x, y, 450, 24);
@@ -3793,10 +3830,10 @@ namespace JSQViewer.UI
             }
         }
 
-        private void PreselectForecastRoles(List<ForecastRoleItem> items, ComboBox oldFuncBox, ComboBox targetBox, ComboBox newFuncBox)
+        private void PreselectForecastRoles(List<DynamicsForecastRoleItemViewModel> items, ComboBox oldFuncBox, ComboBox targetBox, ComboBox newFuncBox)
         {
-            ForecastRoleItem target = items.FirstOrDefault(item => ContainsForecastToken(item.Label, "FULL") || ContainsForecastToken(item.Label, "HALF"));
-            List<ForecastRoleItem> funcs = items.Where(item => ContainsForecastToken(item.Label, "FUNC")).OrderBy(item => item.DurationHours).ToList();
+            DynamicsForecastRoleItemViewModel target = items.FirstOrDefault(item => ContainsForecastToken(item.Label, "FULL") || ContainsForecastToken(item.Label, "HALF"));
+            List<DynamicsForecastRoleItemViewModel> funcs = items.Where(item => ContainsForecastToken(item.Label, "FUNC")).OrderBy(item => item.DurationHours).ToList();
 
             SelectForecastRoleItem(targetBox, target ?? items.FirstOrDefault());
             if (funcs.Count >= 2)
@@ -3811,7 +3848,7 @@ namespace JSQViewer.UI
             }
         }
 
-        private static void SelectForecastRoleItem(ComboBox box, ForecastRoleItem item)
+        private static void SelectForecastRoleItem(ComboBox box, DynamicsForecastRoleItemViewModel item)
         {
             if (box == null || item == null)
             {
@@ -3820,7 +3857,7 @@ namespace JSQViewer.UI
 
             for (int i = 0; i < box.Items.Count; i++)
             {
-                var candidate = box.Items[i] as ForecastRoleItem;
+                var candidate = box.Items[i] as DynamicsForecastRoleItemViewModel;
                 if (candidate != null && string.Equals(candidate.Code, item.Code, StringComparison.OrdinalIgnoreCase))
                 {
                     box.SelectedIndex = i;
@@ -3829,70 +3866,10 @@ namespace JSQViewer.UI
             }
         }
 
-        private List<ForecastRoleItem> BuildForecastRoleItems(List<string> selectedCodes)
+        private List<DynamicsForecastRoleItemViewModel> BuildForecastRoleItems(List<string> selectedCodes)
         {
-            var items = new List<ForecastRoleItem>();
-            TestData data = _viewerSession.Data;
-            if (selectedCodes == null || data == null)
-            {
-                return items;
-            }
-
-            for (int i = 0; i < selectedCodes.Count; i++)
-            {
-                string code = selectedCodes[i];
-                string source = ResolveSourceRootForCode(data, code);
-                string sourceName = GetSourceDisplayName(source);
-                string displayCode = NormalizeChannelCodeForDisplay(code);
-                string label = string.IsNullOrWhiteSpace(sourceName)
-                    ? displayCode
-                    : string.Format(CultureInfo.InvariantCulture, "[{0}] {1}", sourceName, displayCode);
-                items.Add(new ForecastRoleItem(code, label, ResolveSourceDurationHours(data, source)));
-            }
-
-            return items;
-        }
-
-        private static string ResolveSourceRootForCode(TestData data, string code)
-        {
-            string source;
-            if (data != null
-                && data.CodeSources != null
-                && data.CodeSources.TryGetValue(code, out source))
-            {
-                return source;
-            }
-
-            return string.Empty;
-        }
-
-        private static string GetSourceDisplayName(string source)
-        {
-            if (string.IsNullOrWhiteSpace(source))
-            {
-                return string.Empty;
-            }
-
-            string trimmed = source.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            string name = Path.GetFileName(trimmed);
-            return string.IsNullOrWhiteSpace(name) ? source : name;
-        }
-
-        private static double ResolveSourceDurationHours(TestData data, string source)
-        {
-            if (data == null || string.IsNullOrWhiteSpace(source) || data.SourceStartMs == null || data.SourceEndMs == null)
-            {
-                return double.PositiveInfinity;
-            }
-
-            long start;
-            long end;
-            if (!data.SourceStartMs.TryGetValue(source, out start) || !data.SourceEndMs.TryGetValue(source, out end))
-            {
-                return double.PositiveInfinity;
-            }
-
-            return Math.Max(0d, (end - start) / 3600000d);
+            return new List<DynamicsForecastRoleItemViewModel>(
+                _dynamicsForecastRoleItemBuilder.Build(_viewerSession.Data, selectedCodes));
         }
 
         private static bool ContainsForecastToken(string text, string token)
@@ -4996,26 +4973,6 @@ namespace JSQViewer.UI
             public override string ToString() { return Label; }
         }
 
-        private sealed class ForecastRoleItem
-        {
-            public string Code { get; private set; }
-
-            public string Label { get; private set; }
-
-            public double DurationHours { get; private set; }
-
-            public ForecastRoleItem(string code, string label, double durationHours)
-            {
-                Code = code ?? string.Empty;
-                Label = label ?? string.Empty;
-                DurationHours = durationHours;
-            }
-
-            public override string ToString()
-            {
-                return Label;
-            }
-        }
 
         private sealed class PresetItem
         {
