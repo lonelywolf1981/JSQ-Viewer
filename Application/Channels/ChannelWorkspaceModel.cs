@@ -1,17 +1,30 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using JSQViewer.Application.Workspace;
 using JSQViewer.Core;
 
 namespace JSQViewer.Application.Channels
 {
     public sealed class ChannelWorkspaceModel
     {
+        private readonly SourceDisplayNameResolver _sourceDisplayNameResolver;
         private readonly List<ChannelWorkspaceEntry> _channels = new List<ChannelWorkspaceEntry>();
         private readonly Dictionary<string, ChannelWorkspaceEntry> _channelsByCode = new Dictionary<string, ChannelWorkspaceEntry>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _selectedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, List<ChannelWorkspaceEntry>> _sourceOrders = new Dictionary<string, List<ChannelWorkspaceEntry>>(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> _sourceRoots = new List<string>();
+
+        public ChannelWorkspaceModel()
+            : this(new SourceDisplayNameResolver())
+        {
+        }
+
+        public ChannelWorkspaceModel(SourceDisplayNameResolver sourceDisplayNameResolver)
+        {
+            _sourceDisplayNameResolver = sourceDisplayNameResolver
+                ?? throw new ArgumentNullException(nameof(sourceDisplayNameResolver));
+        }
 
         public int TotalCount
         {
@@ -80,12 +93,19 @@ namespace JSQViewer.Application.Channels
                 return;
             }
 
-            foreach (KeyValuePair<string, string[]> pair in data.SourceColumns)
+            IReadOnlyList<string> orderedRoots = _sourceDisplayNameResolver.GetOrderedRoots(data);
+            for (int rootIndex = 0; rootIndex < orderedRoots.Count; rootIndex++)
             {
-                string sourceRoot = pair.Key ?? string.Empty;
+                string sourceRoot = orderedRoots[rootIndex];
+                string[] sourceCols;
+                if (!data.SourceColumns.TryGetValue(sourceRoot, out sourceCols))
+                {
+                    continue;
+                }
+
                 _sourceRoots.Add(sourceRoot);
 
-                string[] sourceCols = pair.Value ?? new string[0];
+                sourceCols = sourceCols ?? new string[0];
                 List<string> sourceOrder = ProtocolChannelOrder.Build(sourceCols, data.Channels);
                 var orderedItems = new List<ChannelWorkspaceEntry>(sourceOrder.Count);
                 foreach (string code in sourceOrder)

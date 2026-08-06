@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using JSQViewer.Application.Workspace;
 using JSQViewer.Core;
 
 namespace JSQViewer.Application.Charting
@@ -10,16 +11,27 @@ namespace JSQViewer.Application.Charting
     {
         private readonly SeriesSliceService _seriesSliceService;
         private readonly DynamicsForecastService _dynamicsForecastService;
+        private readonly SourceDisplayNameResolver _sourceDisplayNameResolver;
 
         public ChartPipelineService(SeriesSliceService seriesSliceService)
-            : this(seriesSliceService, new DynamicsForecastService())
+            : this(seriesSliceService, new DynamicsForecastService(), new SourceDisplayNameResolver())
         {
         }
 
         public ChartPipelineService(SeriesSliceService seriesSliceService, DynamicsForecastService dynamicsForecastService)
+            : this(seriesSliceService, dynamicsForecastService, new SourceDisplayNameResolver())
+        {
+        }
+
+        public ChartPipelineService(
+            SeriesSliceService seriesSliceService,
+            DynamicsForecastService dynamicsForecastService,
+            SourceDisplayNameResolver sourceDisplayNameResolver)
         {
             _seriesSliceService = seriesSliceService ?? throw new ArgumentNullException(nameof(seriesSliceService));
             _dynamicsForecastService = dynamicsForecastService ?? throw new ArgumentNullException(nameof(dynamicsForecastService));
+            _sourceDisplayNameResolver = sourceDisplayNameResolver
+                ?? throw new ArgumentNullException(nameof(sourceDisplayNameResolver));
         }
 
         public ChartPipelineResult Execute(ChartPipelineRequest request)
@@ -353,7 +365,7 @@ namespace JSQViewer.Application.Charting
             return fallbackMs;
         }
 
-        private static string BuildSeriesLegendText(TestData data, string code)
+        private string BuildSeriesLegendText(TestData data, string code)
         {
             string displayCode = NormalizeChannelCodeForDisplay(code);
             if (data == null || data.SourceColumns == null || data.SourceColumns.Count <= 1 || data.CodeSources == null)
@@ -367,12 +379,7 @@ namespace JSQViewer.Application.Charting
                 return displayCode;
             }
 
-            string trimmed = source.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
-            string sourceName = System.IO.Path.GetFileName(trimmed);
-            if (string.IsNullOrWhiteSpace(sourceName))
-            {
-                sourceName = source;
-            }
+            string sourceName = _sourceDisplayNameResolver.Resolve(data, source);
 
             return string.Format(CultureInfo.InvariantCulture, "[{0}] {1}", sourceName, displayCode);
         }

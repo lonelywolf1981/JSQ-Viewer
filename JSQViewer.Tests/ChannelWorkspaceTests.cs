@@ -195,6 +195,34 @@ namespace JSQViewer.Tests
                 new[] { "C:\\srcA::A-02", "C:\\srcA::A-01", "C:\\srcA::A-03" },
                 ChannelWorkspaceTestHarness.ToCodeList(ChannelWorkspaceTestHarness.Invoke(workspace, "GetEffectiveOrderForSource", "C:\\srcA")));
         }
+
+        [TestMethod]
+        public void Load_UsesSourceOrderInsteadOfSourceColumnsEnumerationForWindowRoots()
+        {
+            TestData data = ChannelWorkspaceTestData.CreateMultiSourceData();
+            data.SourceOrder = new[] { "C:\\srcB", "C:\\srcA" };
+            object workspace = ChannelWorkspaceTestHarness.CreateWorkspaceModel();
+
+            ChannelWorkspaceTestHarness.Invoke(workspace, "Load", data, null, null);
+
+            CollectionAssert.AreEqual(
+                new[] { "C:\\srcB", "C:\\srcA" },
+                ChannelWorkspaceTestHarness.ToCodeList(ChannelWorkspaceTestHarness.GetValue(workspace, "SourceRoots")));
+        }
+
+        [TestMethod]
+        public void Load_SkipsOrderedRootsThatHaveNoSourceColumnsEntry()
+        {
+            TestData data = ChannelWorkspaceTestData.CreateMultiSourceData();
+            data.SourceOrder = new[] { "C:\\missing", "C:\\srcB", "C:\\srcA" };
+            object workspace = ChannelWorkspaceTestHarness.CreateWorkspaceModel();
+
+            ChannelWorkspaceTestHarness.Invoke(workspace, "Load", data, null, null);
+
+            CollectionAssert.AreEqual(
+                new[] { "C:\\srcB", "C:\\srcA" },
+                ChannelWorkspaceTestHarness.ToCodeList(ChannelWorkspaceTestHarness.GetValue(workspace, "SourceRoots")));
+        }
     }
 
     [TestClass]
@@ -330,6 +358,80 @@ namespace JSQViewer.Tests
             CollectionAssert.AreEqual(
                 new[] { "C:\\srcA::A-02", "C:\\srcA::A-01" },
                 ChannelWorkspaceTestHarness.ToCodeList(ChannelWorkspaceTestHarness.Invoke(presenter, "GetEffectiveOrderForSource", "C:\\srcA")));
+        }
+
+        [TestMethod]
+        public void BindData_DatabaseSourceWindowUsesResolvedTitleAndKeepsTechnicalRoot()
+        {
+            const string source = "jsqdb://recording/a";
+            TestData data = ChannelWorkspaceTestData.CreateMultiSourceData(
+                new Dictionary<string, string[]>
+                {
+                    [source] = new[] { "T1" }
+                });
+            data.SourceOrder = new[] { source };
+            data.SourceDisplayNames[source] = "Прогон A";
+            object presenter = ChannelWorkspaceTestHarness.CreatePresenter();
+
+            ChannelWorkspaceTestHarness.Invoke(presenter, "BindData", data, null, null, false);
+
+            object window = ChannelWorkspaceTestHarness.Invoke(presenter, "GetSourceWindow", source);
+            Assert.AreEqual(source, ChannelWorkspaceTestHarness.GetString(window, "SourceRoot"));
+            Assert.AreEqual("Прогон A", ChannelWorkspaceTestHarness.GetString(window, "Title"));
+        }
+
+        [TestMethod]
+        public void BindData_SameDatabaseTitlesKeepDistinctWindowsAndRecordingIds()
+        {
+            const string sourceA = "jsqdb://recording/a";
+            const string sourceB = "jsqdb://recording/b";
+            TestData data = ChannelWorkspaceTestData.CreateMultiSourceData(
+                new Dictionary<string, string[]>
+                {
+                    [sourceB] = new[] { "b::T1" },
+                    [sourceA] = new[] { "a::T1" }
+                });
+            data.SourceOrder = new[] { sourceA, sourceB };
+            data.SourceDisplayNames[sourceA] = "KA50";
+            data.SourceDisplayNames[sourceB] = "KA50";
+            object presenter = ChannelWorkspaceTestHarness.CreatePresenter();
+
+            object plan = ChannelWorkspaceTestHarness.Invoke(presenter, "BindData", data, null, null, false);
+            IList windows = ChannelWorkspaceTestHarness.ToList(ChannelWorkspaceTestHarness.GetValue(plan, "Windows"));
+
+            Assert.AreEqual(2, windows.Count);
+            Assert.AreEqual(sourceA, ChannelWorkspaceTestHarness.GetString(windows[0], "SourceRoot"));
+            Assert.AreEqual("KA50 [a]", ChannelWorkspaceTestHarness.GetString(windows[0], "Title"));
+            Assert.AreEqual(sourceB, ChannelWorkspaceTestHarness.GetString(windows[1], "SourceRoot"));
+            Assert.AreEqual("KA50 [b]", ChannelWorkspaceTestHarness.GetString(windows[1], "Title"));
+        }
+
+        [TestMethod]
+        public void BindData_StableRootsPreserveStateAndRefreshResolvedTitles()
+        {
+            const string source = "jsqdb://recording/a";
+            TestData initial = ChannelWorkspaceTestData.CreateMultiSourceData(
+                new Dictionary<string, string[]> { [source] = new[] { "T1" } });
+            initial.SourceOrder = new[] { source };
+            initial.SourceDisplayNames[source] = "Старое название";
+            object presenter = ChannelWorkspaceTestHarness.CreatePresenter();
+
+            ChannelWorkspaceTestHarness.Invoke(presenter, "Initialize", string.Empty, "User", false);
+            ChannelWorkspaceTestHarness.Invoke(presenter, "BindData", initial, null, null, false);
+            ChannelWorkspaceTestHarness.Invoke(presenter, "UpdateSourceWindowOptions", source, "T1", "Label", true);
+
+            TestData refreshed = ChannelWorkspaceTestData.CreateMultiSourceData(
+                new Dictionary<string, string[]> { [source] = new[] { "T1" } });
+            refreshed.SourceOrder = new[] { source };
+            refreshed.SourceDisplayNames[source] = "Новое название";
+            object plan = ChannelWorkspaceTestHarness.Invoke(presenter, "BindData", refreshed, null, null, true);
+            object window = ChannelWorkspaceTestHarness.Invoke(presenter, "GetSourceWindow", source);
+
+            Assert.IsTrue(ChannelWorkspaceTestHarness.GetBoolean(plan, "CanRefreshInPlace"));
+            Assert.AreEqual("Новое название", ChannelWorkspaceTestHarness.GetString(window, "Title"));
+            Assert.AreEqual("Label", ChannelWorkspaceTestHarness.GetString(window, "SortMode"));
+            Assert.AreEqual("T1", ChannelWorkspaceTestHarness.GetString(window, "FilterText"));
+            Assert.IsTrue(ChannelWorkspaceTestHarness.GetBoolean(window, "SelectedOnly"));
         }
     }
 

@@ -709,6 +709,70 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void ResolveLegendText_UsesResolvedDatabaseTitlesAndKeepsTechnicalRoots()
+        {
+            const string sourceA = "jsqdb://recording/a";
+            const string sourceB = "jsqdb://recording/b";
+            var service = new ChartPipelineService(new SeriesSliceService(new MemorySeriesSliceCache(), new TimestampRangeService()));
+            var data = SessionAndChartingTestData.CreateData(
+                new long[] { 0L, 1000L },
+                new Dictionary<string, double?[]>
+                {
+                    ["a::T1"] = new double?[] { 1d, 2d },
+                    ["b::T1"] = new double?[] { 3d, 4d }
+                });
+            data.SourceColumns[sourceA] = new[] { "a::T1" };
+            data.SourceColumns[sourceB] = new[] { "b::T1" };
+            data.SourceOrder = new[] { sourceA, sourceB };
+            data.SourceDisplayNames[sourceA] = "KA50";
+            data.SourceDisplayNames[sourceB] = "KA50";
+            data.CodeSources["a::T1"] = sourceA;
+            data.CodeSources["b::T1"] = sourceB;
+
+            ChartPipelineResult result = service.Execute(ChartPipelineRequest.ForChart(
+                data,
+                new[] { "a::T1", "b::T1" },
+                overlayMode: false,
+                dataVersion: 1,
+                autoStepEnabled: false,
+                manualStep: 1,
+                targetPoints: 5000,
+                selectedChannelCount: 2));
+
+            CollectionAssert.AreEqual(
+                new[] { "[KA50 [a]] T1", "[KA50 [b]] T1" },
+                result.Series.Select(item => item.LegendText).ToArray());
+            CollectionAssert.AreEqual(
+                new[] { sourceA, sourceB },
+                result.Series.Select(item => item.SourceRoot).ToArray());
+        }
+
+        [TestMethod]
+        public void ResolveLegendText_SingleDatabaseSourceRemainsUnprefixed()
+        {
+            const string source = "jsqdb://recording/a";
+            var service = new ChartPipelineService(new SeriesSliceService(new MemorySeriesSliceCache(), new TimestampRangeService()));
+            var data = SessionAndChartingTestData.CreateData(new long[] { 0L, 1000L });
+            data.SourceColumns[source] = new[] { "T1" };
+            data.SourceOrder = new[] { source };
+            data.SourceDisplayNames[source] = "Прогон A";
+            data.CodeSources["A-01"] = source;
+
+            ChartPipelineResult result = service.Execute(ChartPipelineRequest.ForChart(
+                data,
+                new[] { "A-01" },
+                overlayMode: false,
+                dataVersion: 1,
+                autoStepEnabled: false,
+                manualStep: 1,
+                targetPoints: 5000,
+                selectedChannelCount: 1));
+
+            Assert.AreEqual("A-01", result.Series.Single().LegendText);
+            Assert.AreEqual(source, result.Series.Single().SourceRoot);
+        }
+
+        [TestMethod]
         public void Execute_UsesCachedSeriesSliceService()
         {
             var cache = new CountingSeriesSliceCache();

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using JSQViewer.Application.Channels;
+using JSQViewer.Application.Workspace;
 using JSQViewer.Core;
 using JSQViewer.Presentation.WinForms.ViewModels;
 
@@ -9,9 +10,30 @@ namespace JSQViewer.Presentation.WinForms.Presenters
 {
     public sealed class ChannelWorkspacePresenter
     {
-        private readonly ChannelWorkspaceModel _workspace = new ChannelWorkspaceModel();
-        private readonly SourceWindowCoordinator _sourceWindowCoordinator = new SourceWindowCoordinator();
+        private readonly ChannelWorkspaceModel _workspace;
+        private readonly SourceWindowCoordinator _sourceWindowCoordinator;
+        private readonly SourceDisplayNameResolver _sourceDisplayNameResolver;
         private string _mainSortMode = "User";
+
+        public ChannelWorkspacePresenter()
+            : this(
+                new ChannelWorkspaceModel(),
+                new SourceWindowCoordinator(),
+                new SourceDisplayNameResolver())
+        {
+        }
+
+        public ChannelWorkspacePresenter(
+            ChannelWorkspaceModel workspace,
+            SourceWindowCoordinator sourceWindowCoordinator,
+            SourceDisplayNameResolver sourceDisplayNameResolver)
+        {
+            _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
+            _sourceWindowCoordinator = sourceWindowCoordinator
+                ?? throw new ArgumentNullException(nameof(sourceWindowCoordinator));
+            _sourceDisplayNameResolver = sourceDisplayNameResolver
+                ?? throw new ArgumentNullException(nameof(sourceDisplayNameResolver));
+        }
 
         public int TotalChannelCount
         {
@@ -47,7 +69,12 @@ namespace JSQViewer.Presentation.WinForms.Presenters
         public SourceWindowRefreshPlan BindData(TestData data, IEnumerable<string> savedOrder, IEnumerable<string> preferredCheckedCodes, bool preserveSourceWindowsLayout)
         {
             _workspace.Load(data, savedOrder, preferredCheckedCodes);
-            bool canRefreshInPlace = _sourceWindowCoordinator.BindRoots(_workspace.SourceRoots, _mainSortMode, preserveSourceWindowsLayout);
+            IReadOnlyDictionary<string, string> titles = _sourceDisplayNameResolver.ResolveAll(data);
+            bool canRefreshInPlace = _sourceWindowCoordinator.BindRoots(
+                _workspace.SourceRoots,
+                titles,
+                _mainSortMode,
+                preserveSourceWindowsLayout);
             return new SourceWindowRefreshPlan(canRefreshInPlace, GetSourceWindows());
         }
 

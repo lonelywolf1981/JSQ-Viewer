@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using JSQViewer.Application.Channels;
 using JSQViewer.Presentation.WinForms.ViewModels;
@@ -10,6 +9,7 @@ namespace JSQViewer.Presentation.WinForms.Presenters
     public sealed class SourceWindowCoordinator
     {
         private readonly Dictionary<string, SourceWindowState> _states = new Dictionary<string, SourceWindowState>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _titles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> _roots = new List<string>();
         private string _sharedFilterText = string.Empty;
         private bool _sharedSelectedOnly;
@@ -30,7 +30,11 @@ namespace JSQViewer.Presentation.WinForms.Presenters
             _sharedSelectedOnly = selectedOnly;
         }
 
-        public bool BindRoots(IReadOnlyList<string> roots, string defaultSortMode, bool preserveExistingLayout)
+        public bool BindRoots(
+            IReadOnlyList<string> roots,
+            IReadOnlyDictionary<string, string> titles,
+            string defaultSortMode,
+            bool preserveExistingLayout)
         {
             string[] incoming = roots == null ? new string[0] : roots.ToArray();
             bool canRefreshInPlace = preserveExistingLayout && HaveSameRoots(incoming);
@@ -43,10 +47,21 @@ namespace JSQViewer.Presentation.WinForms.Presenters
 
             _roots.Clear();
             _roots.AddRange(incoming);
+            _titles.Clear();
 
             for (int i = 0; i < _roots.Count; i++)
             {
                 string root = _roots[i];
+                string title;
+                if (titles == null
+                    || !titles.TryGetValue(root, out title)
+                    || string.IsNullOrWhiteSpace(title))
+                {
+                    title = root;
+                }
+
+                _titles[root] = title;
+
                 SourceWindowState state;
                 if (!_states.TryGetValue(root, out state))
                 {
@@ -127,7 +142,7 @@ namespace JSQViewer.Presentation.WinForms.Presenters
             IReadOnlyList<ChannelListProjectionItem> items = workspace.BuildSourceList(root, _sharedFilterText, sortMode, _sharedSelectedOnly);
             return new SourceChannelWindowViewModel(
                 root,
-                BuildTitle(root),
+                GetTitle(root),
                 _sharedFilterText,
                 sortMode,
                 _sharedSelectedOnly,
@@ -150,11 +165,16 @@ namespace JSQViewer.Presentation.WinForms.Presenters
             return current.SetEquals(incoming);
         }
 
-        private static string BuildTitle(string sourceRoot)
+        private string GetTitle(string sourceRoot)
         {
-            string trimmed = (sourceRoot ?? string.Empty).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            string sourceName = Path.GetFileName(trimmed);
-            return string.IsNullOrWhiteSpace(sourceName) ? (sourceRoot ?? string.Empty) : sourceName;
+            string title;
+            if (_titles.TryGetValue(sourceRoot ?? string.Empty, out title)
+                && !string.IsNullOrWhiteSpace(title))
+            {
+                return title;
+            }
+
+            return sourceRoot ?? string.Empty;
         }
 
         private static string NormalizeSortMode(string sortMode)
