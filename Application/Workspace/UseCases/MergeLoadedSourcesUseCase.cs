@@ -291,14 +291,19 @@ namespace JSQViewer.Application.Workspace.UseCases
             string[] sourceOrder)
         {
             IEnumerable<string> actualSources;
-            if (data.SourceColumns == null)
-            {
-                actualSources = new string[0];
-            }
-            else
+            if (data.SourceColumns != null && data.SourceColumns.Count > 0)
             {
                 actualSources = data.SourceColumns.Keys;
             }
+            else if (!string.IsNullOrWhiteSpace(data.Root))
+            {
+                actualSources = new[] { data.Root };
+            }
+            else
+            {
+                actualSources = new string[0];
+            }
+
             data.SourceDisplayNames = FilterDisplayNamesToSources(sourceDisplayNames, actualSources);
             data.SourceOrder = NormalizeSourceOrder(sourceOrder, actualSources);
         }

@@ -48,6 +48,49 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Execute_SameRootWithoutSourceColumnsRetainsLaterIdentity()
+        {
+            TestData first = CreateData("jsqdb://recording/one", "A", 10L);
+            first.SourceColumns = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+            first.SourceDisplayNames[first.Root] = "   ";
+            TestData duplicate = CreateData("JSQDB://RECORDING/ONE", "B", 20L);
+            duplicate.SourceDisplayNames[duplicate.Root] = "  Recording one  ";
+            duplicate.SourceOrder = new[] { first.Root, duplicate.Root };
+
+            TestData result = new MergeLoadedSourcesUseCase().Execute(
+                new[] { first, duplicate },
+                false);
+
+            Assert.AreSame(first, result);
+            Assert.AreEqual(1, result.RowCount);
+            Assert.AreEqual(first.Root, result.Root);
+            Assert.AreEqual(0, result.SourceColumns.Count);
+            Assert.IsNotNull(result.SourceDisplayNames);
+            Assert.AreEqual(StringComparer.OrdinalIgnoreCase, result.SourceDisplayNames.Comparer);
+            Assert.AreEqual("Recording one", result.SourceDisplayNames[first.Root]);
+            CollectionAssert.AreEqual(new[] { first.Root }, result.SourceOrder);
+        }
+
+        [TestMethod]
+        public void Execute_SameRootWithNullSourceColumnsRetainsLaterIdentity()
+        {
+            TestData first = CreateData("jsqdb://recording/one", "A", 10L);
+            first.SourceColumns = null;
+            TestData duplicate = CreateData("JSQDB://RECORDING/ONE", "B", 20L);
+            duplicate.SourceDisplayNames[duplicate.Root] = "Recording one";
+            duplicate.SourceOrder = new[] { first.Root };
+
+            TestData result = new MergeLoadedSourcesUseCase().Execute(
+                new[] { first, duplicate },
+                false);
+
+            Assert.AreSame(first, result);
+            Assert.IsNull(result.SourceColumns);
+            Assert.AreEqual("Recording one", result.SourceDisplayNames[first.Root]);
+            CollectionAssert.AreEqual(new[] { first.Root }, result.SourceOrder);
+        }
+
+        [TestMethod]
         public void Execute_AlreadyMergedInputPreservesNestedSourceIdentityThroughRemove()
         {
             const string sourceA = "C:\\sourceA";
