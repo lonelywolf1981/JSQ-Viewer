@@ -12,7 +12,9 @@ namespace JSQViewer.Infrastructure.Composition
             return new WorkspaceFolderSpecParser();
         }
 
-        public static LoadWorkspaceDataUseCase CreateLoadWorkspaceDataUseCase(WorkspaceFolderSpecParser folderSpecParser)
+        public static LoadWorkspaceDataUseCase CreateLoadWorkspaceDataUseCase(
+            WorkspaceFolderSpecParser folderSpecParser,
+            IRecordingDataReader recordingDataReader = null)
         {
             return new LoadWorkspaceDataUseCase(
                 folderSpecParser ?? CreateFolderSpecParser(),
@@ -21,7 +23,8 @@ namespace JSQViewer.Infrastructure.Composition
                 new CanaliDefinitionReader(),
                 new DbfTestDataSourceReader(),
                 new MergeLoadedSourcesUseCase(),
-                new ExportedProtocolDataSourceReader());
+                new ExportedProtocolDataSourceReader(),
+                recordingDataReader);
         }
 
         public static ITestRootLocator CreateTestRootLocator()

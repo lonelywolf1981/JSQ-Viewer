@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using JSQViewer.Application.Abstractions;
+using JSQViewer.Application.Database;
 
 namespace JSQViewer.Application.Workspace
 {
@@ -40,6 +41,11 @@ namespace JSQViewer.Application.Workspace
 
             for (int i = 0; i < folders.Count; i++)
             {
+                if (RecordingSourceRef.IsRecordingSource(folders[i]))
+                {
+                    continue;
+                }
+
                 if (!_fileSystem.DirectoryExists(folders[i])
                     && !(IsExportedProtocolPath(folders[i]) && _fileSystem.FileExists(folders[i])))
                 {
@@ -52,6 +58,11 @@ namespace JSQViewer.Application.Workspace
 
         public string ResolveSelectedFolderSource(string selectedFolder)
         {
+            if (RecordingSourceRef.IsRecordingSource(selectedFolder))
+            {
+                return selectedFolder.Trim().Trim('"');
+            }
+
             if (string.IsNullOrWhiteSpace(selectedFolder) || !_fileSystem.DirectoryExists(selectedFolder))
             {
                 return selectedFolder;
