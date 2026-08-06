@@ -215,12 +215,14 @@ namespace JSQViewer.UI
                     continue;
                 }
 
+                ClimateModeInfo climateMode = item.ClimateMode ?? ClimateModeInfo.Unknown;
                 int index = _recordingsGrid.Rows.Add(
                     item.StartedAt.HasValue ? item.StartedAt.Value.ToString("g") : string.Empty,
                     item.PostId ?? string.Empty,
                     item.Title ?? string.Empty,
                     item.EquipmentModel ?? string.Empty,
                     item.ExperimentType ?? string.Empty,
+                    climateMode.Label,
                     item.DurationHours.ToString("0.##"),
                     item.IsActive ? Loc.Get("RecordingStatusActive") : Loc.Get("RecordingStatusStopped"));
                 DataGridViewRow row = _recordingsGrid.Rows[index];
@@ -233,7 +235,44 @@ namespace JSQViewer.UI
                         cell.ToolTipText = Loc.Get("RecordingLiveUpdating");
                     }
                 }
+
+                string climateTooltip = BuildClimateModeTooltip(climateMode);
+                if (climateTooltip.Length > 0)
+                {
+                    row.Cells[5].ToolTipText = climateTooltip;
+                }
             }
+        }
+
+        private static string BuildClimateModeTooltip(ClimateModeInfo climateMode)
+        {
+            if (climateMode == null || !climateMode.IsKnown)
+            {
+                return string.Empty;
+            }
+
+            if (climateMode.Source == ClimateModeSource.FromRecord)
+            {
+                return Loc.Get("ClimateModeFromRecord");
+            }
+
+            string temperature = climateMode.TemperatureCelsius.HasValue
+                ? climateMode.TemperatureCelsius.Value.ToString("0.#")
+                : string.Empty;
+            if (temperature.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            if (!climateMode.HumidityPercent.HasValue)
+            {
+                return string.Format(Loc.Get("ClimateModeFromTemperature"), temperature);
+            }
+
+            return string.Format(
+                Loc.Get("ClimateModeFromChannels"),
+                temperature,
+                climateMode.HumidityPercent.Value.ToString("0.#"));
         }
 
         private void RecordingsGridOnCellDoubleClick(object sender, DataGridViewCellEventArgs e)
@@ -299,6 +338,7 @@ namespace JSQViewer.UI
             _recordingsGrid.Columns.Add(CreateFillColumn(Loc.Get("RecordingColumnTitle"), 180));
             _recordingsGrid.Columns.Add(CreateColumn(Loc.Get("RecordingColumnModel"), 130));
             _recordingsGrid.Columns.Add(CreateColumn(Loc.Get("RecordingColumnExperiment"), 140));
+            _recordingsGrid.Columns.Add(CreateColumn(Loc.Get("RecordingColumnClimateMode"), 80));
             _recordingsGrid.Columns.Add(CreateColumn(Loc.Get("RecordingColumnDuration"), 105));
             _recordingsGrid.Columns.Add(CreateColumn(Loc.Get("RecordingColumnStatus"), 105));
         }
