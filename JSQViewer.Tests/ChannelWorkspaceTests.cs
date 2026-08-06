@@ -211,7 +211,7 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
-        public void Load_SkipsOrderedRootsThatHaveNoSourceColumnsEntry()
+        public void Load_PreservesOrderedRootsThatHaveNoSourceColumnsEntryAsEmptyLists()
         {
             TestData data = ChannelWorkspaceTestData.CreateMultiSourceData();
             data.SourceOrder = new[] { "C:\\missing", "C:\\srcB", "C:\\srcA" };
@@ -220,8 +220,44 @@ namespace JSQViewer.Tests
             ChannelWorkspaceTestHarness.Invoke(workspace, "Load", data, null, null);
 
             CollectionAssert.AreEqual(
-                new[] { "C:\\srcB", "C:\\srcA" },
+                new[] { "C:\\missing", "C:\\srcB", "C:\\srcA" },
                 ChannelWorkspaceTestHarness.ToCodeList(ChannelWorkspaceTestHarness.GetValue(workspace, "SourceRoots")));
+            Assert.AreEqual(
+                0,
+                ChannelWorkspaceTestHarness.ToList(ChannelWorkspaceTestHarness.Invoke(
+                    workspace,
+                    "BuildSourceList",
+                    "C:\\missing",
+                    string.Empty,
+                    "User",
+                    false)).Count);
+        }
+
+        [TestMethod]
+        public void Load_UsesRootFallbackAsEmptySourceWhenSourceColumnsAndSourceOrderAreMissing()
+        {
+            var data = new TestData
+            {
+                Root = "C:\\fallback\\recording.jsq",
+                SourceColumns = null,
+                SourceOrder = null
+            };
+            object workspace = ChannelWorkspaceTestHarness.CreateWorkspaceModel();
+
+            ChannelWorkspaceTestHarness.Invoke(workspace, "Load", data, null, null);
+
+            CollectionAssert.AreEqual(
+                new[] { data.Root },
+                ChannelWorkspaceTestHarness.ToCodeList(ChannelWorkspaceTestHarness.GetValue(workspace, "SourceRoots")));
+            Assert.AreEqual(
+                0,
+                ChannelWorkspaceTestHarness.ToList(ChannelWorkspaceTestHarness.Invoke(
+                    workspace,
+                    "BuildSourceList",
+                    data.Root,
+                    string.Empty,
+                    "User",
+                    false)).Count);
         }
     }
 

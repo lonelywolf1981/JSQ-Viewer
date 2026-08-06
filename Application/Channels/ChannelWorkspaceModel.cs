@@ -88,22 +88,17 @@ namespace JSQViewer.Application.Channels
                 }
             }
 
-            if (data.SourceColumns == null)
-            {
-                return;
-            }
-
             IReadOnlyList<string> orderedRoots = _sourceDisplayNameResolver.GetOrderedRoots(data);
             for (int rootIndex = 0; rootIndex < orderedRoots.Count; rootIndex++)
             {
                 string sourceRoot = orderedRoots[rootIndex];
-                string[] sourceCols;
-                if (!data.SourceColumns.TryGetValue(sourceRoot, out sourceCols))
-                {
-                    continue;
-                }
-
                 _sourceRoots.Add(sourceRoot);
+
+                string[] sourceCols = null;
+                if (data.SourceColumns != null)
+                {
+                    data.SourceColumns.TryGetValue(sourceRoot, out sourceCols);
+                }
 
                 sourceCols = sourceCols ?? new string[0];
                 List<string> sourceOrder = ProtocolChannelOrder.Build(sourceCols, data.Channels);
