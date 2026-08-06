@@ -33,16 +33,14 @@ namespace JSQViewer.Application.Workspace.UseCases
 
             if (list.Count == 1)
             {
-                list[0].SourceDisplayNames = sourceDisplayNames;
-                list[0].SourceOrder = sourceOrder;
+                ApplyIdentityToRetainedData(list[0], sourceDisplayNames, sourceOrder);
                 return list[0];
             }
 
             list = DeduplicateByRoot(list);
             if (list.Count == 1)
             {
-                list[0].SourceDisplayNames = sourceDisplayNames;
-                list[0].SourceOrder = sourceOrder;
+                ApplyIdentityToRetainedData(list[0], sourceDisplayNames, sourceOrder);
                 return list[0];
             }
 
@@ -102,15 +100,6 @@ namespace JSQViewer.Application.Workspace.UseCases
                 Dictionary<string, string> codeMap = codeMapsBySource[source];
                 totalRows += data.RowCount;
 
-                long start = data.SourceStartMs != null && data.SourceStartMs.ContainsKey(source)
-                    ? data.SourceStartMs[source]
-                    : (data.TimestampsMs != null && data.TimestampsMs.Length > 0 ? data.TimestampsMs[0] : 0L);
-                long end = data.SourceEndMs != null && data.SourceEndMs.ContainsKey(source)
-                    ? data.SourceEndMs[source]
-                    : (data.TimestampsMs != null && data.TimestampsMs.Length > 0 ? data.TimestampsMs[data.TimestampsMs.Length - 1] : 0L);
-                sourceStartMs[source] = start;
-                sourceEndMs[source] = end;
-
                 foreach (var kv in data.Meta)
                 {
                     if (!metadata.ContainsKey(kv.Key))
@@ -164,7 +153,7 @@ namespace JSQViewer.Application.Workspace.UseCases
                         columnSetOrder.Add(mergedCode);
                     if (!codeSources.ContainsKey(mergedCode))
                     {
-                        codeSources[mergedCode] = source;
+                        codeSources[mergedCode] = ResolveColumnSource(data, originalCode, source);
                     }
                 }
             }
@@ -244,38 +233,199 @@ namespace JSQViewer.Application.Workspace.UseCases
                 }
             }
 
-            var sourceColumnMap = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+            var sourceColumnLists = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < list.Count; i++)
             {
                 TestData d = list[i];
                 string src = d.Root ?? ("source_" + (i + 1).ToString(CultureInfo.InvariantCulture));
                 Dictionary<string, string> map = codeMapsBySource[src];
-                var cols = new string[d.ColumnNames.Length];
-                for (int j = 0; j < d.ColumnNames.Length; j++)
+                if (d.SourceColumns != null && d.SourceColumns.Count > 0)
                 {
-                    string merged;
-                    cols[j] = map.TryGetValue(d.ColumnNames[j], out merged) ? merged : d.ColumnNames[j];
+                    foreach (KeyValuePair<string, string[]> pair in d.SourceColumns)
+                    {
+                        AppendMappedSourceColumns(sourceColumnLists, pair.Key, pair.Value, map);
+                        AddSourceBounds(d, pair.Key, sourceStartMs, sourceEndMs);
+                    }
                 }
-
-                sourceColumnMap[src] = cols;
+                else
+                {
+                    AppendMappedSourceColumns(sourceColumnLists, src, d.ColumnNames, map);
+                    AddSourceBounds(d, src, sourceStartMs, sourceEndMs);
+                }
             }
+
+            var sourceColumnMap = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, List<string>> pair in sourceColumnLists)
+            {
+                sourceColumnMap[pair.Key] = pair.Value
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+
+            string[] normalizedSourceOrder = NormalizeSourceOrder(sourceOrder, sourceColumnMap.Keys);
+            Dictionary<string, string> normalizedDisplayNames = FilterDisplayNamesToSources(
+                sourceDisplayNames,
+                sourceColumnMap.Keys);
 
             return new TestData
             {
-                Root = string.Join(" ; ", list.Select(data => data.Root).Where(root => !string.IsNullOrWhiteSpace(root))),
+                Root = string.Join(" ; ", normalizedSourceOrder),
                 Meta = metadata,
                 Channels = channels,
                 CodeSources = codeSources,
                 SourceStartMs = sourceStartMs,
                 SourceEndMs = sourceEndMs,
-                SourceDisplayNames = sourceDisplayNames,
-                SourceOrder = sourceOrder,
+                SourceDisplayNames = normalizedDisplayNames,
+                SourceOrder = normalizedSourceOrder,
                 TimestampsMs = sortedTimestamps,
                 Columns = sortedColumns,
                 ColumnNames = columnNames,
                 SourceColumns = sourceColumnMap,
                 RowCount = totalRows
             };
+        }
+
+        private static void ApplyIdentityToRetainedData(
+            TestData data,
+            Dictionary<string, string> sourceDisplayNames,
+            string[] sourceOrder)
+        {
+            IEnumerable<string> actualSources;
+            if (data.SourceColumns == null)
+            {
+                actualSources = new string[0];
+            }
+            else
+            {
+                actualSources = data.SourceColumns.Keys;
+            }
+            data.SourceDisplayNames = FilterDisplayNamesToSources(sourceDisplayNames, actualSources);
+            data.SourceOrder = NormalizeSourceOrder(sourceOrder, actualSources);
+        }
+
+        private static string ResolveColumnSource(TestData data, string column, string fallbackSource)
+        {
+            string source;
+            if (data.CodeSources != null
+                && data.CodeSources.TryGetValue(column, out source)
+                && !string.IsNullOrWhiteSpace(source))
+            {
+                return source;
+            }
+
+            if (data.SourceColumns != null)
+            {
+                foreach (KeyValuePair<string, string[]> pair in data.SourceColumns)
+                {
+                    if (pair.Value != null
+                        && pair.Value.Contains(column, StringComparer.OrdinalIgnoreCase))
+                    {
+                        return pair.Key;
+                    }
+                }
+            }
+
+            return fallbackSource;
+        }
+
+        private static void AppendMappedSourceColumns(
+            Dictionary<string, List<string>> sourceColumns,
+            string source,
+            IEnumerable<string> columns,
+            Dictionary<string, string> codeMap)
+        {
+            List<string> result;
+            if (!sourceColumns.TryGetValue(source, out result))
+            {
+                result = new List<string>();
+                sourceColumns[source] = result;
+            }
+
+            if (columns == null)
+            {
+                return;
+            }
+
+            foreach (string column in columns)
+            {
+                string merged;
+                result.Add(codeMap.TryGetValue(column, out merged) ? merged : column);
+            }
+        }
+
+        private static void AddSourceBounds(
+            TestData data,
+            string source,
+            Dictionary<string, long> sourceStartMs,
+            Dictionary<string, long> sourceEndMs)
+        {
+            if (!sourceStartMs.ContainsKey(source))
+            {
+                long start;
+                sourceStartMs[source] = data.SourceStartMs != null
+                    && data.SourceStartMs.TryGetValue(source, out start)
+                    ? start
+                    : (data.TimestampsMs != null && data.TimestampsMs.Length > 0 ? data.TimestampsMs[0] : 0L);
+            }
+
+            if (!sourceEndMs.ContainsKey(source))
+            {
+                long end;
+                sourceEndMs[source] = data.SourceEndMs != null
+                    && data.SourceEndMs.TryGetValue(source, out end)
+                    ? end
+                    : (data.TimestampsMs != null && data.TimestampsMs.Length > 0
+                        ? data.TimestampsMs[data.TimestampsMs.Length - 1]
+                        : 0L);
+            }
+        }
+
+        private static string[] NormalizeSourceOrder(
+            IEnumerable<string> sourceOrder,
+            IEnumerable<string> actualSources)
+        {
+            var actual = new HashSet<string>(actualSources, StringComparer.OrdinalIgnoreCase);
+            var result = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (sourceOrder != null)
+            {
+                foreach (string source in sourceOrder)
+                {
+                    if (!string.IsNullOrWhiteSpace(source)
+                        && actual.Contains(source)
+                        && seen.Add(source))
+                    {
+                        result.Add(source);
+                    }
+                }
+            }
+
+            foreach (string source in actualSources)
+            {
+                if (!string.IsNullOrWhiteSpace(source) && seen.Add(source))
+                {
+                    result.Add(source);
+                }
+            }
+
+            return result.ToArray();
+        }
+
+        private static Dictionary<string, string> FilterDisplayNamesToSources(
+            Dictionary<string, string> sourceDisplayNames,
+            IEnumerable<string> actualSources)
+        {
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string source in actualSources)
+            {
+                string displayName;
+                if (sourceDisplayNames.TryGetValue(source, out displayName))
+                {
+                    result[source] = displayName;
+                }
+            }
+
+            return result;
         }
 
         private static Dictionary<string, string> BuildSourceDisplayNames(IList<TestData> list)

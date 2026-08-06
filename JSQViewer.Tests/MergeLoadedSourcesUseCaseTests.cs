@@ -48,24 +48,86 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
-        public void Execute_AlreadyMergedInputUsesSourceOrderBeforeMissingSourceColumns()
+        public void Execute_AlreadyMergedInputPreservesNestedSourceIdentityThroughRemove()
         {
-            TestData merged = CreateData("C:\\combined", "A", 10L);
+            const string sourceA = "C:\\sourceA";
+            const string sourceB = "C:\\sourceB";
+            const string sourceC = "C:\\sourceC";
+            const string sourceD = "C:\\sourceD";
+            TestData merged = CreateData("C:\\combined", "Shared", 10L);
+            merged.ColumnNames = new[] { "Shared", "B", "C" };
+            merged.Columns["B"] = new double?[] { 2d };
+            merged.Columns["C"] = new double?[] { 3d };
+            merged.Channels["B"] = new ChannelInfo { Code = "B", Name = "B" };
+            merged.Channels["C"] = new ChannelInfo { Code = "C", Name = "C" };
+            merged.CodeSources["Shared"] = sourceA;
+            merged.CodeSources["B"] = sourceB;
+            merged.CodeSources["C"] = sourceC;
             merged.SourceColumns = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
             {
-                ["C:\\sourceA"] = new[] { "A" },
-                ["C:\\sourceC"] = new[] { "C" }
+                [sourceA] = new[] { "Shared" },
+                [sourceB] = new[] { "B" },
+                [sourceC] = new[] { "C" }
             };
-            merged.SourceOrder = new[] { "C:\\sourceB", "C:\\SOURCEA", "c:\\sourceb" };
-            TestData last = CreateData("C:\\sourceD", "D", 20L);
+            merged.SourceOrder = new[] { sourceB, "C:\\SOURCEA", "c:\\sourceb" };
+            merged.SourceDisplayNames[sourceA] = "Source A";
+            merged.SourceDisplayNames[sourceB] = "Same title";
+            merged.SourceDisplayNames[sourceC] = "Same title";
+            merged.SourceDisplayNames[merged.Root] = "Combined outer root";
+            merged.SourceStartMs = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+            {
+                [sourceA] = 10L,
+                [sourceB] = 11L,
+                [sourceC] = 12L
+            };
+            merged.SourceEndMs = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+            {
+                [sourceA] = 20L,
+                [sourceB] = 21L,
+                [sourceC] = 22L
+            };
+            TestData last = CreateData(sourceD, "Shared", 30L);
+            last.SourceDisplayNames[sourceD] = "Source D";
 
             TestData result = new MergeLoadedSourcesUseCase().Execute(
                 new[] { merged, last },
-                false);
+                true);
 
             CollectionAssert.AreEqual(
-                new[] { "C:\\sourceB", "C:\\SOURCEA", "C:\\sourceC", "C:\\sourceD" },
+                new[] { sourceB, "C:\\SOURCEA", sourceC, sourceD },
                 result.SourceOrder);
+            CollectionAssert.AreEquivalent(
+                new[] { sourceA, sourceB, sourceC, sourceD },
+                result.SourceColumns.Keys.ToArray());
+            Assert.IsFalse(result.SourceColumns.ContainsKey(merged.Root));
+            CollectionAssert.AreEqual(new[] { "combined::Shared" }, result.SourceColumns[sourceA]);
+            Assert.AreEqual(sourceA, result.CodeSources["combined::Shared"]);
+            Assert.AreEqual(sourceB, result.CodeSources["B"]);
+            Assert.AreEqual(sourceC, result.CodeSources["C"]);
+            Assert.AreEqual(sourceD, result.CodeSources["sourceD::Shared"]);
+            Assert.AreEqual("Source A", result.SourceDisplayNames[sourceA]);
+            Assert.AreEqual("Same title", result.SourceDisplayNames[sourceB]);
+            Assert.AreEqual("Same title", result.SourceDisplayNames[sourceC]);
+            Assert.AreEqual("Source D", result.SourceDisplayNames[sourceD]);
+            Assert.IsFalse(result.SourceDisplayNames.ContainsKey(merged.Root));
+            Assert.AreEqual(11L, result.SourceStartMs[sourceB]);
+            Assert.AreEqual(22L, result.SourceEndMs[sourceC]);
+            Assert.AreEqual(string.Join(" ; ", result.SourceOrder), result.Root);
+
+            TestData afterRemove = new RemoveLoadedSourceUseCase().Execute(result, sourceA);
+
+            CollectionAssert.AreEquivalent(
+                new[] { sourceB, sourceC, sourceD },
+                afterRemove.SourceColumns.Keys.ToArray());
+            CollectionAssert.AreEqual(new[] { sourceB, sourceC, sourceD }, afterRemove.SourceOrder);
+            Assert.IsFalse(afterRemove.SourceDisplayNames.ContainsKey(sourceA));
+            Assert.IsTrue(afterRemove.SourceDisplayNames.ContainsKey(sourceB));
+            Assert.IsTrue(afterRemove.SourceDisplayNames.ContainsKey(sourceC));
+            Assert.IsTrue(afterRemove.SourceDisplayNames.ContainsKey(sourceD));
+            Assert.IsFalse(afterRemove.ColumnNames.Contains("combined::Shared"));
+            CollectionAssert.AreEquivalent(
+                new[] { "B", "C", "sourceD::Shared" },
+                afterRemove.ColumnNames);
         }
 
         [TestMethod]

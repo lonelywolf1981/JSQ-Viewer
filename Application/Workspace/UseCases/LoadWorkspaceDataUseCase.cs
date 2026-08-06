@@ -94,7 +94,7 @@ namespace JSQViewer.Application.Workspace.UseCases
                     loaded = _testDataSourceReader.Read(root, channels, metadata);
                 }
 
-                EnsureSourceOrder(loaded, root);
+                NormalizeLoadedIdentity(loaded, root);
                 loadedSources.Add(loaded);
             }
 
@@ -105,8 +105,28 @@ namespace JSQViewer.Application.Workspace.UseCases
             return new WorkspaceLoadResult(_folderSpecParser.Join(resolvedRoots), resolvedRoots, merged);
         }
 
-        private static void EnsureSourceOrder(TestData data, string fallbackRoot)
+        private static void NormalizeLoadedIdentity(TestData data, string fallbackRoot)
         {
+            if (data == null)
+            {
+                throw new InvalidOperationException(
+                    "Data reader returned no data for source '" + fallbackRoot + "'.");
+            }
+
+            var sourceDisplayNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (data.SourceDisplayNames != null)
+            {
+                foreach (KeyValuePair<string, string> pair in data.SourceDisplayNames)
+                {
+                    if (!sourceDisplayNames.ContainsKey(pair.Key))
+                    {
+                        sourceDisplayNames[pair.Key] = pair.Value;
+                    }
+                }
+            }
+
+            data.SourceDisplayNames = sourceDisplayNames;
+
             var roots = new List<string>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

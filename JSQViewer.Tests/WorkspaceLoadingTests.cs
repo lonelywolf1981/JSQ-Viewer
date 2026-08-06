@@ -192,6 +192,83 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Execute_SingleSourceClonesDisplayNamesWithCaseInsensitiveComparer()
+        {
+            const string root = "C:\\root";
+            var displayNames = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [root] = "Recording"
+            };
+            var data = new TestData
+            {
+                Root = root,
+                SourceDisplayNames = displayNames
+            };
+            var useCase = CreateSingleFolderUseCase(data);
+
+            WorkspaceLoadResult result = useCase.Execute(new WorkspaceLoadRequest("C:\\src"));
+
+            Assert.AreNotSame(displayNames, result.Data.SourceDisplayNames);
+            Assert.AreEqual(StringComparer.OrdinalIgnoreCase, result.Data.SourceDisplayNames.Comparer);
+            Assert.AreEqual("Recording", result.Data.SourceDisplayNames["c:\\ROOT"]);
+        }
+
+        [TestMethod]
+        public void Execute_SingleSourceWithNullDisplayNamesGetsEmptyCaseInsensitiveDictionary()
+        {
+            var data = new TestData
+            {
+                Root = "C:\\root",
+                SourceDisplayNames = null
+            };
+            var useCase = CreateSingleFolderUseCase(data);
+
+            WorkspaceLoadResult result = useCase.Execute(new WorkspaceLoadRequest("C:\\src"));
+
+            Assert.IsNotNull(result.Data.SourceDisplayNames);
+            Assert.AreEqual(0, result.Data.SourceDisplayNames.Count);
+            Assert.AreEqual(StringComparer.OrdinalIgnoreCase, result.Data.SourceDisplayNames.Comparer);
+        }
+
+        [TestMethod]
+        public void Execute_SingleSourceWithMultipleSourceColumnsUsesTheirEnumerationAsFallbackOrder()
+        {
+            var data = new TestData
+            {
+                Root = "C:\\combined",
+                SourceColumns = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["C:\\first"] = new[] { "A" },
+                    ["C:\\second"] = new[] { "B" }
+                },
+                SourceOrder = new string[0]
+            };
+            var useCase = CreateSingleFolderUseCase(data);
+
+            WorkspaceLoadResult result = useCase.Execute(new WorkspaceLoadRequest("C:\\src"));
+
+            CollectionAssert.AreEqual(data.SourceColumns.Keys.ToArray(), result.Data.SourceOrder);
+        }
+
+        [TestMethod]
+        public void Execute_ReaderReturningNullThrowsMeaningfulInvalidOperationException()
+        {
+            var useCase = new LoadWorkspaceDataUseCase(
+                new WorkspaceFolderSpecParser(),
+                new FakeRootLocator("C:\\src", "C:\\root"),
+                new FakeMetadataReader(),
+                new FakeCanaliReader(),
+                new NullDataSourceReader(),
+                new MergeLoadedSourcesUseCase());
+
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(
+                () => useCase.Execute(new WorkspaceLoadRequest("C:\\src")));
+
+            StringAssert.Contains(exception.Message, "C:\\root");
+            StringAssert.Contains(exception.Message.ToLowerInvariant(), "no data");
+        }
+
+        [TestMethod]
         public void Execute_LoadsSingleExportedProtocolWithoutFolderReaders()
         {
             string protocol = Path.GetFullPath("C:\\protocol.xlsx");
@@ -305,6 +382,20 @@ namespace JSQViewer.Tests
             return data;
         }
 
+        private static LoadWorkspaceDataUseCase CreateSingleFolderUseCase(TestData data)
+        {
+            return new LoadWorkspaceDataUseCase(
+                new WorkspaceFolderSpecParser(),
+                new FakeRootLocator("C:\\src", "C:\\root"),
+                new FakeMetadataReader(),
+                new FakeCanaliReader(),
+                new FakeDataSourceReader(new Dictionary<string, TestData>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["C:\\root"] = data
+                }),
+                new MergeLoadedSourcesUseCase());
+        }
+
         private static string CreateTempDirectory()
         {
             string path = Path.Combine(Path.GetTempPath(), "JSQViewerTests", Guid.NewGuid().ToString("N"));
@@ -394,6 +485,17 @@ namespace JSQViewer.Tests
             {
                 ReadRoots.Add(root);
                 return _dataByRoot[root];
+            }
+        }
+
+        private sealed class NullDataSourceReader : ITestDataSourceReader
+        {
+            public TestData Read(
+                string root,
+                Dictionary<string, ChannelInfo> channels,
+                Dictionary<string, string> metadata)
+            {
+                return null;
             }
         }
     }
