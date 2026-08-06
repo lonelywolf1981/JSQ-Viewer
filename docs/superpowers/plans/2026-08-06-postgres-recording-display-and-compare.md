@@ -200,7 +200,7 @@ public void Append_WithNewRows_PreservesSourceIdentityMetadata()
 }
 ```
 
-Расширить `GrowingRecordingReader_AppendsNewWindowsWithoutReplacingExistingRows`: metadata содержит название, после двух append оно и `SourceOrder` не меняются.
+Добавить отдельный `Append_WithoutNewRows_PreservesSourceIdentityMetadata`: результат остаётся тем же instance, `SourceDisplayNames[Source]` и `SourceOrder` не меняются. Расширить `GrowingRecordingReader_AppendsNewWindowsWithoutReplacingExistingRows`: metadata содержит название, после двух append оно и `SourceOrder` не меняются.
 
 - [ ] **Step 5: Сохранить identity metadata в `Append`**
 
