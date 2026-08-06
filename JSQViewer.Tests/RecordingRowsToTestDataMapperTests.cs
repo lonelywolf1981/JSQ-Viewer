@@ -156,5 +156,65 @@ namespace JSQViewer.Tests
 
             Assert.AreSame(data, appended);
         }
+
+        [TestMethod]
+        public void Append_LeavesGapWhenChannelMissingFromNewWindow()
+        {
+            var mapper = new RecordingRowsToTestDataMapper();
+            TestData data = mapper.Map(Source, "B",
+                new List<RecordingAggregateRow> { Row("B-T1", 1000, 10.0), Row("B-Pe", 1000, 1.3) },
+                Channels(), new Dictionary<string, string>());
+
+            TestData appended = mapper.Append(data, "B",
+                new List<RecordingAggregateRow> { Row("B-T1", 2000, 10.5) });
+
+            CollectionAssert.AreEqual(new double?[] { 10.0, 10.5 }, appended.Columns["T1"]);
+            CollectionAssert.AreEqual(new double?[] { 1.3, null }, appended.Columns["Pe"]);
+        }
+
+        [TestMethod]
+        public void Append_NewChannelGetsFullLengthColumnWithHistoricalGaps()
+        {
+            var mapper = new RecordingRowsToTestDataMapper();
+            TestData data = mapper.Map(Source, "B",
+                new List<RecordingAggregateRow> { Row("B-T1", 1000, 10.0), Row("B-T1", 2000, 10.5) },
+                Channels(), new Dictionary<string, string>());
+
+            TestData appended = mapper.Append(data, "B",
+                new List<RecordingAggregateRow> { Row("B-T1", 3000, 11.0), Row("B-Pe", 3000, 1.5) });
+
+            Assert.AreEqual(appended.TimestampsMs.Length, appended.Columns["Pe"].Length);
+            CollectionAssert.AreEqual(new double?[] { null, null, 1.5 }, appended.Columns["Pe"]);
+        }
+
+        [TestMethod]
+        public void Append_DoesNotChangeSourceStartMs()
+        {
+            var mapper = new RecordingRowsToTestDataMapper();
+            TestData data = mapper.Map(Source, "B",
+                new List<RecordingAggregateRow> { Row("B-T1", 1000, 10.0), Row("B-T1", 2000, 10.5) },
+                Channels(), new Dictionary<string, string>());
+
+            TestData appended = mapper.Append(data, "B",
+                new List<RecordingAggregateRow> { Row("B-T1", 3000, 11.0) });
+
+            Assert.AreEqual(1000L, appended.SourceStartMs[Source]);
+            Assert.AreEqual(3000L, appended.SourceEndMs[Source]);
+        }
+
+        [TestMethod]
+        public void Append_DropsWindowFallingInsideAlreadyLoadedRange()
+        {
+            var mapper = new RecordingRowsToTestDataMapper();
+            TestData data = mapper.Map(Source, "B",
+                new List<RecordingAggregateRow> { Row("B-T1", 1000, 10.0), Row("B-T1", 3000, 11.0) },
+                Channels(), new Dictionary<string, string>());
+
+            TestData appended = mapper.Append(data, "B",
+                new List<RecordingAggregateRow> { Row("B-T1", 2000, 99.9), Row("B-T1", 4000, 12.0) });
+
+            Assert.AreEqual(3, appended.RowCount);
+            CollectionAssert.AreEqual(new long[] { 1000, 3000, 4000 }, appended.TimestampsMs);
+        }
     }
 }
