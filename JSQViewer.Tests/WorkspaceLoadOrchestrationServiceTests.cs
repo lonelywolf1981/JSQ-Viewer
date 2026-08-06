@@ -176,6 +176,128 @@ namespace JSQViewer.Tests
             Assert.AreEqual(keyAB, keyBA);
         }
 
+        [TestMethod]
+        public void AddSources_MixedWorkspace_AppendsSelectedKeepingOrder()
+        {
+            WorkspaceLoadOrchestrationService service = CreateService(new FakeFileSystem());
+
+            WorkspaceSourceAdditionResult result = service.AddSources(
+                @"C:\Data\Test ; C:\Data\Protocol.xlsx",
+                new[] { "jsqdb://recording/new" });
+
+            Assert.AreEqual(WorkspaceSourceAdditionStatus.Success, result.Status);
+            CollectionAssert.AreEqual(
+                new[] { @"C:\Data\Test", @"C:\Data\Protocol.xlsx", "jsqdb://recording/new" },
+                result.Sources.ToArray());
+            Assert.AreEqual(
+                @"C:\Data\Test ; C:\Data\Protocol.xlsx ; jsqdb://recording/new",
+                result.FolderSpec);
+        }
+
+        [TestMethod]
+        public void AddSources_DuplicateOfCurrentSource_IsIgnoredCaseInsensitively()
+        {
+            WorkspaceLoadOrchestrationService service = CreateService(new FakeFileSystem());
+
+            WorkspaceSourceAdditionResult result = service.AddSources(
+                "jsqdb://recording/old",
+                new[] { "JSQDB://RECORDING/OLD", "jsqdb://recording/new" });
+
+            Assert.AreEqual(WorkspaceSourceAdditionStatus.Success, result.Status);
+            CollectionAssert.AreEqual(
+                new[] { "jsqdb://recording/old", "jsqdb://recording/new" },
+                result.Sources.ToArray());
+        }
+
+        [TestMethod]
+        public void AddSources_OnlyDuplicates_ReturnsNoNewSources()
+        {
+            WorkspaceLoadOrchestrationService service = CreateService(new FakeFileSystem());
+
+            WorkspaceSourceAdditionResult result = service.AddSources(
+                "jsqdb://recording/old",
+                new[] { "JSQDB://RECORDING/OLD", "  jsqdb://recording/old  " });
+
+            Assert.AreEqual(WorkspaceSourceAdditionStatus.NoNewSources, result.Status);
+            CollectionAssert.AreEqual(new[] { "jsqdb://recording/old" }, result.Sources.ToArray());
+            Assert.AreEqual("jsqdb://recording/old", result.FolderSpec);
+        }
+
+        [TestMethod]
+        public void AddSources_FiveCurrentDuplicateAndNew_AddsOnlyNewToSix()
+        {
+            WorkspaceLoadOrchestrationService service = CreateService(new FakeFileSystem());
+            string current = @"C:\a ; C:\b ; C:\c ; C:\d ; jsqdb://recording/old";
+
+            WorkspaceSourceAdditionResult result = service.AddSources(
+                current,
+                new[] { "JSQDB://RECORDING/OLD", "jsqdb://recording/new" });
+
+            Assert.AreEqual(WorkspaceSourceAdditionStatus.Success, result.Status);
+            Assert.AreEqual(6, result.Sources.Count);
+            Assert.AreEqual("jsqdb://recording/new", result.Sources[5]);
+        }
+
+        [TestMethod]
+        public void AddSources_FiveCurrentAndTwoNew_RejectsWholeOperation()
+        {
+            WorkspaceLoadOrchestrationService service = CreateService(new FakeFileSystem());
+            string current = @"C:\a ; C:\b ; C:\c ; C:\d ; C:\e";
+
+            WorkspaceSourceAdditionResult result = service.AddSources(
+                current,
+                new[] { "jsqdb://recording/one", "jsqdb://recording/two" });
+
+            Assert.AreEqual(WorkspaceSourceAdditionStatus.LimitExceeded, result.Status);
+            CollectionAssert.AreEqual(
+                new[] { @"C:\a", @"C:\b", @"C:\c", @"C:\d", @"C:\e" },
+                result.Sources.ToArray());
+            Assert.AreEqual(@"C:\a ; C:\b ; C:\c ; C:\d ; C:\e", result.FolderSpec);
+        }
+
+        [TestMethod]
+        public void AddSources_FullWorkspace_ReturnsLimitExceeded()
+        {
+            WorkspaceLoadOrchestrationService service = CreateService(new FakeFileSystem());
+            string current = @"C:\a ; C:\b ; C:\c ; C:\d ; C:\e ; C:\f";
+
+            WorkspaceSourceAdditionResult result = service.AddSources(
+                current,
+                new[] { "jsqdb://recording/one" });
+
+            Assert.AreEqual(WorkspaceSourceAdditionStatus.LimitExceeded, result.Status);
+            Assert.AreEqual(6, result.Sources.Count);
+            Assert.AreEqual(current, result.FolderSpec);
+        }
+
+        [TestMethod]
+        public void AddSources_DifferentRecordingUris_StayTwoSeparateSources()
+        {
+            WorkspaceLoadOrchestrationService service = CreateService(new FakeFileSystem());
+
+            WorkspaceSourceAdditionResult result = service.AddSources(
+                "jsqdb://recording/a",
+                new[] { "jsqdb://recording/b" });
+
+            Assert.AreEqual(WorkspaceSourceAdditionStatus.Success, result.Status);
+            CollectionAssert.AreEqual(
+                new[] { "jsqdb://recording/a", "jsqdb://recording/b" },
+                result.Sources.ToArray());
+        }
+
+        [TestMethod]
+        public void AddSources_EmptySelection_ReturnsNoNewSources()
+        {
+            WorkspaceLoadOrchestrationService service = CreateService(new FakeFileSystem());
+
+            WorkspaceSourceAdditionResult result = service.AddSources(
+                "jsqdb://recording/a",
+                null);
+
+            Assert.AreEqual(WorkspaceSourceAdditionStatus.NoNewSources, result.Status);
+            CollectionAssert.AreEqual(new[] { "jsqdb://recording/a" }, result.Sources.ToArray());
+        }
+
         private static WorkspaceLoadOrchestrationService CreateService(IFileSystem fileSystem)
         {
             return new WorkspaceLoadOrchestrationService(new WorkspaceFolderSpecParser(), fileSystem);

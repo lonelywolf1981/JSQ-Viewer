@@ -86,6 +86,55 @@ namespace JSQViewer.Application.Workspace
             return new WorkspaceLoadRequest(normalizedSpec, true);
         }
 
+        public WorkspaceSourceAdditionResult AddSources(string currentSpec, IEnumerable<string> selectedSources)
+        {
+            IReadOnlyList<string> current = _parser.Parse(currentSpec);
+            var combined = new List<string>(current);
+            var known = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
+
+            int addedCount = 0;
+            if (selectedSources != null)
+            {
+                foreach (string selected in selectedSources)
+                {
+                    if (string.IsNullOrWhiteSpace(selected))
+                    {
+                        continue;
+                    }
+
+                    string source = selected.Trim().Trim('"');
+                    if (source.Length == 0 || !known.Add(source))
+                    {
+                        continue;
+                    }
+
+                    combined.Add(source);
+                    addedCount++;
+                }
+            }
+
+            if (combined.Count > WorkspaceFolderSpecParser.MaxFolderCount)
+            {
+                return new WorkspaceSourceAdditionResult(
+                    WorkspaceSourceAdditionStatus.LimitExceeded,
+                    current,
+                    _parser.Join(current));
+            }
+
+            if (addedCount == 0)
+            {
+                return new WorkspaceSourceAdditionResult(
+                    WorkspaceSourceAdditionStatus.NoNewSources,
+                    current,
+                    _parser.Join(current));
+            }
+
+            return new WorkspaceSourceAdditionResult(
+                WorkspaceSourceAdditionStatus.Success,
+                combined,
+                _parser.Join(combined));
+        }
+
         public string BuildWorkspaceKey(IEnumerable<string> folders)
         {
             return _parser.BuildWorkspaceKey(folders);
