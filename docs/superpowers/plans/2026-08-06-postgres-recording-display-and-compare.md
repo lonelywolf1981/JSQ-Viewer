@@ -34,10 +34,14 @@
 | `Application/Workspace/WorkspaceTitleBuilder.cs` | Заголовок одиночного/составного workspace |
 | `Application/Workspace/WorkspaceSourceAdditionResult.cs` | Типизированный результат добавления sources |
 | `Presentation/WinForms/Presenters/DynamicsForecastRoleItemBuilder.cs` | Тестируемые labels ролей прогноза на основе resolver |
+| `Presentation/WinForms/Presenters/DatabaseRecordingSelectionPresenter.cs` | Преобразование результата current + selected в load либо локализуемый отказ |
+| `Presentation/WinForms/Presenters/WorkspaceLoadRollbackCoordinator.cs` | Тестируемое решение и callbacks восстановления textbox/live-refresh после failed load |
 | `Presentation/WinForms/ViewModels/DynamicsForecastRoleItemViewModel.cs` | Code/Label/DurationHours для combo box ролей |
 | `JSQViewer.Tests/SourceDisplayNameResolverTests.cs` | Resolver и workspace-title builder |
 | `JSQViewer.Tests/MergeLoadedSourcesUseCaseTests.cs` | Перенос display names/order через merge и коллизии roots |
 | `JSQViewer.Tests/ForecastRoleItemBuilderTests.cs` | Labels ролей прогноза и техническая identity |
+| `JSQViewer.Tests/DatabaseRecordingSelectionPresenterTests.cs` | Отказ не вызывает load; success передаёт полный spec |
+| `JSQViewer.Tests/WorkspaceLoadRollbackCoordinatorTests.cs` | Failed add восстанавливает source text и live-refresh callbacks |
 | `doc/postgres_recording_compare_manual_checklist.md` | Ручная проверка видимых UI-сценариев и rollback |
 
 **Изменяются:**
@@ -475,8 +479,18 @@ public sealed class WorkspaceTitleBuilder
             .ToArray();
         return titles.Length == 0 ? (fallback ?? string.Empty) : string.Join("; ", titles);
     }
+
+    public string BuildCaption(TestData data, string fallback, string format)
+    {
+        return string.Format(
+            CultureInfo.CurrentCulture,
+            string.IsNullOrWhiteSpace(format) ? "{0}" : format,
+            Build(data, fallback));
+    }
 }
 ```
+
+Тест `BuildCaption_DataAlreadyLoadedBeforeWindowCreation_UsesDatabaseTitle` передаёт format `"График — {0}"` и ожидает `"График — Прогон A"`. Этот pure метод используется как при создании host, так и при последующей локализации.
 
 - [ ] **Step 5: Запустить тесты и закоммитить**
 
@@ -715,6 +729,10 @@ git commit -m "Добавлено атомарное объединение ис
 
 **Files:**
 - Modify: `UI/MainForm.cs:733-808, 977-1009, 1539-1624, 1861-1892, 2150-2180, 2406-2466, 3451-3472, 3698-3890, 5065-5071`
+- Create: `Presentation/WinForms/Presenters/DatabaseRecordingSelectionPresenter.cs`
+- Create: `Presentation/WinForms/Presenters/WorkspaceLoadRollbackCoordinator.cs`
+- Create: `JSQViewer.Tests/DatabaseRecordingSelectionPresenterTests.cs`
+- Create: `JSQViewer.Tests/WorkspaceLoadRollbackCoordinatorTests.cs`
 - Modify: `JSQViewer.Tests/RecordingLiveRefreshTests.cs`
 - Create: `doc/postgres_recording_compare_manual_checklist.md`
 
@@ -729,9 +747,65 @@ git commit -m "Добавлено атомарное объединение ис
 
 Не тестировать настоящий WinForms timer в unit suite.
 
-- [ ] **Step 2: Исправить `OpenFromDatabaseButtonOnClick`**
+- [ ] **Step 2: Написать failing tests UI selection presenter**
 
-Handler должен выполнять только orchestration:
+`DatabaseRecordingSelectionPresenterTests` использует настоящий `WorkspaceLoadOrchestrationService`, но fake callbacks `loadedSpecs` и `notificationKeys`. Проверить:
+
+- `Success` вызывает load ровно один раз с current + selected spec и не вызывает notification;
+- `NoNewSources` вызывает только `SourceAlreadyAdded`;
+- `LimitExceeded` вызывает только `TooManyFolders`;
+- обе rejection-ветки не вызывают load, поэтому не могут инициировать изменение `_folderBox` через `LoadFolder`;
+- presenter вообще не получает textbox/control, следовательно единственная разрешённая UI-мутация — переданный load callback на success.
+
+```csharp
+[TestMethod]
+public void ApplySelection_LimitExceeded_NotifiesWithoutLoading()
+{
+    var loadedSpecs = new List<string>();
+    var notificationKeys = new List<string>();
+    var presenter = new DatabaseRecordingSelectionPresenter(CreateWorkspaceService());
+
+    presenter.ApplySelection(
+        "C:\\a ; C:\\b ; C:\\c ; C:\\d ; C:\\e",
+        new[] { "jsqdb://recording/one", "jsqdb://recording/two" },
+        loadedSpecs.Add,
+        notificationKeys.Add);
+
+    Assert.AreEqual(0, loadedSpecs.Count);
+    CollectionAssert.AreEqual(new[] { "TooManyFolders" }, notificationKeys);
+}
+```
+
+- [ ] **Step 3: Реализовать selection presenter и подключить handler**
+
+Публичный метод presenter:
+
+```csharp
+public void ApplySelection(
+    string currentSpec,
+    IEnumerable<string> selectedSources,
+    Action<string> loadFolder,
+    Action<string> notifyByLocalizationKey)
+{
+    if (loadFolder == null) throw new ArgumentNullException(nameof(loadFolder));
+    if (notifyByLocalizationKey == null) throw new ArgumentNullException(nameof(notifyByLocalizationKey));
+
+    WorkspaceSourceAdditionResult result = _service.AddSources(currentSpec, selectedSources);
+    if (result.Status == WorkspaceSourceAdditionStatus.NoNewSources)
+    {
+        notifyByLocalizationKey("SourceAlreadyAdded");
+        return;
+    }
+    if (result.Status == WorkspaceSourceAdditionStatus.LimitExceeded)
+    {
+        notifyByLocalizationKey("TooManyFolders");
+        return;
+    }
+    loadFolder(result.FolderSpec);
+}
+```
+
+`OpenFromDatabaseButtonOnClick` должен выполнять только early full-workspace check, modal selection и вызов presenter:
 
 ```csharp
 List<string> current = ParseFolderSpec(_folderBox.Text);
@@ -747,29 +821,19 @@ using (var form = new OpenFromDatabaseForm(
 {
     if (form.ShowDialog(this) != DialogResult.OK) return;
 
-    WorkspaceSourceAdditionResult result =
-        _workspaceLoadOrchestrationService.AddSources(_folderBox.Text, form.SelectedSources);
-
-    if (result.Status == WorkspaceSourceAdditionStatus.NoNewSources)
-    {
-        NotifyError(Loc.Get("SourceAlreadyAdded"));
-        return;
-    }
-    if (result.Status == WorkspaceSourceAdditionStatus.LimitExceeded)
-    {
-        NotifyError(Loc.Get("TooManyFolders"));
-        return;
-    }
-
-    LoadFolder(result.FolderSpec, true);
+    _databaseRecordingSelectionPresenter.ApplySelection(
+        _folderBox.Text,
+        form.SelectedSources,
+        spec => LoadFolder(spec, true),
+        key => NotifyError(Loc.Get(key)));
 }
 ```
 
 Не менять `_folderBox.Text` перед `LoadFolder`. Диалог получает max 6, а не свободное количество: так `5 current + duplicate + new` может пройти дедупликацию.
 
-- [ ] **Step 3: Подключить единый chart title**
+- [ ] **Step 4: Подключить единый chart title**
 
-Добавить fields `SourceDisplayNameResolver`, `WorkspaceTitleBuilder`, `DynamicsForecastRoleItemBuilder` с production defaults.
+Добавить fields `SourceDisplayNameResolver`, `WorkspaceTitleBuilder`, `DynamicsForecastRoleItemBuilder`, `DatabaseRecordingSelectionPresenter`, `WorkspaceLoadRollbackCoordinator` с production defaults.
 
 Один helper:
 
@@ -783,7 +847,10 @@ private string GetWorkspaceDisplayTitle()
 
 private void ApplyChartWindowTitles()
 {
-    string title = string.Format(Loc.Get("ChartWindowTitle"), GetWorkspaceDisplayTitle());
+    string title = _workspaceTitleBuilder.BuildCaption(
+        _viewerSession.Data,
+        _viewerSession.Folder ?? Loc.Get("AppTitle"),
+        Loc.Get("ChartWindowTitle"));
     if (_chartHostForm != null && !_chartHostForm.IsDisposed) _chartHostForm.Text = title;
     foreach (DetachedChartState state in _detachedCharts)
     {
@@ -792,9 +859,11 @@ private void ApplyChartWindowTitles()
 }
 ```
 
-Вызывать после `BindLoadedData`, при создании detached form и из `ApplyLocalization`. Начальный пустой host использует AppTitle fallback.
+Вызывать после `BindLoadedData`, при создании detached form и из `ApplyLocalization`. В `EnsureChartHostForm` сразу после создания `_chartHostForm` обязательно вызвать `ApplyChartWindowTitles()` (либо присвоить caption через `GetWorkspaceDisplayTitle()`), потому что данные могут быть bound до первого открытия графика. Начальный пустой host использует AppTitle fallback.
 
-- [ ] **Step 4: Исправить source-window localization**
+Сценарий «данные уже находятся в session, host создаётся впервые» покрыт pure-тестом `WorkspaceTitleBuilder.BuildCaption` из Task 3; реальное окно в unit test не создаётся.
+
+- [ ] **Step 5: Исправить source-window localization**
 
 В `ApplyLocalization` заменить `Path.GetFileName(sw.SourceRoot...)` на:
 
@@ -805,28 +874,77 @@ sw.Form.Text = string.Format(Loc.Get("ChannelsForSource"), sourceTitle);
 
 Остальные refresh/rebuild paths уже применяют `SourceChannelWindowViewModel.Title`.
 
-- [ ] **Step 5: Подключить forecast builder и убрать расходящуюся логику**
+- [ ] **Step 6: Подключить forecast builder и убрать расходящуюся логику**
 
 `BuildForecastRoleItems` делегирует `DynamicsForecastRoleItemBuilder.Build(_viewerSession.Data, selectedCodes)`. Combo box и preselection используют новый view model. Удалить private `ForecastRoleItem`, `GetSourceDisplayName` и дублирующий неиспользуемый `MainForm.BuildSeriesLegendText`, если `rg` подтверждает отсутствие вызовов.
 
-- [ ] **Step 6: Сохранить существующий live-refresh/rollback**
+- [ ] **Step 7: Написать failing rollback coordinator tests**
 
-`UpdateLiveRefreshState` использует извлечённую pure policy. Успех 1→2 sources вызывает `StopLiveRefresh` и не запускает timer. Ошибка `LoadFolder` проходит существующий `finally`, возвращает `_folderBox`, session data/folder и captured timer state.
+Coordinator не владеет WinForms controls или timer. Он принимает snapshot identity и callbacks, поэтому тесты проверяют фактическое решение UI orchestration:
+
+```csharp
+[TestMethod]
+public void RestoreAfterFailure_UnchangedSession_RestoresTextAndLiveRefresh()
+{
+    var calls = new List<string>();
+    var data = new TestData();
+    var coordinator = new WorkspaceLoadRollbackCoordinator();
+
+    coordinator.RestoreAfterFailure(
+        false,
+        true,
+        data,
+        "jsqdb://recording/a",
+        data,
+        "jsqdb://recording/a",
+        () => calls.Add("text"),
+        () => calls.Add("live"));
+
+    CollectionAssert.AreEqual(new[] { "text", "live" }, calls);
+}
+```
+
+Дополнительно проверить: success не вызывает callbacks; failure после смены generation/session identity не восстанавливает stale state. Параметр `isCurrentGeneration` передаётся явно.
+
+- [ ] **Step 8: Реализовать rollback coordinator и сохранить поведение `LoadFolder`**
+
+Контракт:
+
+```csharp
+public void RestoreAfterFailure(
+    bool loadSucceeded,
+    bool isCurrentGeneration,
+    TestData previousData,
+    string previousFolder,
+    TestData currentData,
+    string currentFolder,
+    Action restoreSourceText,
+    Action restoreLiveRefresh)
+```
+
+Callbacks вызываются по порядку только когда `!loadSucceeded`, generation актуален, `ReferenceEquals(previousData, currentData)` и folders совпадают ordinal. В `LoadFolder.finally` заменить условие на вызов coordinator; callbacks остаются существующими:
+
+```csharp
+() => _folderBox.Text = previousSourceText,
+() => RestoreLiveRefreshState(previousLiveRefreshState)
+```
+
+`UpdateLiveRefreshState` использует извлечённую pure policy. Успех 1→2 sources вызывает `StopLiveRefresh` и не запускает timer. Ошибка `LoadFolder` проходит coordinator и возвращает `_folderBox`, session data/folder и captured timer state.
 
 Не добавлять multi-source refresh.
 
-- [ ] **Step 7: Запустить целевые тесты и Debug build**
+- [ ] **Step 9: Запустить целевые тесты и Debug build**
 
 Run:
 
 ```powershell
-dotnet test .\JSQViewer.Tests\JSQViewer.Tests.csproj --filter "FullyQualifiedName~RecordingLiveRefreshTests|FullyQualifiedName~ChannelWorkspacePresenterTests|FullyQualifiedName~SourceDisplayNameResolverTests|FullyQualifiedName~ForecastRoleItemBuilderTests"
+dotnet test .\JSQViewer.Tests\JSQViewer.Tests.csproj --filter "FullyQualifiedName~RecordingLiveRefreshTests|FullyQualifiedName~ChannelWorkspacePresenterTests|FullyQualifiedName~SourceDisplayNameResolverTests|FullyQualifiedName~ForecastRoleItemBuilderTests|FullyQualifiedName~DatabaseRecordingSelectionPresenterTests|FullyQualifiedName~WorkspaceLoadRollbackCoordinatorTests"
 dotnet build .\JSQViewer.csproj -c Debug
 ```
 
 Expected: tests PASS; build 0 errors.
 
-- [ ] **Step 8: Написать manual checklist и закоммитить**
+- [ ] **Step 10: Написать manual checklist и закоммитить**
 
 Checklist должен включать:
 
@@ -842,7 +960,7 @@ Checklist должен включать:
 - смена языка обновляет main, detached и source-window captions без возврата ID.
 
 ```powershell
-git add UI/MainForm.cs JSQViewer.Tests/RecordingLiveRefreshTests.cs doc/postgres_recording_compare_manual_checklist.md
+git add UI/MainForm.cs Presentation/WinForms/Presenters/DatabaseRecordingSelectionPresenter.cs Presentation/WinForms/Presenters/WorkspaceLoadRollbackCoordinator.cs JSQViewer.Tests/DatabaseRecordingSelectionPresenterTests.cs JSQViewer.Tests/WorkspaceLoadRollbackCoordinatorTests.cs JSQViewer.Tests/RecordingLiveRefreshTests.cs doc/postgres_recording_compare_manual_checklist.md
 git commit -m "Исправлено добавление прогонов для сравнения"
 ```
 
