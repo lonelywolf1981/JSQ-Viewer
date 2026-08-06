@@ -1,5 +1,5 @@
 #define MyAppName "JSQ Viewer"
-#define MyAppVersion "0.3.7"
+#define MyAppVersion "0.4.0"
 #define MyAppPublisher "JSQ Laboratory"
 #define MyAppExeName "JSQViewer.exe"
 #define MyAppIcon "..\app.ico"
@@ -28,6 +28,21 @@ Name: "desktopicon"; Description: "Создать ярлык на рабочем
 
 [Files]
 Source: "..\artifacts\installer\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\installer\JSQViewer.exe.config"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\installer\Npgsql.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\installer\Microsoft.Bcl.AsyncInterfaces.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\installer\Microsoft.Bcl.HashCode.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\installer\System.Buffers.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\installer\System.Collections.Immutable.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\installer\System.Diagnostics.DiagnosticSource.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\installer\System.Memory.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\installer\System.Numerics.Vectors.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\installer\System.Runtime.CompilerServices.Unsafe.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\installer\System.Text.Encodings.Web.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\installer\System.Text.Json.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\installer\System.Threading.Channels.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\installer\System.Threading.Tasks.Extensions.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\installer\System.ValueTuple.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\artifacts\installer\template.xlsx"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\artifacts\installer\template2.xlsx"; DestDir: "{app}"; Flags: ignoreversion
 
