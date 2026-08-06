@@ -12,6 +12,7 @@ namespace JSQViewer.Application.Database
         public DateTime? StoppedAt { get; set; }
         public string EquipmentModel { get; set; }
         public string ExperimentType { get; set; }
+        public ClimateModeInfo ClimateMode { get; set; }
 
         public bool IsActive
         {

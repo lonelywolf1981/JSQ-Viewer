@@ -81,5 +81,47 @@ namespace JSQViewer.Tests
                 Assert.IsFalse(sql.ToUpperInvariant().Contains(forbidden), "SQL не должен содержать " + forbidden);
             }
         }
+
+        [TestMethod]
+        public void Build_SelectsFirstWindowAveragesForClimateChannels()
+        {
+            string sql = new RecordingCatalogQueryBuilder().Build(new RecordingCatalogFilter(), new List<string>());
+
+            StringAssert.Contains(sql, "WITH page AS (");
+            StringAssert.Contains(sql, "a.channel_id = 'T-sie'");
+            StringAssert.Contains(sql, "a.channel_id = 'UR-sie'");
+            StringAssert.Contains(sql, "ORDER BY a.window_start LIMIT 5");
+            StringAssert.Contains(sql, "AS t_sie_avg");
+            StringAssert.Contains(sql, "AS ur_sie_avg");
+        }
+
+        [TestMethod]
+        public void Build_NeverUsesWindowFunctionForAverages()
+        {
+            string sql = new RecordingCatalogQueryBuilder().Build(new RecordingCatalogFilter(), new List<string>());
+
+            Assert.IsFalse(
+                sql.ToUpperInvariant().Contains("ROW_NUMBER"),
+                "Оконная функция замедляет запрос с 48 мс до 10 с.");
+        }
+
+        [TestMethod]
+        public void Build_AppliesLimitBeforeComputingAverages()
+        {
+            string sql = new RecordingCatalogQueryBuilder().Build(new RecordingCatalogFilter(), new List<string>());
+
+            int limitIndex = sql.IndexOf("LIMIT @limit", StringComparison.Ordinal);
+            int averageIndex = sql.IndexOf("t_sie_avg", StringComparison.Ordinal);
+            Assert.IsTrue(limitIndex > 0, "Ожидался LIMIT @limit.");
+            Assert.IsTrue(averageIndex > limitIndex, "Средние должны считаться после отбора страницы.");
+        }
+
+        [TestMethod]
+        public void Build_SelectsClimateModeColumn()
+        {
+            string sql = new RecordingCatalogQueryBuilder().Build(new RecordingCatalogFilter(), new List<string>());
+
+            StringAssert.Contains(sql, "r.climate_mode");
+        }
     }
 }

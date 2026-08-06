@@ -44,16 +44,28 @@ namespace JSQViewer.Infrastructure.Database
             }
 
             var sql = new StringBuilder();
-            sql.AppendLine("SELECT r.id, r.post_id, r.title, r.status, r.started_at, r.stopped_at,");
-            sql.AppendLine("       r.equipment_model, r.experiment_type");
-            sql.AppendLine("FROM recordings r");
+            sql.AppendLine("WITH page AS (");
+            sql.AppendLine("    SELECT r.id, r.post_id, r.title, r.status, r.started_at, r.stopped_at,");
+            sql.AppendLine("           r.equipment_model, r.experiment_type, r.climate_mode");
+            sql.AppendLine("    FROM recordings r");
             if (conditions.Count > 0)
             {
-                sql.AppendLine("WHERE " + string.Join(" AND ", conditions.ToArray()));
+                sql.AppendLine("    WHERE " + string.Join(" AND ", conditions.ToArray()));
             }
 
-            sql.AppendLine("ORDER BY r.started_at DESC NULLS LAST");
-            sql.AppendLine("LIMIT @limit");
+            sql.AppendLine("    ORDER BY r.started_at DESC NULLS LAST");
+            sql.AppendLine("    LIMIT @limit)");
+            sql.AppendLine("SELECT p.id, p.post_id, p.title, p.status, p.started_at, p.stopped_at,");
+            sql.AppendLine("       p.equipment_model, p.experiment_type, p.climate_mode,");
+            sql.AppendLine("       (SELECT avg(t.v) FROM (");
+            sql.AppendLine("           SELECT a.avg_value v FROM recording_aggregates a");
+            sql.AppendLine("           WHERE a.recording_id = p.id AND a.channel_id = 'T-sie' AND a.avg_value IS NOT NULL");
+            sql.AppendLine("           ORDER BY a.window_start LIMIT 5) t) AS t_sie_avg,");
+            sql.AppendLine("       (SELECT avg(u.v) FROM (");
+            sql.AppendLine("           SELECT a.avg_value v FROM recording_aggregates a");
+            sql.AppendLine("           WHERE a.recording_id = p.id AND a.channel_id = 'UR-sie' AND a.avg_value IS NOT NULL");
+            sql.AppendLine("           ORDER BY a.window_start LIMIT 5) u) AS ur_sie_avg");
+            sql.AppendLine("FROM page p");
             parameterNames.Add("limit");
             return sql.ToString();
         }

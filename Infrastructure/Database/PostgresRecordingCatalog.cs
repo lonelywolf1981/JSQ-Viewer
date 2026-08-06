@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using JSQViewer.Application.Abstractions;
 using JSQViewer.Application.Database;
 using JSQViewer.Application.Workspace.Ports;
@@ -13,6 +14,7 @@ namespace JSQViewer.Infrastructure.Database
         private readonly NpgsqlConnectionFactory _connectionFactory;
         private readonly IDatabaseSettingsRepository _settingsRepository;
         private readonly RecordingCatalogQueryBuilder _queryBuilder;
+        private readonly ClimateModeResolver _climateModeResolver;
 
         public PostgresRecordingCatalog(
             NpgsqlConnectionFactory connectionFactory,
@@ -21,6 +23,7 @@ namespace JSQViewer.Infrastructure.Database
             _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
             _settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
             _queryBuilder = new RecordingCatalogQueryBuilder();
+            _climateModeResolver = new ClimateModeResolver();
         }
 
         public IList<RecordingSummaryItem> List(RecordingCatalogFilter filter)
@@ -57,7 +60,11 @@ namespace JSQViewer.Infrastructure.Database
                             StartedAt = ReadLocalDateTime(reader, 4),
                             StoppedAt = ReadLocalDateTime(reader, 5),
                             EquipmentModel = ReadString(reader, 6),
-                            ExperimentType = ReadString(reader, 7)
+                            ExperimentType = ReadString(reader, 7),
+                            ClimateMode = _climateModeResolver.Resolve(
+                                ReadString(reader, 8),
+                                ReadNullableDouble(reader, 9),
+                                ReadNullableDouble(reader, 10))
                         });
                     }
                 }
@@ -138,6 +145,13 @@ namespace JSQViewer.Infrastructure.Database
 
             var value = (DateTime)record.GetValue(index);
             return value.Kind == DateTimeKind.Utc ? value.ToLocalTime() : value;
+        }
+
+        private static double? ReadNullableDouble(IDataRecord record, int index)
+        {
+            return record.IsDBNull(index)
+                ? (double?)null
+                : Convert.ToDouble(record.GetValue(index), CultureInfo.InvariantCulture);
         }
     }
 }
