@@ -26,6 +26,40 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void TestData_InitializesSourceIdentityCollections()
+        {
+            var data = new TestData();
+
+            Assert.IsNotNull(data.SourceDisplayNames);
+            Assert.IsNotNull(data.SourceOrder);
+            Assert.AreEqual(0, data.SourceOrder.Length);
+
+            data.SourceDisplayNames["SOURCE"] = "Название";
+            Assert.AreEqual("Название", data.SourceDisplayNames["source"]);
+        }
+
+        [TestMethod]
+        public void Map_UsesTrimmedRecordingTitleAsSourceDisplayName()
+        {
+            TestData data = new RecordingRowsToTestDataMapper().Map(
+                Source, "B", new List<RecordingAggregateRow>(), Channels(),
+                new Dictionary<string, string> { { "Название", "  Прогон № 1  " } });
+
+            Assert.AreEqual("Прогон № 1", data.SourceDisplayNames[Source]);
+            CollectionAssert.AreEqual(new[] { Source }, data.SourceOrder);
+        }
+
+        [TestMethod]
+        public void Map_BlankRecordingTitleFallsBackToRecordingId()
+        {
+            TestData data = new RecordingRowsToTestDataMapper().Map(
+                Source, "B", new List<RecordingAggregateRow>(), Channels(),
+                new Dictionary<string, string> { { "Название", "  " } });
+
+            Assert.AreEqual("abc", data.SourceDisplayNames[Source]);
+        }
+
+        [TestMethod]
         public void StripPostPrefix_RemovesOnlyLeadingPostId()
         {
             Assert.AreEqual("T1", ChannelCodeNormalizer.StripPostPrefix("B-T1", "B"));
@@ -130,6 +164,22 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Append_WithNewRows_PreservesSourceIdentityMetadata()
+        {
+            var mapper = new RecordingRowsToTestDataMapper();
+            TestData data = mapper.Map(Source, "B",
+                new List<RecordingAggregateRow> { Row("B-T1", 1000, 10.0) },
+                Channels(), new Dictionary<string, string> { { "Название", "Прогон" } });
+
+            TestData appended = mapper.Append(data, "B",
+                new List<RecordingAggregateRow> { Row("B-T1", 2000, 10.5) });
+
+            Assert.AreNotSame(data.SourceDisplayNames, appended.SourceDisplayNames);
+            Assert.AreEqual("Прогон", appended.SourceDisplayNames[Source]);
+            CollectionAssert.AreEqual(new[] { Source }, appended.SourceOrder);
+        }
+
+        [TestMethod]
         public void Append_IgnoresWindowsAlreadyLoaded()
         {
             var mapper = new RecordingRowsToTestDataMapper();
@@ -155,6 +205,25 @@ namespace JSQViewer.Tests
             TestData appended = mapper.Append(data, "B", new List<RecordingAggregateRow>());
 
             Assert.AreSame(data, appended);
+        }
+
+        [TestMethod]
+        public void Append_WithoutNewRows_PreservesSourceIdentityMetadata()
+        {
+            var mapper = new RecordingRowsToTestDataMapper();
+            TestData data = mapper.Map(Source, "B",
+                new List<RecordingAggregateRow> { Row("B-T1", 1000, 10.0) },
+                Channels(), new Dictionary<string, string> { { "Название", "Прогон" } });
+            Dictionary<string, string> displayNames = data.SourceDisplayNames;
+            string[] sourceOrder = data.SourceOrder;
+
+            TestData appended = mapper.Append(data, "B", new List<RecordingAggregateRow>());
+
+            Assert.AreSame(data, appended);
+            Assert.AreSame(displayNames, appended.SourceDisplayNames);
+            Assert.AreSame(sourceOrder, appended.SourceOrder);
+            Assert.AreEqual("Прогон", appended.SourceDisplayNames[Source]);
+            CollectionAssert.AreEqual(new[] { Source }, appended.SourceOrder);
         }
 
         [TestMethod]

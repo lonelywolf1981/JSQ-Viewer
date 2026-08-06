@@ -28,6 +28,8 @@ namespace JSQViewer.Core
         public Dictionary<string, string> CodeSources { get; set; }
         public Dictionary<string, long> SourceStartMs { get; set; }
         public Dictionary<string, long> SourceEndMs { get; set; }
+        public Dictionary<string, string> SourceDisplayNames { get; set; }
+        public string[] SourceOrder { get; set; }
         public long[] TimestampsMs { get; set; }
         public Dictionary<string, double?[]> Columns { get; set; }
         public string[] ColumnNames { get; set; }
@@ -42,6 +44,8 @@ namespace JSQViewer.Core
             CodeSources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             SourceStartMs = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
             SourceEndMs = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            SourceDisplayNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            SourceOrder = new string[0];
             TimestampsMs = new long[0];
             Columns = new Dictionary<string, double?[]>(StringComparer.OrdinalIgnoreCase);
             ColumnNames = new string[0];

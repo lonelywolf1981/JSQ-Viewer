@@ -25,6 +25,8 @@ namespace JSQViewer.Tests
             CollectionAssert.AreEqual(
                 new double?[] { 10.0, 11.0, 11.0 },
                 secondRefresh.Columns["T1"]);
+            Assert.AreEqual("Прогон ABC", secondRefresh.SourceDisplayNames[initial.Root]);
+            CollectionAssert.AreEqual(new[] { initial.Root }, secondRefresh.SourceOrder);
         }
 
         [TestMethod]
@@ -52,7 +54,10 @@ namespace JSQViewer.Tests
                         NewRow(1000L, 10.0)
                     },
                     new Dictionary<string, ChannelInfo>(),
-                    new Dictionary<string, string>());
+                    new Dictionary<string, string>
+                    {
+                        { "Название", "Прогон ABC" }
+                    });
             }
 
             public TestData AppendNewWindows(TestData existing, string recordingId)

@@ -66,12 +66,15 @@ namespace JSQViewer.Application.Database
                 }
             }
 
+            var normalizedMetadata = metadata == null
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(metadata, StringComparer.OrdinalIgnoreCase);
+            string displayName = GetDisplayName(source, normalizedMetadata);
+
             return new TestData
             {
                 Root = source,
-                Meta = metadata == null
-                    ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                    : new Dictionary<string, string>(metadata, StringComparer.OrdinalIgnoreCase),
+                Meta = normalizedMetadata,
                 Channels = normalizedChannels,
                 CodeSources = columnNames.ToDictionary(code => code, code => source, StringComparer.OrdinalIgnoreCase),
                 SourceStartMs = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
@@ -82,6 +85,11 @@ namespace JSQViewer.Application.Database
                 {
                     { source, timestamps.Length > 0 ? timestamps[timestamps.Length - 1] : 0L }
                 },
+                SourceDisplayNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    { source, displayName }
+                },
+                SourceOrder = new[] { source },
                 TimestampsMs = timestamps,
                 Columns = columns,
                 ColumnNames = columnNames,
@@ -162,6 +170,12 @@ namespace JSQViewer.Application.Database
 
             string[] mergedColumnNames = columnOrder.ToArray();
             string source = existing.Root;
+            var sourceDisplayNames = existing.SourceDisplayNames == null
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(existing.SourceDisplayNames, StringComparer.OrdinalIgnoreCase);
+            string[] sourceOrder = existing.SourceOrder == null
+                ? new string[0]
+                : existing.SourceOrder.ToArray();
 
             return new TestData
             {
@@ -177,6 +191,8 @@ namespace JSQViewer.Application.Database
                 {
                     { source, mergedTimestamps[newLength - 1] }
                 },
+                SourceDisplayNames = sourceDisplayNames,
+                SourceOrder = sourceOrder,
                 TimestampsMs = mergedTimestamps,
                 Columns = mergedColumns,
                 ColumnNames = mergedColumnNames,
@@ -186,6 +202,20 @@ namespace JSQViewer.Application.Database
                 },
                 RowCount = newLength
             };
+        }
+
+        private static string GetDisplayName(string source, IDictionary<string, string> metadata)
+        {
+            string title;
+            if (metadata != null
+                && metadata.TryGetValue("Название", out title)
+                && !string.IsNullOrWhiteSpace(title))
+            {
+                return title.Trim();
+            }
+
+            string recordingId;
+            return RecordingSourceRef.TryParse(source, out recordingId) ? recordingId : source;
         }
     }
 }
