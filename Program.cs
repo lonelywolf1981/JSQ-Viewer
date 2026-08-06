@@ -10,6 +10,7 @@ using JSQViewer.Application.Charting.UseCases;
 using JSQViewer.Application.Exporting;
 using JSQViewer.Application.Session;
 using JSQViewer.Application.Workspace;
+using JSQViewer.Application.Workspace.Ports;
 using JSQViewer.Core;
 using JSQViewer.Infrastructure.Composition;
 using JSQViewer.Infrastructure.Cache;
@@ -56,6 +57,11 @@ namespace JSQViewer
             var workspaceLayoutStateService = new WorkspaceLayoutStateService(workspaceLayoutRepository, orderRepository);
             var uiShellStateService = new UiShellStateService(recentFoldersRepository, uiStateRepository);
             IViewerSettingsRepository viewerSettingsRepository = new FileViewerSettingsRepository(appPaths);
+            ISecretProtector secretProtector = new DpapiSecretProtector();
+            IDatabaseSettingsRepository databaseSettingsRepository = new FileDatabaseSettingsRepository(appPaths, secretProtector);
+            var databaseConnectionFactory = new NpgsqlConnectionFactory();
+            IRecordingCatalog recordingCatalog = new PostgresRecordingCatalog(databaseConnectionFactory, databaseSettingsRepository);
+            IRecordingDataReader recordingDataReader = new PostgresRecordingDataSourceReader(databaseConnectionFactory, databaseSettingsRepository);
             ISeriesSliceCache seriesSliceCache = new MemorySeriesSliceCache();
             var timestampRangeService = new TimestampRangeService();
             var dataSummaryService = new DataSummaryService(timestampRangeService);
@@ -72,7 +78,9 @@ namespace JSQViewer
             AppState.Configure(viewerSession, timestampRangeService, dataSummaryService);
             SeriesCache.Configure(seriesSliceService);
             WorkspaceFolderSpecParser workspaceFolderSpecParser = WorkspaceLoadingComposition.CreateFolderSpecParser();
-            var loadWorkspaceDataUseCase = WorkspaceLoadingComposition.CreateLoadWorkspaceDataUseCase(workspaceFolderSpecParser);
+            var loadWorkspaceDataUseCase = WorkspaceLoadingComposition.CreateLoadWorkspaceDataUseCase(
+                workspaceFolderSpecParser,
+                recordingDataReader);
             var workspaceLoadOrchestrationService = new WorkspaceLoadOrchestrationService(workspaceFolderSpecParser, fileSystem);
             Loc.Initialize(localizationService);
 
@@ -103,7 +111,9 @@ namespace JSQViewer
                 exportSettingsPresenter,
                 viewerSettingsSanitizer,
                 workspaceLoadOrchestrationService,
-                loadWorkspaceDataUseCase));
+                loadWorkspaceDataUseCase,
+                recordingCatalog,
+                databaseSettingsRepository));
         }
 
         private static void RunDatabaseCheck()

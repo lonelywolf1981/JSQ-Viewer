@@ -17,8 +17,10 @@ using JSQViewer.Application.Charting.UseCases;
 using JSQViewer.Application.Exporting;
 using JSQViewer.Application.Session;
 using JSQViewer.Application.Workspace;
+using JSQViewer.Application.Workspace.Ports;
 using JSQViewer.Application.Workspace.UseCases;
 using JSQViewer.Application.Recording;
+using JSQViewer.Infrastructure.Database;
 using JSQViewer.Infrastructure.DataImport;
 using JSQViewer.Presentation.WinForms.Presenters;
 using JSQViewer.Presentation.WinForms.Charting;
@@ -34,6 +36,8 @@ namespace JSQViewer.UI
         private readonly TextBox _folderBox;
         private readonly Button _browseButton;
         private readonly Button _addDataButton;
+        private readonly Button _openFromDatabaseButton;
+        private readonly Button _databaseSettingsButton;
         private readonly Button _refreshButton;
         private readonly Button _closeAllButton;
         private readonly ComboBox _recentFoldersBox;
@@ -146,6 +150,8 @@ namespace JSQViewer.UI
         private readonly ViewerSettingsSanitizer _viewerSettingsSanitizer;
         private readonly WorkspaceLoadOrchestrationService _workspaceLoadOrchestrationService;
         private readonly LoadWorkspaceDataUseCase _loadWorkspaceDataUseCase;
+        private readonly IRecordingCatalog _recordingCatalog;
+        private readonly IDatabaseSettingsRepository _databaseSettingsRepository;
         private readonly GetRecordingInfoUseCase _getRecordingInfoUseCase;
         private readonly RemoveLoadedSourceUseCase _removeLoadedSourceUseCase;
         private WorkspaceLayoutState _workspaceLayoutState;
@@ -178,7 +184,9 @@ namespace JSQViewer.UI
             ExportSettingsPresenter exportSettingsPresenter,
             ViewerSettingsSanitizer viewerSettingsSanitizer,
             WorkspaceLoadOrchestrationService workspaceLoadOrchestrationService,
-            LoadWorkspaceDataUseCase loadWorkspaceDataUseCase)
+            LoadWorkspaceDataUseCase loadWorkspaceDataUseCase,
+            IRecordingCatalog recordingCatalog,
+            IDatabaseSettingsRepository databaseSettingsRepository)
         {
             if (appPaths == null) throw new ArgumentNullException(nameof(appPaths));
             if (fileSystem == null) throw new ArgumentNullException(nameof(fileSystem));
@@ -201,6 +209,8 @@ namespace JSQViewer.UI
             if (viewerSettingsSanitizer == null) throw new ArgumentNullException(nameof(viewerSettingsSanitizer));
             if (workspaceLoadOrchestrationService == null) throw new ArgumentNullException(nameof(workspaceLoadOrchestrationService));
             if (loadWorkspaceDataUseCase == null) throw new ArgumentNullException(nameof(loadWorkspaceDataUseCase));
+            if (recordingCatalog == null) throw new ArgumentNullException(nameof(recordingCatalog));
+            if (databaseSettingsRepository == null) throw new ArgumentNullException(nameof(databaseSettingsRepository));
 
             _appPaths = appPaths;
             _fileSystem = fileSystem;
@@ -223,6 +233,8 @@ namespace JSQViewer.UI
             _viewerSettingsSanitizer = viewerSettingsSanitizer;
             _workspaceLoadOrchestrationService = workspaceLoadOrchestrationService;
             _loadWorkspaceDataUseCase = loadWorkspaceDataUseCase;
+            _recordingCatalog = recordingCatalog;
+            _databaseSettingsRepository = databaseSettingsRepository;
             _removeLoadedSourceUseCase = new RemoveLoadedSourceUseCase();
             _getRecordingInfoUseCase = new GetRecordingInfoUseCase(_timestampRangeService, new ProvaMetadataReader());
             _viewerSettings = _viewerSettingsRepository.Load();
@@ -267,6 +279,8 @@ namespace JSQViewer.UI
             _folderBox = new TextBox(); _folderBox.Width = 520; folderRow.Controls.Add(_folderBox);
             _browseButton = new Button(); _browseButton.Text = Loc.Get("Browse"); _browseButton.AutoSize = true; _browseButton.Click += BrowseButtonOnClick; folderRow.Controls.Add(_browseButton);
             _addDataButton = new Button(); _addDataButton.Text = Loc.Get("AddData"); _addDataButton.AutoSize = true; _addDataButton.Click += AddDataButtonOnClick; folderRow.Controls.Add(_addDataButton);
+            _openFromDatabaseButton = new Button(); _openFromDatabaseButton.Text = Loc.Get("OpenFromDatabase"); _openFromDatabaseButton.AutoSize = true; _openFromDatabaseButton.Click += OpenFromDatabaseButtonOnClick; folderRow.Controls.Add(_openFromDatabaseButton);
+            _databaseSettingsButton = new Button(); _databaseSettingsButton.Text = Loc.Get("DatabaseSettings"); _databaseSettingsButton.AutoSize = true; _databaseSettingsButton.Click += DatabaseSettingsButtonOnClick; folderRow.Controls.Add(_databaseSettingsButton);
             _refreshButton = new Button(); _refreshButton.Text = Loc.Get("Refresh"); _refreshButton.AutoSize = true; _refreshButton.Click += RefreshButtonOnClick; folderRow.Controls.Add(_refreshButton);
             _closeAllButton = new Button(); _closeAllButton.Text = Loc.Get("CloseAll"); _closeAllButton.AutoSize = true; _closeAllButton.Click += CloseAllButtonOnClick; folderRow.Controls.Add(_closeAllButton);
             _langButton = new Button(); _langButton.Text = Loc.Get("Language"); _langButton.Width = 40; _langButton.Click += LangButtonOnClick; folderRow.Controls.Add(_langButton);
@@ -706,6 +720,8 @@ namespace JSQViewer.UI
             Text = Loc.Get("AppTitle") + " " + GetAppVersion();
             _browseButton.Text = Loc.Get("Browse");
             _addDataButton.Text = Loc.Get("AddData");
+            _openFromDatabaseButton.Text = Loc.Get("OpenFromDatabase");
+            _databaseSettingsButton.Text = Loc.Get("DatabaseSettings");
             _refreshButton.Text = Loc.Get("Refresh");
             _closeAllButton.Text = Loc.Get("CloseAll");
             _langButton.Text = Loc.Get("Language");
@@ -783,6 +799,8 @@ namespace JSQViewer.UI
             _toolTip.SetToolTip(_folderBox, Loc.Get("TipFolder"));
             _toolTip.SetToolTip(_browseButton, Loc.Get("TipBrowse"));
             _toolTip.SetToolTip(_addDataButton, Loc.Get("TipAddData"));
+            _toolTip.SetToolTip(_openFromDatabaseButton, Loc.Get("TipOpenFromDatabase"));
+            _toolTip.SetToolTip(_databaseSettingsButton, Loc.Get("DatabaseSettingsTitle"));
             _toolTip.SetToolTip(_refreshButton, Loc.Get("TipRefresh"));
             _toolTip.SetToolTip(_closeAllButton, Loc.Get("TipCloseAll"));
             _toolTip.SetToolTip(_langButton, Loc.Get("TipLang"));
@@ -1821,6 +1839,56 @@ namespace JSQViewer.UI
             {
                 _logger.LogError("Add data folder failed.", ex);
                 NotifyError(Loc.Get("LoadFailed"));
+            }
+        }
+
+        private void OpenFromDatabaseButtonOnClick(object sender, EventArgs e)
+        {
+            try
+            {
+                List<string> current = ParseFolderSpec(_folderBox.Text);
+                int available = WorkspaceFolderSpecParser.MaxFolderCount - current.Count;
+                if (available <= 0)
+                {
+                    available = WorkspaceFolderSpecParser.MaxFolderCount;
+                    current.Clear();
+                }
+
+                using (var form = new OpenFromDatabaseForm(_recordingCatalog, available))
+                {
+                    if (form.ShowDialog(this) != DialogResult.OK)
+                    {
+                        return;
+                    }
+
+                    var combined = new List<string>(form.SelectedSources);
+                    string spec = JoinFolderSpec(combined);
+                    _folderBox.Text = spec;
+                    LoadFolder(spec, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Open recordings from database failed.", ex);
+                NotifyError(Loc.Get("RecordingConnectionLost"));
+            }
+        }
+
+        private void DatabaseSettingsButtonOnClick(object sender, EventArgs e)
+        {
+            try
+            {
+                using (var dialog = new DatabaseSettingsDialog(
+                    _databaseSettingsRepository,
+                    new NpgsqlConnectionFactory()))
+                {
+                    dialog.ShowDialog(this);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Open database settings failed.", ex);
+                NotifyError(Loc.Get("DatabaseConnectionFailed"));
             }
         }
 
@@ -4350,6 +4418,8 @@ namespace JSQViewer.UI
 
             _browseButton.Enabled = !busy;
             _addDataButton.Enabled = !busy;
+            _openFromDatabaseButton.Enabled = !busy;
+            _databaseSettingsButton.Enabled = !busy;
             _refreshButton.Enabled = !busy;
             _closeAllButton.Enabled = !busy;
             _exportTemplateButton.Enabled = !busy && _viewerSession.IsLoaded;
