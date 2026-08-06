@@ -282,6 +282,40 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Render_UsesDashedLineForForecastSeries()
+        {
+            var renderer = new ChartRenderer();
+            var chart = new Chart();
+            chart.ChartAreas.Add(new ChartArea("main"));
+            chart.Legends.Add(new Legend("legend"));
+            var viewModel = new ChartViewModel
+            {
+                HasData = true,
+                OverlayMode = true,
+                ShowLegend = true,
+                DataMinimum = 0d,
+                DataMaximum = 2d,
+                Series = new[]
+                {
+                    new ChartSeriesViewModel
+                    {
+                        Code = "forecast",
+                        LegendText = "Прогноз",
+                        XValues = new[] { 1.0, 2.0 },
+                        YValues = new[] { 10d, 9d },
+                        BorderWidth = 2,
+                        IsVisibleInLegend = true,
+                        IsForecast = true
+                    }
+                }
+            };
+
+            renderer.Render(chart, viewModel);
+
+            Assert.AreEqual(ChartDashStyle.Dash, chart.Series["forecast"].BorderDashStyle);
+        }
+
+        [TestMethod]
         public void Render_OverlayAxisIntervalScalesWithVisibleSpan()
         {
             MethodInfo method = typeof(ChartRenderer).GetMethod("ResolveElapsedLabelInterval", BindingFlags.NonPublic | BindingFlags.Static);

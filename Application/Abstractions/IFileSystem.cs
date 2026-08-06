@@ -1,4 +1,6 @@
 using System.Text;
+using System.IO;
+using System;
 
 namespace JSQViewer.Application.Abstractions
 {
@@ -7,6 +9,10 @@ namespace JSQViewer.Application.Abstractions
         bool FileExists(string path);
 
         bool DirectoryExists(string path);
+
+        string[] GetFiles(string path, string searchPattern, SearchOption searchOption);
+
+        DateTime GetLastWriteTime(string path);
 
         void WriteAllBytes(string path, byte[] contents);
 

@@ -16,6 +16,16 @@ namespace JSQViewer.Infrastructure.Platform
             return Directory.Exists(path);
         }
 
+        public string[] GetFiles(string path, string searchPattern, SearchOption searchOption)
+        {
+            return Directory.GetFiles(path, searchPattern, searchOption);
+        }
+
+        public System.DateTime GetLastWriteTime(string path)
+        {
+            return File.GetLastWriteTime(path);
+        }
+
         public void WriteAllBytes(string path, byte[] contents)
         {
             File.WriteAllBytes(path, contents);

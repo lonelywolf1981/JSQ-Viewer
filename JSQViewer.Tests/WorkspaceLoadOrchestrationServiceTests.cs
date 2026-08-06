@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using JSQViewer.Application.Abstractions;
@@ -109,6 +110,50 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void ResolveSelectedFolderSource_ReturnsFolder_WhenDatExists()
+        {
+            var fs = new FakeFileSystem();
+            fs.ExistingDirectories.Add(@"C:\Data\Test");
+            fs.FilesByPattern[MakeKey(@"C:\Data\Test", "*.dat", SearchOption.TopDirectoryOnly)] =
+                new[] { @"C:\Data\Test\Prova001.dat" };
+            fs.FilesByPattern[MakeKey(@"C:\Data\Test", "*.xlsx", SearchOption.TopDirectoryOnly)] =
+                new[] { @"C:\Data\Test\Protocol.xlsx" };
+            var service = CreateService(fs);
+
+            string result = service.ResolveSelectedFolderSource(@"C:\Data\Test");
+
+            Assert.AreEqual(@"C:\Data\Test", result);
+        }
+
+        [TestMethod]
+        public void ResolveSelectedFolderSource_ReturnsNewestXlsx_WhenFolderHasNoDat()
+        {
+            var fs = new FakeFileSystem();
+            fs.ExistingDirectories.Add(@"C:\Data\Test");
+            fs.FilesByPattern[MakeKey(@"C:\Data\Test", "*.xlsx", SearchOption.TopDirectoryOnly)] =
+                new[] { @"C:\Data\Test\Old.xlsx", @"C:\Data\Test\New.xlsx" };
+            fs.LastWriteTimes[@"C:\Data\Test\Old.xlsx"] = new System.DateTime(2026, 5, 1, 10, 0, 0);
+            fs.LastWriteTimes[@"C:\Data\Test\New.xlsx"] = new System.DateTime(2026, 5, 2, 10, 0, 0);
+            var service = CreateService(fs);
+
+            string result = service.ResolveSelectedFolderSource(@"C:\Data\Test");
+
+            Assert.AreEqual(@"C:\Data\Test\New.xlsx", result);
+        }
+
+        [TestMethod]
+        public void ResolveSelectedFolderSource_ReturnsFolder_WhenFolderHasNoDatOrXlsx()
+        {
+            var fs = new FakeFileSystem();
+            fs.ExistingDirectories.Add(@"C:\Data\Test");
+            var service = CreateService(fs);
+
+            string result = service.ResolveSelectedFolderSource(@"C:\Data\Test");
+
+            Assert.AreEqual(@"C:\Data\Test", result);
+        }
+
+        [TestMethod]
         public void CreateLoadRequest_SetsSpecAndSplitTrue()
         {
             var service = CreateService(new FakeFileSystem());
@@ -136,15 +181,40 @@ namespace JSQViewer.Tests
             return new WorkspaceLoadOrchestrationService(new WorkspaceFolderSpecParser(), fileSystem);
         }
 
+        private static string MakeKey(string path, string pattern, SearchOption searchOption)
+        {
+            return path + "|" + pattern + "|" + searchOption;
+        }
+
         private sealed class FakeFileSystem : IFileSystem
         {
             public HashSet<string> ExistingDirectories { get; } = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
 
             public HashSet<string> ExistingFiles { get; } = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
 
+            public Dictionary<string, string[]> FilesByPattern { get; } =
+                new Dictionary<string, string[]>(System.StringComparer.OrdinalIgnoreCase);
+
+            public Dictionary<string, System.DateTime> LastWriteTimes { get; } =
+                new Dictionary<string, System.DateTime>(System.StringComparer.OrdinalIgnoreCase);
+
             public bool DirectoryExists(string path) => ExistingDirectories.Contains(path);
 
             public bool FileExists(string path) => ExistingFiles.Contains(path);
+
+            public string[] GetFiles(string path, string searchPattern, SearchOption searchOption)
+            {
+                string[] files;
+                return FilesByPattern.TryGetValue(MakeKey(path, searchPattern, searchOption), out files)
+                    ? files
+                    : new string[0];
+            }
+
+            public System.DateTime GetLastWriteTime(string path)
+            {
+                System.DateTime time;
+                return LastWriteTimes.TryGetValue(path, out time) ? time : System.DateTime.MinValue;
+            }
 
             public void WriteAllBytes(string path, byte[] contents) { }
 

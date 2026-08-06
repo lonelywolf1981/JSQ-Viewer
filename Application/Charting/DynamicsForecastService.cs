@@ -73,12 +73,29 @@ namespace JSQViewer.Application.Charting
             }
 
             int pointCount = targetMinIndex + 1;
-            var envelopeX = new double[pointCount];
-            var targetX = new double[pointCount];
-            var rawY = new double[pointCount];
-            var coolingEnvelopeY = new double[pointCount];
+            if (pointCount < MinimumObservedPoints)
+            {
+                return null;
+            }
+
             double targetOriginX = roles.Target.XValues[0];
-            double verticalOffset = roles.NewFunc.YValues[0] - roles.Target.YValues[0];
+            double startOffset = roles.NewFunc.YValues[0] - roles.Target.YValues[0];
+            double newFuncSpan = SeriesDuration(roles.NewFunc);
+
+            // Damped FUNC speed ratio applied as a single GLOBAL factor to the old FULL
+            // timeline. Uniform (not per-point) scaling keeps every defrost cycle and the
+            // gaps between them in the same proportions as the old FULL - so the defrost
+            // pattern looks like the reference - while the overall pace still follows the
+            // damped FUNC warp. Uniform scaling also makes the time axis strictly
+            // increasing, so no vertical "spread" correction is needed.
+            double oldFuncToMin = roles.OldFunc.XValues[oldFuncMinIndex] - roles.OldFunc.XValues[0];
+            double newFuncToMin = roles.NewFunc.XValues[newFuncMinIndex] - roles.NewFunc.XValues[0];
+            double globalFactor = (oldFuncToMin > 1e-9 && newFuncToMin > 1e-9)
+                ? Math.Pow(newFuncToMin / oldFuncToMin, _funcWarpDamping)
+                : 1d;
+
+            var xValues = new double[pointCount];
+            var yValues = new double[pointCount];
             double maxProgress = 0d;
             double runningMinTemperature = double.PositiveInfinity;
 
@@ -90,39 +107,26 @@ namespace JSQViewer.Application.Charting
                     maxProgress = progress;
                 }
 
-                double predictedElapsed = MapNewFuncElapsedToPredictedFullElapsed(
-                    roles.OldFunc,
-                    oldFuncMinIndex,
-                    roles.Target,
-                    targetMinIndex,
-                    roles.NewFunc,
-                    newFuncMinIndex,
-                    maxProgress);
-
-                envelopeX[i] = targetOriginX + predictedElapsed;
-                targetX[i] = roles.Target.XValues[i];
                 if (roles.Target.YValues[i] < runningMinTemperature)
                 {
                     runningMinTemperature = roles.Target.YValues[i];
                 }
 
-                rawY[i] = roles.Target.YValues[i] + verticalOffset;
-                coolingEnvelopeY[i] = runningMinTemperature + verticalOffset;
+                double elapsed = (roles.Target.XValues[i] - targetOriginX) * globalFactor;
+                xValues[i] = targetOriginX + elapsed;
+
+                // Decay the start lift to zero as cooling completes, so the forecast
+                // finishes at the old FULL minimum instead of a constant offset above it.
+                double decayedOffset = startOffset * (1d - maxProgress);
+
+                // While the new FUNC still has measured data, follow the monotonic
+                // cooling trend (suppress early FULL defrost rebounds); afterwards
+                // reproduce the FULL template with its defrosts.
+                double baseTemperature = elapsed <= newFuncSpan + 1e-9
+                    ? runningMinTemperature
+                    : roles.Target.YValues[i];
+                yValues[i] = baseTemperature + decayedOffset;
             }
-
-            if (pointCount < MinimumObservedPoints)
-            {
-                return null;
-            }
-
-            double[] xValues = SpreadFrozenProgressSegments(envelopeX, targetX);
-
-            // While the new FUNC still has measured data the forecast follows the
-            // monotonic cooling trend, so an early FULL defrost rebound does not show
-            // up as a temperature hump in a region where the new test was still
-            // cooling. The full FULL template (with defrosts) resumes only after the
-            // new FUNC data ends.
-            double[] yValues = ApplyNewFuncRegion(rawY, coolingEnvelopeY, xValues, targetOriginX, roles.NewFunc);
 
             return new ChartPipelineSeries
             {
@@ -178,117 +182,6 @@ namespace JSQViewer.Application.Charting
             }
 
             return series.XValues[count - 1] - series.XValues[0];
-        }
-
-        // The cooling-progress mapping freezes predicted time whenever the target
-        // temperature rises (defrost rebound), which collapses every rebound point
-        // onto a single X and produces the torn, vertical-step look. Here those
-        // frozen runs are spread across the predicted time gap proportionally to the
-        // target's own elapsed time, so rebound peaks stay visible but the forecast
-        // advances smoothly instead of jumping.
-        private static double[] ApplyNewFuncRegion(
-            double[] rawY,
-            double[] coolingEnvelopeY,
-            double[] xValues,
-            double targetOriginX,
-            ChartPipelineSeries newFunc)
-        {
-            int newFuncCount = CountPoints(newFunc);
-            double newFuncSpan = newFuncCount > 0
-                ? newFunc.XValues[newFuncCount - 1] - newFunc.XValues[0]
-                : 0d;
-
-            var result = new double[rawY.Length];
-            for (int i = 0; i < rawY.Length; i++)
-            {
-                double elapsed = xValues[i] - targetOriginX;
-                result[i] = elapsed <= newFuncSpan + 1e-9
-                    ? coolingEnvelopeY[i]
-                    : rawY[i];
-            }
-
-            return result;
-        }
-
-        private static double[] SpreadFrozenProgressSegments(double[] envelopeX, double[] targetX)
-        {
-            var result = (double[])envelopeX.Clone();
-            int anchor = 0;
-            for (int i = 1; i < envelopeX.Length; i++)
-            {
-                if (envelopeX[i] <= envelopeX[anchor] + 1e-9)
-                {
-                    continue;
-                }
-
-                double timeSpan = targetX[i] - targetX[anchor];
-                double xSpan = envelopeX[i] - envelopeX[anchor];
-                for (int m = anchor + 1; m < i; m++)
-                {
-                    double fraction = timeSpan > 1e-9
-                        ? (targetX[m] - targetX[anchor]) / timeSpan
-                        : 0d;
-                    fraction = Math.Max(0d, Math.Min(1d, fraction));
-                    result[m] = envelopeX[anchor] + (xSpan * fraction);
-                }
-
-                anchor = i;
-            }
-
-            return result;
-        }
-
-        private double MapNewFuncElapsedToPredictedFullElapsed(
-            ChartPipelineSeries oldFunc,
-            int oldFuncMinIndex,
-            ChartPipelineSeries oldFull,
-            int oldFullMinIndex,
-            ChartPipelineSeries newFunc,
-            int newFuncMinIndex,
-            double progress)
-        {
-            if (progress <= 1e-9)
-            {
-                return 0d;
-            }
-
-            double oldFuncElapsed = ElapsedAtProgress(oldFunc, oldFuncMinIndex, progress);
-            double oldFullElapsed = ElapsedAtProgress(oldFull, oldFullMinIndex, progress);
-            double newFuncElapsed = ElapsedAtProgress(newFunc, newFuncMinIndex, progress);
-            if (oldFuncElapsed <= 1e-9)
-            {
-                return oldFullElapsed;
-            }
-
-            double funcSpeedRatio = newFuncElapsed / oldFuncElapsed;
-            double dampedRatio = Math.Pow(funcSpeedRatio, _funcWarpDamping);
-            return oldFullElapsed * dampedRatio;
-        }
-
-        private static double ElapsedAtProgress(ChartPipelineSeries series, int minIndex, double targetProgress)
-        {
-            double startX = series.XValues[0];
-            if (targetProgress <= 1e-9)
-            {
-                return 0d;
-            }
-
-            for (int i = 1; i <= minIndex; i++)
-            {
-                double p0 = CoolingProgressAt(series, minIndex, series.YValues[i - 1]);
-                double p1 = CoolingProgressAt(series, minIndex, series.YValues[i]);
-                bool contains = targetProgress >= Math.Min(p0, p1) && targetProgress <= Math.Max(p0, p1);
-                if (!contains || Math.Abs(p1 - p0) <= 1e-9)
-                {
-                    continue;
-                }
-
-                double t = (targetProgress - p0) / (p1 - p0);
-                double x = series.XValues[i - 1] + ((series.XValues[i] - series.XValues[i - 1]) * t);
-                return Math.Max(0d, x - startX);
-            }
-
-            return Math.Max(0d, series.XValues[minIndex] - startX);
         }
 
         private static double CoolingProgressAt(ChartPipelineSeries series, int minIndex, double value)

@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using JSQViewer.Application.Abstractions;
 
 namespace JSQViewer.Application.Workspace
@@ -46,6 +48,26 @@ namespace JSQViewer.Application.Workspace
             }
 
             return true;
+        }
+
+        public string ResolveSelectedFolderSource(string selectedFolder)
+        {
+            if (string.IsNullOrWhiteSpace(selectedFolder) || !_fileSystem.DirectoryExists(selectedFolder))
+            {
+                return selectedFolder;
+            }
+
+            if (_fileSystem.GetFiles(selectedFolder, "*.dat", SearchOption.TopDirectoryOnly).Length > 0)
+            {
+                return selectedFolder;
+            }
+
+            string latestProtocol = _fileSystem.GetFiles(selectedFolder, "*.xlsx", SearchOption.TopDirectoryOnly)
+                .OrderByDescending(_fileSystem.GetLastWriteTime)
+                .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+
+            return string.IsNullOrWhiteSpace(latestProtocol) ? selectedFolder : latestProtocol;
         }
 
         public WorkspaceLoadRequest CreateLoadRequest(string normalizedSpec)
