@@ -12,7 +12,7 @@ namespace JSQViewer.Infrastructure.Database
 {
     public sealed class PostgresRecordingDataSourceReader : IRecordingDataReader
     {
-        private const string RecordingSql = @"
+        internal const string RecordingSql = @"
 SELECT r.post_id,
        p.name AS post_name,
        r.title,
@@ -28,19 +28,28 @@ SELECT r.post_id,
        to_jsonb(r) ->> 'modification' AS modification,
        to_jsonb(r) ->> 'climate_class' AS climate_class,
        to_jsonb(r) ->> 'temperature_class' AS temperature_class,
-       to_jsonb(r) ->> 'notes' AS notes
+       to_jsonb(r) ->> 'notes' AS notes,
+       r.climate_mode,
+       (SELECT avg(t.v) FROM (
+           SELECT a.avg_value v FROM recording_aggregates a
+           WHERE a.recording_id = r.id AND a.channel_id = 'T-sie' AND a.avg_value IS NOT NULL
+           ORDER BY a.window_start LIMIT 5) t) AS t_sie_avg,
+       (SELECT avg(u.v) FROM (
+           SELECT a.avg_value v FROM recording_aggregates a
+           WHERE a.recording_id = r.id AND a.channel_id = 'UR-sie' AND a.avg_value IS NOT NULL
+           ORDER BY a.window_start LIMIT 5) u) AS ur_sie_avg
 FROM recordings r
 JOIN posts p ON p.id = r.post_id
 WHERE r.id = @id";
 
-        private const string ChannelsSql = @"
+        internal const string ChannelsSql = @"
 SELECT channel_id, alias, unit
 FROM channel_config
-WHERE post_id = @post
+WHERE (post_id = @post OR is_common)
   AND NOT is_hidden
 ORDER BY channel_id";
 
-        private const string RowsSql = @"
+        internal const string RowsSql = @"
 SELECT a.channel_id, a.window_start, a.avg_value
 FROM recording_aggregates a
 WHERE a.recording_id = @id
@@ -50,8 +59,8 @@ WHERE a.recording_id = @id
         SELECT 1
         FROM recordings r
         JOIN channel_config cc
-          ON cc.post_id = r.post_id
-         AND cc.channel_id = a.channel_id
+          ON cc.channel_id = a.channel_id
+         AND (cc.post_id = r.post_id OR cc.is_common)
         WHERE r.id = @id
           AND NOT cc.is_hidden)
   AND NOT EXISTS (
@@ -62,6 +71,8 @@ WHERE a.recording_id = @id
           AND e.window_start = a.window_start
           AND e.restored_at IS NULL)
 ORDER BY a.window_start";
+
+        private static readonly ClimateModeResolver ClimateModeResolverInstance = new ClimateModeResolver();
 
         private readonly NpgsqlConnectionFactory _connectionFactory;
         private readonly IDatabaseSettingsRepository _settingsRepository;
@@ -175,6 +186,15 @@ ORDER BY a.window_start";
                     AddMetadata(metadata, "Климатический класс", reader, 13);
                     AddMetadata(metadata, "Температурный класс", reader, 14);
                     AddMetadata(metadata, "Примечания", reader, 15);
+
+                    ClimateModeInfo climateMode = ClimateModeResolverInstance.Resolve(
+                        ReadString(reader, 16),
+                        ReadNullableDouble(reader, 17),
+                        ReadNullableDouble(reader, 18));
+                    if (climateMode.IsKnown)
+                    {
+                        metadata["Климатический режим"] = climateMode.Label;
+                    }
 
                     return new RecordingSnapshot
                     {
@@ -305,6 +325,13 @@ ORDER BY a.window_start";
 
             DateTime timestamp = Convert.ToDateTime(value, CultureInfo.InvariantCulture);
             return timestamp.Kind == DateTimeKind.Utc ? timestamp.ToLocalTime() : timestamp;
+        }
+
+        private static double? ReadNullableDouble(IDataRecord record, int index)
+        {
+            return record.IsDBNull(index)
+                ? (double?)null
+                : Convert.ToDouble(record.GetValue(index), CultureInfo.InvariantCulture);
         }
 
         private static string ReadString(IDataRecord record, int index)
