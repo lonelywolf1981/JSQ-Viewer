@@ -87,6 +87,7 @@ viewer_settings.json
 ui_state.json
 saved_presets/
 saved_orders/
+database_settings.json
 
 # Local assets/artifacts that should stay untracked
 img.png
