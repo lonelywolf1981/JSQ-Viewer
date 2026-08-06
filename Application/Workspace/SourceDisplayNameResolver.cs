@@ -84,7 +84,13 @@ namespace JSQViewer.Application.Workspace
                 return name;
             }
 
-            return ResolveBaseName(data, sourceRoot, true);
+            IReadOnlyList<string> orderedRoots = GetOrderedRoots(data);
+            bool isOnlyWorkspaceRoot = orderedRoots.Count == 1
+                && string.Equals(
+                    orderedRoots[0],
+                    sourceRoot,
+                    StringComparison.OrdinalIgnoreCase);
+            return ResolveBaseName(data, sourceRoot, isOnlyWorkspaceRoot);
         }
 
         private static void AppendRoots(

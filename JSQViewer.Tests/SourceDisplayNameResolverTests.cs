@@ -180,7 +180,8 @@ namespace JSQViewer.Tests
         [TestMethod]
         public void Resolve_RootOutsideWorkspaceUsesSafeSingleRootFallback()
         {
-            TestData data = CreateData(@"C:\workspace\one.dbf");
+            TestData data = CreateData("jsqdb://recording/current");
+            data.Meta["Название"] = "Current recording";
 
             string result = new SourceDisplayNameResolver().Resolve(
                 data,
