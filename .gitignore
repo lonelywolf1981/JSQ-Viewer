@@ -44,6 +44,7 @@ ipch/
 
 # Файлы .NET
 *.dll
+!lib/npgsql/*.dll
 *.exe
 *.exe.config
 [Oo]bj/

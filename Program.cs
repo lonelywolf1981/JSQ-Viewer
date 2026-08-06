@@ -4,6 +4,7 @@ using System.Windows.Forms;
 using JSQViewer.Application.Abstractions;
 using JSQViewer.Application.Channels;
 using JSQViewer.Application.Charting;
+using JSQViewer.Application.Database;
 using JSQViewer.Application.UiState;
 using JSQViewer.Application.Charting.UseCases;
 using JSQViewer.Application.Exporting;
@@ -12,6 +13,7 @@ using JSQViewer.Application.Workspace;
 using JSQViewer.Core;
 using JSQViewer.Infrastructure.Composition;
 using JSQViewer.Infrastructure.Cache;
+using JSQViewer.Infrastructure.Database;
 using JSQViewer.Infrastructure.Exporting;
 using JSQViewer.Infrastructure.Persistence;
 using JSQViewer.Infrastructure.Platform;
@@ -31,8 +33,14 @@ namespace JSQViewer
         private static IMainFormNotificationService _mainFormNotificationService;
 
         [STAThread]
-        private static void Main()
+        private static void Main(string[] args)
         {
+            if (args != null && args.Length > 0 && string.Equals(args[0], "--dbcheck", StringComparison.OrdinalIgnoreCase))
+            {
+                RunDatabaseCheck();
+                return;
+            }
+
             IAppPaths appPaths = new ApplicationPaths();
             IFileSystem fileSystem = new FileSystemAdapter();
             ILocalizationService localizationService = new DictionaryLocalizationService();
@@ -96,6 +104,18 @@ namespace JSQViewer
                 viewerSettingsSanitizer,
                 workspaceLoadOrchestrationService,
                 loadWorkspaceDataUseCase));
+        }
+
+        private static void RunDatabaseCheck()
+        {
+            DatabaseConnectionSettings settings = DatabaseConnectionSettings.CreateDefault();
+            string password = Environment.GetEnvironmentVariable("JSQ_DB_PASSWORD") ?? string.Empty;
+            string error = new NpgsqlConnectionFactory().TestConnection(settings, password);
+            string message = error == null
+                ? "Подключение выполнено: " + settings.host + ":" + settings.port + "/" + settings.database
+                : "Не удалось подключиться: " + error;
+            MessageBox.Show(message, "JSQViewer --dbcheck", MessageBoxButtons.OK,
+                error == null ? MessageBoxIcon.Information : MessageBoxIcon.Error);
         }
 
         private static void OnThreadException(object sender, ThreadExceptionEventArgs e)
