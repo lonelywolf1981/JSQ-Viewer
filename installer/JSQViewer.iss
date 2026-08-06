@@ -1,5 +1,5 @@
 #define MyAppName "JSQ Viewer"
-#define MyAppVersion "0.4.0"
+#define MyAppVersion "0.5.0"
 #define MyAppPublisher "JSQ Laboratory"
 #define MyAppExeName "JSQViewer.exe"
 #define MyAppIcon "..\app.ico"
