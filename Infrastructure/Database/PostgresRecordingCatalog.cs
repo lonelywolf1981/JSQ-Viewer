@@ -40,7 +40,7 @@ namespace JSQViewer.Infrastructure.Database
                     else if (name == "from") command.Parameters.AddWithValue(name, safeFilter.From.Value);
                     else if (name == "to") command.Parameters.AddWithValue(name, safeFilter.To.Value);
                     else if (name == "experiment_type") command.Parameters.AddWithValue(name, safeFilter.ExperimentType.Trim());
-                    else if (name == "title") command.Parameters.AddWithValue(name, "%" + safeFilter.TitleContains.Trim() + "%");
+                    else if (name == "title") command.Parameters.AddWithValue(name, "%" + EscapeLikePattern(safeFilter.TitleContains.Trim()) + "%");
                     else if (name == "limit") command.Parameters.AddWithValue(name, safeFilter.Limit <= 0 ? 500 : safeFilter.Limit);
                 }
 
@@ -109,6 +109,19 @@ namespace JSQViewer.Infrastructure.Database
             NpgsqlConnection connection = _connectionFactory.Create(settings, _settingsRepository.LoadPassword());
             connection.Open();
             return connection;
+        }
+
+        internal static string EscapeLikePattern(string value)
+        {
+            if (value == null)
+            {
+                return string.Empty;
+            }
+
+            return value
+                .Replace("\\", "\\\\")
+                .Replace("%", "\\%")
+                .Replace("_", "\\_");
         }
 
         private static string ReadString(IDataRecord record, int index)

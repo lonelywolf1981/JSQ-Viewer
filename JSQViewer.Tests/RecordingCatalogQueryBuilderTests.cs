@@ -47,6 +47,17 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Build_WithTitleFilter_SpecifiesEscapeCharacter()
+        {
+            var parameters = new List<string>();
+            var filter = new RecordingCatalogFilter { TitleContains = "LIDER" };
+
+            string sql = new RecordingCatalogQueryBuilder().Build(filter, parameters);
+
+            StringAssert.Contains(sql, "r.title ILIKE @title ESCAPE '\\'");
+        }
+
+        [TestMethod]
         public void Build_IgnoresBlankFilterValues()
         {
             var parameters = new List<string>();

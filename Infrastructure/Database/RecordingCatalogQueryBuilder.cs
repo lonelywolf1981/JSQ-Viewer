@@ -39,7 +39,7 @@ namespace JSQViewer.Infrastructure.Database
 
             if (!string.IsNullOrWhiteSpace(filter.TitleContains))
             {
-                conditions.Add("r.title ILIKE @title");
+                conditions.Add("r.title ILIKE @title ESCAPE '\\'");
                 parameterNames.Add("title");
             }
 
