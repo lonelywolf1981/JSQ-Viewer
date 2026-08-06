@@ -1,13 +1,7 @@
 using System.Collections.Generic;
-using System.IO;
-using System.Reflection;
-using System.Text;
-using JSQViewer.Application.Abstractions;
 using JSQViewer.Application.Database;
-using JSQViewer.Application.Workspace;
 using JSQViewer.Application.Workspace.Ports;
 using JSQViewer.Core;
-using JSQViewer.UI;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace JSQViewer.Tests
@@ -43,87 +37,6 @@ namespace JSQViewer.Tests
             Assert.IsTrue(RecordingSourceRef.TryParse("jsqdb://recording/abc", out recordingId));
             Assert.AreEqual("abc", recordingId);
             Assert.IsFalse(RecordingSourceRef.IsRecordingSource(@"C:\data ; jsqdb://recording/abc"));
-        }
-
-        [TestMethod]
-        public void TryGetSingleLiveRecordingId_SingleCanonicalRecordingSource_ReturnsId()
-        {
-            string recordingId;
-
-            bool result = InvokeTryGetSingleLiveRecordingId("jsqdb://recording/abc", out recordingId);
-
-            Assert.IsTrue(result);
-            Assert.AreEqual("abc", recordingId);
-        }
-
-        [TestMethod]
-        public void TryGetSingleLiveRecordingId_TwoRecordingSources_ReturnsFalse()
-        {
-            string recordingId;
-
-            bool result = InvokeTryGetSingleLiveRecordingId(
-                "jsqdb://recording/abc ; jsqdb://recording/def",
-                out recordingId);
-
-            Assert.IsFalse(result);
-            Assert.IsNull(recordingId);
-        }
-
-        [TestMethod]
-        public void TryGetSingleLiveRecordingId_FolderAndRecordingSource_ReturnsFalse()
-        {
-            string recordingId;
-
-            bool result = InvokeTryGetSingleLiveRecordingId(
-                @"C:\data ; jsqdb://recording/abc",
-                out recordingId);
-
-            Assert.IsFalse(result);
-            Assert.IsNull(recordingId);
-        }
-
-        [TestMethod]
-        public void TryGetSingleLiveRecordingId_NonCanonicalSingleSource_ReturnsFalse()
-        {
-            string recordingId;
-
-            bool result = InvokeTryGetSingleLiveRecordingId(@"C:\data", out recordingId);
-
-            Assert.IsFalse(result);
-            Assert.IsNull(recordingId);
-        }
-
-        private static bool InvokeTryGetSingleLiveRecordingId(string spec, out string recordingId)
-        {
-            MethodInfo method = typeof(MainForm).GetMethod(
-                "TryGetSingleLiveRecordingId",
-                BindingFlags.NonPublic | BindingFlags.Static);
-            Assert.IsNotNull(method, "TryGetSingleLiveRecordingId должен быть private static helper MainForm.");
-
-            var service = new WorkspaceLoadOrchestrationService(
-                new WorkspaceFolderSpecParser(),
-                new NullFileSystem());
-            object[] args = { service, spec, null };
-            bool result = (bool)method.Invoke(null, args);
-            recordingId = (string)args[2];
-            return result;
-        }
-
-        private sealed class NullFileSystem : IFileSystem
-        {
-            public bool DirectoryExists(string path) => false;
-
-            public bool FileExists(string path) => false;
-
-            public string[] GetFiles(string path, string searchPattern, SearchOption searchOption) => new string[0];
-
-            public System.DateTime GetLastWriteTime(string path) => System.DateTime.MinValue;
-
-            public void WriteAllBytes(string path, byte[] contents) { }
-
-            public void CreateDirectory(string path) { }
-
-            public void AppendAllText(string path, string contents, Encoding encoding) { }
         }
 
         private sealed class GrowingRecordingReader : IRecordingDataReader

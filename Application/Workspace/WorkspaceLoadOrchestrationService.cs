@@ -135,6 +135,27 @@ namespace JSQViewer.Application.Workspace
                 _parser.Join(combined));
         }
 
+        public bool TryGetSingleRecordingId(string spec, out string recordingId)
+        {
+            recordingId = null;
+
+            IReadOnlyList<string> sources = _parser.Parse(spec);
+            if (sources.Count != 1)
+            {
+                return false;
+            }
+
+            string parsedId;
+            if (!RecordingSourceRef.TryParse(sources[0], out parsedId)
+                || !string.Equals(sources[0], RecordingSourceRef.Build(parsedId), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            recordingId = parsedId;
+            return true;
+        }
+
         public string BuildWorkspaceKey(IEnumerable<string> folders)
         {
             return _parser.BuildWorkspaceKey(folders);

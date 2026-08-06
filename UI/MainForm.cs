@@ -792,7 +792,9 @@ namespace JSQViewer.UI
                 if (sw == null) continue;
                 if (sw.Form != null && !sw.Form.IsDisposed)
                 {
-                    string sourceTitle = sw.ViewModel == null ? sw.SourceRoot : sw.ViewModel.Title;
+                    string sourceTitle = sw.ViewModel == null
+                        ? _sourceDisplayNameResolver.Resolve(_viewerSession.Data, sw.SourceRoot)
+                        : sw.ViewModel.Title;
                     sw.Form.Text = string.Format(Loc.Get("ChannelsForSource"), sourceTitle);
                 }
                 if (sw.SelectedOnlyCheck != null) sw.SelectedOnlyCheck.Text = Loc.Get("SelectedOnly");
@@ -1017,19 +1019,24 @@ namespace JSQViewer.UI
             ApplyChartWindowTitles();
         }
 
-        private string GetWorkspaceDisplayTitle()
+        private string GetWorkspaceTitleFallback()
         {
-            return _workspaceTitleBuilder.Build(
+            return string.IsNullOrWhiteSpace(_viewerSession.Folder)
+                ? Loc.Get("AppTitle")
+                : _viewerSession.Folder;
+        }
+
+        private string BuildChartWindowCaption()
+        {
+            return _workspaceTitleBuilder.BuildCaption(
                 _viewerSession.Data,
-                _viewerSession.Folder ?? Loc.Get("AppTitle"));
+                GetWorkspaceTitleFallback(),
+                Loc.Get("ChartWindowTitle"));
         }
 
         private void ApplyChartWindowTitles()
         {
-            string title = _workspaceTitleBuilder.BuildCaption(
-                _viewerSession.Data,
-                _viewerSession.Folder ?? Loc.Get("AppTitle"),
-                Loc.Get("ChartWindowTitle"));
+            string title = BuildChartWindowCaption();
             if (_chartHostForm != null && !_chartHostForm.IsDisposed)
             {
                 _chartHostForm.Text = title;
@@ -1578,10 +1585,7 @@ namespace JSQViewer.UI
             bool overlayMode = IsRelativeXAxisModeActive();
 
             var form = new Form();
-            form.Text = _workspaceTitleBuilder.BuildCaption(
-                _viewerSession.Data,
-                _viewerSession.Folder ?? Loc.Get("AppTitle"),
-                Loc.Get("ChartWindowTitle"));
+            form.Text = BuildChartWindowCaption();
             form.Width = 1200;
             form.Height = 700;
             form.StartPosition = FormStartPosition.CenterScreen;
@@ -2150,18 +2154,19 @@ namespace JSQViewer.UI
             }
             finally
             {
-                if (!IsDisposed && generation == _loadGeneration)
-                {
-                    _workspaceLoadRollbackCoordinator.RestoreAfterFailure(
-                        loadSucceeded,
-                        generation == _loadGeneration,
-                        previousData,
-                        previousSessionFolder,
-                        _viewerSession.Data,
-                        _viewerSession.Folder,
-                        () => _folderBox.Text = previousSourceText,
-                        () => RestoreLiveRefreshState(previousLiveRefreshState));
+                bool isCurrentGeneration = !IsDisposed && generation == _loadGeneration;
+                _workspaceLoadRollbackCoordinator.RestoreAfterFailure(
+                    loadSucceeded,
+                    isCurrentGeneration,
+                    previousData,
+                    previousSessionFolder,
+                    _viewerSession.Data,
+                    _viewerSession.Folder,
+                    () => _folderBox.Text = previousSourceText,
+                    () => RestoreLiveRefreshState(previousLiveRefreshState));
 
+                if (isCurrentGeneration)
+                {
                     Cursor = Cursors.Default;
                     SetBusy(false, null);
                 }
@@ -2190,40 +2195,12 @@ namespace JSQViewer.UI
             return string.Empty;
         }
 
-        private static bool TryGetSingleLiveRecordingId(
-            WorkspaceLoadOrchestrationService service,
-            string spec,
-            out string recordingId)
-        {
-            recordingId = null;
-            if (service == null)
-            {
-                return false;
-            }
-
-            IReadOnlyList<string> sources = service.ParseSpec(spec);
-            if (sources.Count != 1)
-            {
-                return false;
-            }
-
-            string parsedId;
-            if (!RecordingSourceRef.TryParse(sources[0], out parsedId)
-                || !string.Equals(sources[0], RecordingSourceRef.Build(parsedId), StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            recordingId = parsedId;
-            return true;
-        }
-
         private void UpdateLiveRefreshState(string spec)
         {
             StopLiveRefresh();
 
             string recordingId;
-            if (!TryGetSingleLiveRecordingId(_workspaceLoadOrchestrationService, spec, out recordingId))
+            if (!_workspaceLoadOrchestrationService.TryGetSingleRecordingId(spec, out recordingId))
             {
                 return;
             }
@@ -4972,7 +4949,6 @@ namespace JSQViewer.UI
             public ChannelItem(string code, string label, string unit) { Code = code; Label = label; Unit = unit ?? string.Empty; }
             public override string ToString() { return Label; }
         }
-
 
         private sealed class PresetItem
         {

@@ -298,6 +298,58 @@ namespace JSQViewer.Tests
             CollectionAssert.AreEqual(new[] { "jsqdb://recording/a" }, result.Sources.ToArray());
         }
 
+        [TestMethod]
+        public void TryGetSingleRecordingId_SingleCanonicalRecordingSource_ReturnsId()
+        {
+            WorkspaceLoadOrchestrationService service = CreateService(new FakeFileSystem());
+
+            string recordingId;
+            bool result = service.TryGetSingleRecordingId("jsqdb://recording/abc", out recordingId);
+
+            Assert.IsTrue(result);
+            Assert.AreEqual("abc", recordingId);
+        }
+
+        [TestMethod]
+        public void TryGetSingleRecordingId_TwoRecordingSources_ReturnsFalse()
+        {
+            WorkspaceLoadOrchestrationService service = CreateService(new FakeFileSystem());
+
+            string recordingId;
+            bool result = service.TryGetSingleRecordingId(
+                "jsqdb://recording/abc ; jsqdb://recording/def",
+                out recordingId);
+
+            Assert.IsFalse(result);
+            Assert.IsNull(recordingId);
+        }
+
+        [TestMethod]
+        public void TryGetSingleRecordingId_FolderAndRecordingSource_ReturnsFalse()
+        {
+            WorkspaceLoadOrchestrationService service = CreateService(new FakeFileSystem());
+
+            string recordingId;
+            bool result = service.TryGetSingleRecordingId(
+                @"C:\data ; jsqdb://recording/abc",
+                out recordingId);
+
+            Assert.IsFalse(result);
+            Assert.IsNull(recordingId);
+        }
+
+        [TestMethod]
+        public void TryGetSingleRecordingId_NonRecordingSingleSource_ReturnsFalse()
+        {
+            WorkspaceLoadOrchestrationService service = CreateService(new FakeFileSystem());
+
+            string recordingId;
+            bool result = service.TryGetSingleRecordingId(@"C:\data", out recordingId);
+
+            Assert.IsFalse(result);
+            Assert.IsNull(recordingId);
+        }
+
         private static WorkspaceLoadOrchestrationService CreateService(IFileSystem fileSystem)
         {
             return new WorkspaceLoadOrchestrationService(new WorkspaceFolderSpecParser(), fileSystem);
