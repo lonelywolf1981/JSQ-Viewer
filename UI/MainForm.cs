@@ -14,6 +14,7 @@ using JSQViewer.Application.Channels;
 using JSQViewer.Application.Charting;
 using JSQViewer.Application.UiState;
 using JSQViewer.Application.Charting.UseCases;
+using JSQViewer.Application.Database;
 using JSQViewer.Application.Exporting;
 using JSQViewer.Application.Session;
 using JSQViewer.Application.Workspace;
@@ -152,8 +153,13 @@ namespace JSQViewer.UI
         private readonly LoadWorkspaceDataUseCase _loadWorkspaceDataUseCase;
         private readonly IRecordingCatalog _recordingCatalog;
         private readonly IDatabaseSettingsRepository _databaseSettingsRepository;
+        private readonly IRecordingDataReader _recordingDataReader;
+        private readonly Timer _liveRefreshTimer;
         private readonly GetRecordingInfoUseCase _getRecordingInfoUseCase;
         private readonly RemoveLoadedSourceUseCase _removeLoadedSourceUseCase;
+        private string _liveRecordingId;
+        private bool _liveRefreshInProgress;
+        private bool _liveRefreshConnectionLost;
         private WorkspaceLayoutState _workspaceLayoutState;
         private string _currentWorkspaceKey;
         private ViewerSettingsModel _viewerSettings;
@@ -186,7 +192,8 @@ namespace JSQViewer.UI
             WorkspaceLoadOrchestrationService workspaceLoadOrchestrationService,
             LoadWorkspaceDataUseCase loadWorkspaceDataUseCase,
             IRecordingCatalog recordingCatalog,
-            IDatabaseSettingsRepository databaseSettingsRepository)
+            IDatabaseSettingsRepository databaseSettingsRepository,
+            IRecordingDataReader recordingDataReader)
         {
             if (appPaths == null) throw new ArgumentNullException(nameof(appPaths));
             if (fileSystem == null) throw new ArgumentNullException(nameof(fileSystem));
@@ -211,6 +218,7 @@ namespace JSQViewer.UI
             if (loadWorkspaceDataUseCase == null) throw new ArgumentNullException(nameof(loadWorkspaceDataUseCase));
             if (recordingCatalog == null) throw new ArgumentNullException(nameof(recordingCatalog));
             if (databaseSettingsRepository == null) throw new ArgumentNullException(nameof(databaseSettingsRepository));
+            if (recordingDataReader == null) throw new ArgumentNullException(nameof(recordingDataReader));
 
             _appPaths = appPaths;
             _fileSystem = fileSystem;
@@ -235,6 +243,10 @@ namespace JSQViewer.UI
             _loadWorkspaceDataUseCase = loadWorkspaceDataUseCase;
             _recordingCatalog = recordingCatalog;
             _databaseSettingsRepository = databaseSettingsRepository;
+            _recordingDataReader = recordingDataReader;
+            _liveRefreshTimer = new Timer();
+            _liveRefreshTimer.Enabled = false;
+            _liveRefreshTimer.Tick += LiveRefreshTimerOnTick;
             _removeLoadedSourceUseCase = new RemoveLoadedSourceUseCase();
             _getRecordingInfoUseCase = new GetRecordingInfoUseCase(_timestampRangeService, new ProvaMetadataReader());
             _viewerSettings = _viewerSettingsRepository.Load();
@@ -466,7 +478,7 @@ namespace JSQViewer.UI
             ReloadOrders();
             FormClosing += OnFormClosingSaveOrder;
             FormClosing += OnFormClosingSaveUiState;
-            FormClosing += delegate { CloseSourceChannelWindows(); if (_chartHostForm != null && !_chartHostForm.IsDisposed) _chartHostForm.Close(); };
+            FormClosing += delegate { StopLiveRefresh(); CloseSourceChannelWindows(); if (_chartHostForm != null && !_chartHostForm.IsDisposed) _chartHostForm.Close(); };
             KeyDown += MainFormOnKeyDown;
             Loc.LanguageChanged += ApplyLocalization;
             LoadUiState();
@@ -484,6 +496,9 @@ namespace JSQViewer.UI
             if (disposing)
             {
                 Loc.LanguageChanged -= ApplyLocalization;
+                _liveRefreshTimer.Stop();
+                _liveRefreshTimer.Tick -= LiveRefreshTimerOnTick;
+                _liveRefreshTimer.Dispose();
             }
             base.Dispose(disposing);
         }
@@ -1021,6 +1036,7 @@ namespace JSQViewer.UI
         private void CloseAllButtonOnClick(object sender, EventArgs e)
         {
             _loadGeneration++;
+            StopLiveRefresh();
             _folderBox.Text = string.Empty;
             _channelWorkspacePresenter.ApplyCheckedCodes(null);
             _checkedCodes.Clear();
@@ -2011,8 +2027,16 @@ namespace JSQViewer.UI
 
         private async void LoadFolder(string folder, bool addToRecent, bool preserveSelection = false, bool? preferredOverlayMode = null, bool preserveSourceWindowsLayout = false)
         {
-            int generation = 0;
-            bool hasGeneration = false;
+            LiveRefreshState previousLiveRefreshState = CaptureLiveRefreshState();
+            TestData previousData = _viewerSession.Data;
+            string previousSessionFolder = _viewerSession.Folder;
+            string previousSourceText = GetPreviousSessionSourceText(
+                previousSessionFolder,
+                previousData,
+                previousLiveRefreshState.RecordingId);
+            int generation = ++_loadGeneration;
+            bool loadSucceeded = false;
+            StopLiveRefresh();
             try
             {
                 if (!IsValidFolderSpec(folder))
@@ -2020,8 +2044,6 @@ namespace JSQViewer.UI
                     NotifyError(Loc.Get("SelectFolder"));
                     return;
                 }
-                generation = ++_loadGeneration;
-                hasGeneration = true;
                 List<string> folders = ParseFolderSpec(folder);
 
                 string spec = JoinFolderSpec(folders);
@@ -2074,10 +2096,12 @@ namespace JSQViewer.UI
                     AddRecentFolder(spec);
                 }
                 NotifySuccess(string.Format(Loc.Get("LoadedTest"), data.RowCount));
+                UpdateLiveRefreshState(spec);
+                loadSucceeded = true;
             }
             catch (Exception ex)
             {
-                if (IsDisposed || (hasGeneration && generation != _loadGeneration))
+                if (IsDisposed || generation != _loadGeneration)
                 {
                     return;
                 }
@@ -2085,12 +2109,223 @@ namespace JSQViewer.UI
             }
             finally
             {
-                if (!IsDisposed && (!hasGeneration || generation == _loadGeneration))
+                if (!IsDisposed && generation == _loadGeneration)
                 {
+                    if (!loadSucceeded
+                        && ReferenceEquals(_viewerSession.Data, previousData)
+                        && string.Equals(_viewerSession.Folder, previousSessionFolder, StringComparison.Ordinal))
+                    {
+                        _folderBox.Text = previousSourceText;
+                        RestoreLiveRefreshState(previousLiveRefreshState);
+                    }
+
                     Cursor = Cursors.Default;
                     SetBusy(false, null);
                 }
             }
+        }
+
+        private static string GetPreviousSessionSourceText(
+            string sessionFolder,
+            TestData sessionData,
+            string liveRecordingId)
+        {
+            if (!string.IsNullOrWhiteSpace(sessionFolder))
+            {
+                return sessionFolder;
+            }
+
+            if (sessionData != null && !string.IsNullOrWhiteSpace(liveRecordingId))
+            {
+                string recordingSource = RecordingSourceRef.Build(liveRecordingId);
+                if (string.Equals(sessionData.Root, recordingSource, StringComparison.OrdinalIgnoreCase))
+                {
+                    return recordingSource;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private void UpdateLiveRefreshState(string spec)
+        {
+            StopLiveRefresh();
+
+            IReadOnlyList<string> sources = _workspaceLoadOrchestrationService.ParseSpec(spec);
+            if (sources.Count != 1)
+            {
+                return;
+            }
+
+            string recordingId;
+            if (!RecordingSourceRef.TryParse(sources[0], out recordingId)
+                || !string.Equals(sources[0], RecordingSourceRef.Build(recordingId), StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            _liveRecordingId = recordingId;
+            _liveRefreshTimer.Interval = LoadLiveRefreshInterval();
+            try
+            {
+                string status = _recordingCatalog.GetStatus(recordingId);
+                if (IsRecordingStatus(status))
+                {
+                    _liveRefreshTimer.Start();
+                    NotifySuccess(Loc.Get("RecordingLiveUpdating"));
+                    return;
+                }
+
+                StopLiveRefresh();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Check recording live refresh status failed.", ex);
+                _liveRefreshConnectionLost = true;
+                _liveRefreshTimer.Start();
+                NotifyError(Loc.Get("RecordingConnectionLost"));
+            }
+        }
+
+        private int LoadLiveRefreshInterval()
+        {
+            int refreshSeconds = DatabaseConnectionSettings.CreateDefault().refresh_interval_seconds;
+            try
+            {
+                DatabaseConnectionSettings settings = _databaseSettingsRepository.Load();
+                if (settings != null && settings.refresh_interval_seconds > 0)
+                {
+                    refreshSeconds = settings.refresh_interval_seconds;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Load recording live refresh interval failed.", ex);
+            }
+
+            long interval = (long)refreshSeconds * 1000L;
+            return (int)Math.Max(1L, Math.Min(int.MaxValue, interval));
+        }
+
+        private async void LiveRefreshTimerOnTick(object sender, EventArgs e)
+        {
+            if (_liveRefreshInProgress || string.IsNullOrEmpty(_liveRecordingId) || IsDisposed || Disposing)
+            {
+                return;
+            }
+
+            _liveRefreshInProgress = true;
+            string recordingId = _liveRecordingId;
+            int generation = _loadGeneration;
+            TestData currentData = _viewerSession.Data;
+            TestData expectedSessionData = currentData;
+            try
+            {
+                TestData updatedData = await Task.Run(
+                    () => _recordingDataReader.AppendNewWindows(currentData, recordingId));
+                if (!IsCurrentLiveRefresh(recordingId, generation, currentData))
+                {
+                    return;
+                }
+
+                if (updatedData != null && !ReferenceEquals(updatedData, currentData))
+                {
+                    _viewerSession.SetData(_folderBox.Text, updatedData);
+                    BindLoadedData(updatedData, true);
+                    expectedSessionData = updatedData;
+                }
+
+                string status = await Task.Run(() => _recordingCatalog.GetStatus(recordingId));
+                if (!IsCurrentLiveRefresh(recordingId, generation, expectedSessionData))
+                {
+                    return;
+                }
+
+                if (!IsRecordingStatus(status))
+                {
+                    StopLiveRefresh();
+                    return;
+                }
+
+                if (_liveRefreshConnectionLost)
+                {
+                    _liveRefreshConnectionLost = false;
+                    NotifySuccess(Loc.Get("RecordingConnectionRestored"));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Live recording refresh failed.", ex);
+                if (IsCurrentLiveRefresh(recordingId, generation, expectedSessionData) && !_liveRefreshConnectionLost)
+                {
+                    _liveRefreshConnectionLost = true;
+                    NotifyError(Loc.Get("RecordingConnectionLost"));
+                }
+            }
+            finally
+            {
+                _liveRefreshInProgress = false;
+            }
+        }
+
+        private bool IsCurrentLiveRefresh(string recordingId, int generation, TestData expectedData)
+        {
+            return !IsDisposed
+                && !Disposing
+                && generation == _loadGeneration
+                && string.Equals(_liveRecordingId, recordingId, StringComparison.Ordinal)
+                && (expectedData == null || ReferenceEquals(_viewerSession.Data, expectedData));
+        }
+
+        private static bool IsRecordingStatus(string status)
+        {
+            return string.Equals(status, "recording", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void StopLiveRefresh()
+        {
+            _liveRefreshTimer.Stop();
+            _liveRecordingId = null;
+            _liveRefreshConnectionLost = false;
+        }
+
+        private LiveRefreshState CaptureLiveRefreshState()
+        {
+            return new LiveRefreshState
+            {
+                Enabled = _liveRefreshTimer.Enabled,
+                Interval = _liveRefreshTimer.Interval,
+                RecordingId = _liveRecordingId,
+                ConnectionLost = _liveRefreshConnectionLost
+            };
+        }
+
+        private void RestoreLiveRefreshState(LiveRefreshState state)
+        {
+            StopLiveRefresh();
+            if (state == null)
+            {
+                return;
+            }
+
+            _liveRefreshTimer.Interval = state.Interval;
+            _liveRecordingId = state.RecordingId;
+            _liveRefreshConnectionLost = state.ConnectionLost;
+            if (state.Enabled && !string.IsNullOrEmpty(state.RecordingId))
+            {
+                _liveRefreshTimer.Start();
+            }
+        }
+
+        private sealed class LiveRefreshState
+        {
+            public bool Enabled { get; set; }
+
+            public int Interval { get; set; }
+
+            public string RecordingId { get; set; }
+
+            public bool ConnectionLost { get; set; }
         }
 
         private List<string> ParseFolderSpec(string spec)

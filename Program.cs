@@ -113,7 +113,8 @@ namespace JSQViewer
                 workspaceLoadOrchestrationService,
                 loadWorkspaceDataUseCase,
                 recordingCatalog,
-                databaseSettingsRepository));
+                databaseSettingsRepository,
+                recordingDataReader));
         }
 
         private static void RunDatabaseCheck()
