@@ -30,15 +30,13 @@ namespace JSQViewer.Presentation.WinForms.Presenters
             _sharedSelectedOnly = selectedOnly;
         }
 
-        public bool BindRoots(IReadOnlyList<string> roots, string defaultSortMode, bool preserveExistingLayout)
+        public bool BindRoots(IReadOnlyList<string> roots, string defaultSortMode, bool preserveExistingLayout, WorkspaceLayoutState layoutState)
         {
             string[] incoming = roots == null ? new string[0] : roots.ToArray();
             bool canRefreshInPlace = preserveExistingLayout && HaveSameRoots(incoming);
+            var previousStates = new Dictionary<string, SourceWindowState>(_states, StringComparer.OrdinalIgnoreCase);
 
-            if (!canRefreshInPlace)
-            {
-                _states.Clear();
-            }
+            _states.Clear();
 
             _roots.Clear();
             _roots.AddRange(incoming);
@@ -46,23 +44,25 @@ namespace JSQViewer.Presentation.WinForms.Presenters
             for (int i = 0; i < _roots.Count; i++)
             {
                 string root = _roots[i];
-                SourceWindowState state;
-                if (!_states.TryGetValue(root, out state))
+                SourceWindowState state = null;
+                bool hasPrevious = preserveExistingLayout && previousStates.TryGetValue(root, out state);
+                if (!hasPrevious)
                 {
                     state = new SourceWindowState();
-                    _states[root] = state;
                 }
 
-                if (!canRefreshInPlace || string.IsNullOrWhiteSpace(state.SortMode))
+                WorkspaceSourceLayoutState sourceLayout = layoutState == null ? null : layoutState.GetSource(root);
+                if (string.IsNullOrWhiteSpace(state.SortMode))
                 {
                     state.SortMode = NormalizeSortMode(defaultSortMode);
                 }
-            }
 
-            var staleKeys = _states.Keys.Where(key => !_roots.Contains(key, StringComparer.OrdinalIgnoreCase)).ToList();
-            for (int i = 0; i < staleKeys.Count; i++)
-            {
-                _states.Remove(staleKeys[i]);
+                if (!hasPrevious)
+                {
+                    state.SelectedOrderKey = sourceLayout == null ? string.Empty : (sourceLayout.SelectedOrderKey ?? string.Empty);
+                }
+
+                _states[root] = state;
             }
 
             return canRefreshInPlace;
@@ -84,6 +84,26 @@ namespace JSQViewer.Presentation.WinForms.Presenters
             {
                 state.SortMode = NormalizeSortMode(sortMode);
             }
+        }
+
+        public void SetSelectedOrderKey(string sourceRoot, string selectedOrderKey)
+        {
+            SourceWindowState state;
+            if (_states.TryGetValue(sourceRoot ?? string.Empty, out state))
+            {
+                state.SelectedOrderKey = selectedOrderKey ?? string.Empty;
+            }
+        }
+
+        public string GetSelectedOrderKey(string sourceRoot)
+        {
+            SourceWindowState state;
+            if (_states.TryGetValue(sourceRoot ?? string.Empty, out state))
+            {
+                return state.SelectedOrderKey ?? string.Empty;
+            }
+
+            return string.Empty;
         }
 
         public void SetAllSortModes(string sortMode)
@@ -125,6 +145,7 @@ namespace JSQViewer.Presentation.WinForms.Presenters
                 BuildTitle(root),
                 _sharedFilterText,
                 sortMode,
+                GetSelectedOrderKey(root),
                 _sharedSelectedOnly,
                 items.Select(MapItem).ToArray());
         }
@@ -165,6 +186,8 @@ namespace JSQViewer.Presentation.WinForms.Presenters
         private sealed class SourceWindowState
         {
             public string SortMode { get; set; }
+
+            public string SelectedOrderKey { get; set; }
         }
     }
 }

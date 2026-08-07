@@ -11,6 +11,7 @@ namespace JSQViewer.Presentation.WinForms.Presenters
         private readonly ChannelWorkspaceModel _workspace = new ChannelWorkspaceModel();
         private readonly SourceWindowCoordinator _sourceWindowCoordinator = new SourceWindowCoordinator();
         private string _mainSortMode = "User";
+        private string _mainSelectedOrderKey = string.Empty;
 
         public int TotalChannelCount
         {
@@ -45,8 +46,15 @@ namespace JSQViewer.Presentation.WinForms.Presenters
 
         public SourceWindowRefreshPlan BindData(TestData data, IEnumerable<string> savedOrder, IEnumerable<string> preferredCheckedCodes, bool preserveSourceWindowsLayout)
         {
-            _workspace.Load(data, savedOrder, preferredCheckedCodes);
-            bool canRefreshInPlace = _sourceWindowCoordinator.BindRoots(_workspace.SourceRoots, _mainSortMode, preserveSourceWindowsLayout);
+            return BindData(data, savedOrder, preferredCheckedCodes, preserveSourceWindowsLayout, null);
+        }
+
+        public SourceWindowRefreshPlan BindData(TestData data, IEnumerable<string> savedOrder, IEnumerable<string> preferredCheckedCodes, bool preserveSourceWindowsLayout, WorkspaceLayoutState layoutState)
+        {
+            WorkspaceLayoutState effectiveLayout = BuildEffectiveLayoutState(layoutState, preserveSourceWindowsLayout);
+            _mainSelectedOrderKey = effectiveLayout.MainSelectedOrderKey ?? string.Empty;
+            _workspace.Load(data, savedOrder, preferredCheckedCodes, effectiveLayout);
+            bool canRefreshInPlace = _sourceWindowCoordinator.BindRoots(_workspace.SourceRoots, _mainSortMode, preserveSourceWindowsLayout, effectiveLayout);
             return new SourceWindowRefreshPlan(canRefreshInPlace, GetSourceWindows());
         }
 
@@ -120,6 +128,31 @@ namespace JSQViewer.Presentation.WinForms.Presenters
             _workspace.ApplyOrder(order);
         }
 
+        public void ApplySourceOrder(string sourceRoot, IEnumerable<string> order)
+        {
+            _workspace.ApplySourceOrder(sourceRoot, order);
+        }
+
+        public void SetMainSelectedOrderKey(string selectedOrderKey)
+        {
+            _mainSelectedOrderKey = selectedOrderKey ?? string.Empty;
+        }
+
+        public string GetMainSelectedOrderKey()
+        {
+            return _mainSelectedOrderKey ?? string.Empty;
+        }
+
+        public void SetSourceSelectedOrderKey(string sourceRoot, string selectedOrderKey)
+        {
+            _sourceWindowCoordinator.SetSelectedOrderKey(sourceRoot, selectedOrderKey);
+        }
+
+        public string GetSourceSelectedOrderKey(string sourceRoot)
+        {
+            return _sourceWindowCoordinator.GetSelectedOrderKey(sourceRoot);
+        }
+
         public IReadOnlyList<string> GetSelectedCodes()
         {
             return _workspace.GetSelectedCodes();
@@ -158,9 +191,58 @@ namespace JSQViewer.Presentation.WinForms.Presenters
             return _sourceWindowCoordinator.BuildWindows(_workspace);
         }
 
+        public WorkspaceLayoutState GetWorkspaceLayoutState()
+        {
+            var state = new WorkspaceLayoutState
+            {
+                MainSelectedOrderKey = _mainSelectedOrderKey ?? string.Empty,
+                MainOrder = _workspace.GetCurrentOrder().ToList()
+            };
+
+            foreach (string root in _workspace.SourceRoots)
+            {
+                state.Sources[root] = new WorkspaceSourceLayoutState
+                {
+                    SelectedOrderKey = _sourceWindowCoordinator.GetSelectedOrderKey(root),
+                    Order = _workspace.GetSourceOrder(root).ToList()
+                };
+            }
+
+            return state;
+        }
+
         private static string NormalizeSortMode(string sortMode)
         {
             return string.IsNullOrWhiteSpace(sortMode) ? "User" : sortMode.Trim();
+        }
+
+        private WorkspaceLayoutState BuildEffectiveLayoutState(WorkspaceLayoutState layoutState, bool preserveSourceWindowsLayout)
+        {
+            WorkspaceLayoutState effective = layoutState == null ? new WorkspaceLayoutState() : layoutState.Clone();
+            if (!preserveSourceWindowsLayout)
+            {
+                effective.EnsureInitialized();
+                return effective;
+            }
+
+            WorkspaceLayoutState current = GetWorkspaceLayoutState();
+            if (!string.IsNullOrWhiteSpace(current.MainSelectedOrderKey))
+            {
+                effective.MainSelectedOrderKey = current.MainSelectedOrderKey;
+            }
+
+            if (current.MainOrder.Count > 0)
+            {
+                effective.MainOrder = current.MainOrder.ToList();
+            }
+
+            foreach (KeyValuePair<string, WorkspaceSourceLayoutState> entry in current.Sources)
+            {
+                effective.Sources[entry.Key] = entry.Value == null ? new WorkspaceSourceLayoutState() : entry.Value.Clone();
+            }
+
+            effective.EnsureInitialized();
+            return effective;
         }
 
         private static ChannelListItemViewModel MapItem(ChannelListProjectionItem item)

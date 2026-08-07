@@ -9,6 +9,7 @@ namespace JSQViewer.Presentation.WinForms.ViewModels
             string title,
             string filterText,
             string sortMode,
+            string selectedOrderKey,
             bool selectedOnly,
             IReadOnlyList<ChannelListItemViewModel> items)
         {
@@ -16,6 +17,7 @@ namespace JSQViewer.Presentation.WinForms.ViewModels
             Title = title ?? string.Empty;
             FilterText = filterText ?? string.Empty;
             SortMode = string.IsNullOrWhiteSpace(sortMode) ? "User" : sortMode;
+            SelectedOrderKey = selectedOrderKey ?? string.Empty;
             SelectedOnly = selectedOnly;
             Items = items ?? new ChannelListItemViewModel[0];
         }
@@ -27,6 +29,8 @@ namespace JSQViewer.Presentation.WinForms.ViewModels
         public string FilterText { get; private set; }
 
         public string SortMode { get; private set; }
+
+        public string SelectedOrderKey { get; private set; }
 
         public bool SelectedOnly { get; private set; }
 

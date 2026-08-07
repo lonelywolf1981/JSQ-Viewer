@@ -95,7 +95,7 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
-        public void MoveSourceItem_UsesSourceLocalOrderUntilGlobalOrderIsApplied()
+        public void MoveSourceItem_KeepsSourceLocalOrderAfterGlobalOrderIsApplied()
         {
             object workspace = ChannelWorkspaceTestHarness.CreateWorkspaceModel();
 
@@ -118,10 +118,10 @@ namespace JSQViewer.Tests
             ChannelWorkspaceTestHarness.Invoke(
                 workspace,
                 "ApplyOrder",
-                new[] { "C:\\srcB::B-01", "C:\\srcA::A-02", "C:\\srcA::A-01" });
+                new[] { "C:\\srcB::B-01", "C:\\srcA::A-01", "C:\\srcA::A-02" });
 
             CollectionAssert.AreEqual(
-                new[] { "C:\\srcB::B-01", "C:\\srcA::A-02", "C:\\srcA::A-01" },
+                new[] { "C:\\srcB::B-01", "C:\\srcA::A-01", "C:\\srcA::A-02" },
                 ChannelWorkspaceTestHarness.ToCodeList(ChannelWorkspaceTestHarness.Invoke(workspace, "GetCurrentOrder")));
             CollectionAssert.AreEqual(
                 new[] { "C:\\srcA::A-02", "C:\\srcA::A-01" },
@@ -215,6 +215,111 @@ namespace JSQViewer.Tests
             Assert.IsTrue(ChannelWorkspaceTestHarness.GetBoolean(sourceB, "SelectedOnly"));
             Assert.AreEqual("Code", ChannelWorkspaceTestHarness.GetString(sourceB, "SortMode"));
         }
+
+        [TestMethod]
+        public void BindData_RestoresPerSourceSelectedOrderKeysIndependently()
+        {
+            object presenter = ChannelWorkspaceTestHarness.CreatePresenter();
+            object layout = ChannelWorkspaceTestHarness.CreateWorkspaceLayoutState(
+                "main-order",
+                new[] { "C:\\srcB::B-01", "C:\\srcA::A-01", "C:\\srcA::A-02" },
+                Tuple.Create("C:\\srcA", "src-a-order", new[] { "C:\\srcA::A-02", "C:\\srcA::A-01" }),
+                Tuple.Create("C:\\srcB", "src-b-order", new[] { "C:\\srcB::B-01" }));
+
+            ChannelWorkspaceTestHarness.Invoke(presenter, "Initialize", string.Empty, "User", false);
+            ChannelWorkspaceTestHarness.Invoke(
+                presenter,
+                "BindData",
+                ChannelWorkspaceTestData.CreateMultiSourceData(),
+                null,
+                null,
+                false,
+                layout);
+
+            Assert.AreEqual("main-order", (string)ChannelWorkspaceTestHarness.Invoke(presenter, "GetMainSelectedOrderKey"));
+            Assert.AreEqual("src-a-order", (string)ChannelWorkspaceTestHarness.Invoke(presenter, "GetSourceSelectedOrderKey", "C:\\srcA"));
+            Assert.AreEqual("src-b-order", (string)ChannelWorkspaceTestHarness.Invoke(presenter, "GetSourceSelectedOrderKey", "C:\\srcB"));
+
+            object sourceA = ChannelWorkspaceTestHarness.Invoke(presenter, "GetSourceWindow", "C:\\srcA");
+            Assert.AreEqual("src-a-order", ChannelWorkspaceTestHarness.GetString(sourceA, "SelectedOrderKey"));
+            CollectionAssert.AreEqual(
+                new[] { "C:\\srcA::A-02", "C:\\srcA::A-01" },
+                ChannelWorkspaceTestHarness.ToCodeList(ChannelWorkspaceTestHarness.GetValue(sourceA, "Items")));
+        }
+
+        [TestMethod]
+        public void BindData_WhenAddingData_PreservesExistingSourceOrderSelectionsAndLayouts()
+        {
+            object presenter = ChannelWorkspaceTestHarness.CreatePresenter();
+            object initialLayout = ChannelWorkspaceTestHarness.CreateWorkspaceLayoutState(
+                "main-order",
+                new[] { "C:\\srcB::B-01", "C:\\srcA::A-01", "C:\\srcA::A-02" },
+                Tuple.Create("C:\\srcA", "src-a-order", new[] { "C:\\srcA::A-02", "C:\\srcA::A-01" }),
+                Tuple.Create("C:\\srcB", "src-b-order", new[] { "C:\\srcB::B-01" }));
+
+            ChannelWorkspaceTestHarness.Invoke(presenter, "Initialize", string.Empty, "User", false);
+            ChannelWorkspaceTestHarness.Invoke(
+                presenter,
+                "BindData",
+                ChannelWorkspaceTestData.CreateMultiSourceData(),
+                null,
+                null,
+                false,
+                initialLayout);
+
+            TestData expanded = ChannelWorkspaceTestData.CreateMultiSourceData(
+                new Dictionary<string, string[]>
+                {
+                    ["C:\\srcA"] = new[] { "C:\\srcA::A-01", "C:\\srcA::A-02", "C:\\srcA::A-03" },
+                    ["C:\\srcB"] = new[] { "C:\\srcB::B-01" },
+                    ["C:\\srcC"] = new[] { "C:\\srcC::C-01" }
+                });
+
+            ChannelWorkspaceTestHarness.Invoke(
+                presenter,
+                "BindData",
+                expanded,
+                null,
+                null,
+                true,
+                ChannelWorkspaceTestHarness.CreateWorkspaceLayoutState(string.Empty, Array.Empty<string>()));
+
+            Assert.AreEqual("src-a-order", (string)ChannelWorkspaceTestHarness.Invoke(presenter, "GetSourceSelectedOrderKey", "C:\\srcA"));
+            Assert.AreEqual("src-b-order", (string)ChannelWorkspaceTestHarness.Invoke(presenter, "GetSourceSelectedOrderKey", "C:\\srcB"));
+            Assert.AreEqual(string.Empty, (string)ChannelWorkspaceTestHarness.Invoke(presenter, "GetSourceSelectedOrderKey", "C:\\srcC"));
+
+            object sourceA = ChannelWorkspaceTestHarness.Invoke(presenter, "GetSourceWindow", "C:\\srcA");
+            CollectionAssert.AreEqual(
+                new[] { "C:\\srcA::A-02", "C:\\srcA::A-01", "C:\\srcA::A-03" },
+                ChannelWorkspaceTestHarness.ToCodeList(ChannelWorkspaceTestHarness.GetValue(sourceA, "Items")));
+        }
+
+        [TestMethod]
+        public void SetMainSelectedOrderKey_DoesNotOverwriteSourceSelections()
+        {
+            object presenter = ChannelWorkspaceTestHarness.CreatePresenter();
+            object layout = ChannelWorkspaceTestHarness.CreateWorkspaceLayoutState(
+                "main-order",
+                new[] { "C:\\srcA::A-01", "C:\\srcA::A-02", "C:\\srcB::B-01" },
+                Tuple.Create("C:\\srcA", "src-a-order", new[] { "C:\\srcA::A-02", "C:\\srcA::A-01" }),
+                Tuple.Create("C:\\srcB", "src-b-order", new[] { "C:\\srcB::B-01" }));
+
+            ChannelWorkspaceTestHarness.Invoke(presenter, "Initialize", string.Empty, "User", false);
+            ChannelWorkspaceTestHarness.Invoke(
+                presenter,
+                "BindData",
+                ChannelWorkspaceTestData.CreateMultiSourceData(),
+                null,
+                null,
+                false,
+                layout);
+
+            ChannelWorkspaceTestHarness.Invoke(presenter, "SetMainSelectedOrderKey", "main-updated");
+
+            Assert.AreEqual("main-updated", (string)ChannelWorkspaceTestHarness.Invoke(presenter, "GetMainSelectedOrderKey"));
+            Assert.AreEqual("src-a-order", (string)ChannelWorkspaceTestHarness.Invoke(presenter, "GetSourceSelectedOrderKey", "C:\\srcA"));
+            Assert.AreEqual("src-b-order", (string)ChannelWorkspaceTestHarness.Invoke(presenter, "GetSourceSelectedOrderKey", "C:\\srcB"));
+        }
     }
 
     internal static class ChannelWorkspaceTestHarness
@@ -227,6 +332,25 @@ namespace JSQViewer.Tests
         public static object CreatePresenter()
         {
             return CreateInstance("JSQViewer.Presentation.WinForms.Presenters.ChannelWorkspacePresenter");
+        }
+
+        public static object CreateWorkspaceLayoutState(string mainSelectedOrderKey, IEnumerable<string> mainOrder, params Tuple<string, string, string[]>[] sourceStates)
+        {
+            object state = CreateInstance("JSQViewer.Application.Channels.WorkspaceLayoutState");
+            SetValue(state, "MainSelectedOrderKey", mainSelectedOrderKey);
+            SetValue(state, "MainOrder", (mainOrder ?? Array.Empty<string>()).ToList());
+
+            IDictionary sources = GetValue(state, "Sources") as IDictionary;
+            Assert.IsNotNull(sources, "Workspace layout Sources must implement IDictionary.");
+            foreach (Tuple<string, string, string[]> sourceState in sourceStates ?? Array.Empty<Tuple<string, string, string[]>>())
+            {
+                object item = CreateInstance("JSQViewer.Application.Channels.WorkspaceSourceLayoutState");
+                SetValue(item, "SelectedOrderKey", sourceState.Item2);
+                SetValue(item, "Order", (sourceState.Item3 ?? Array.Empty<string>()).ToList());
+                sources[sourceState.Item1] = item;
+            }
+
+            return state;
         }
 
         public static object CreateInstance(string fullTypeName, params object[] args)
@@ -254,6 +378,14 @@ namespace JSQViewer.Tests
             PropertyInfo property = target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
             Assert.IsNotNull(property, "Property not found: " + propertyName + " on " + target.GetType().FullName);
             return property.GetValue(target, null);
+        }
+
+        public static void SetValue(object target, string propertyName, object value)
+        {
+            Assert.IsNotNull(target);
+            PropertyInfo property = target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+            Assert.IsNotNull(property, "Property not found: " + propertyName + " on " + target.GetType().FullName);
+            property.SetValue(target, value, null);
         }
 
         public static string GetString(object target, string propertyName)

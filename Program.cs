@@ -42,6 +42,7 @@ namespace JSQViewer
             IUiStateRepository uiStateRepository = new FileUiStateRepository(appPaths);
             IPresetRepository presetRepository = new FilePresetRepository(appPaths);
             IOrderRepository orderRepository = new FileOrderRepository(appPaths);
+            IWorkspaceLayoutRepository workspaceLayoutRepository = new FileWorkspaceLayoutRepository(appPaths);
             IViewerSettingsRepository viewerSettingsRepository = new FileViewerSettingsRepository(appPaths);
             ISeriesSliceCache seriesSliceCache = new MemorySeriesSliceCache();
             var timestampRangeService = new TimestampRangeService();
@@ -78,6 +79,7 @@ namespace JSQViewer
                 uiStateRepository,
                 presetRepository,
                 orderRepository,
+                workspaceLayoutRepository,
                 viewerSettingsRepository,
                 viewerSession,
                 timestampRangeService,

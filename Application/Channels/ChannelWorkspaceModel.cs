@@ -33,6 +33,15 @@ namespace JSQViewer.Application.Channels
 
         public void Load(TestData data, IEnumerable<string> savedOrder, IEnumerable<string> selectedCodes)
         {
+            Load(data, savedOrder, selectedCodes, null);
+        }
+
+        public void Load(TestData data, IEnumerable<string> savedOrder, IEnumerable<string> selectedCodes, WorkspaceLayoutState layoutState)
+        {
+            WorkspaceLayoutState effectiveLayout = layoutState == null ? new WorkspaceLayoutState() : layoutState.Clone();
+            IEnumerable<string> mainOrder = effectiveLayout.MainOrder != null && effectiveLayout.MainOrder.Count > 0
+                ? effectiveLayout.MainOrder
+                : savedOrder;
             var requestedSelection = selectedCodes == null
                 ? new HashSet<string>(_selectedCodes, StringComparer.OrdinalIgnoreCase)
                 : new HashSet<string>(selectedCodes.Where(code => !string.IsNullOrWhiteSpace(code)), StringComparer.OrdinalIgnoreCase);
@@ -48,7 +57,7 @@ namespace JSQViewer.Application.Channels
                 return;
             }
 
-            string[] orderedColumns = ApplySavedOrder(data.ColumnNames, savedOrder);
+            string[] orderedColumns = ApplySavedOrder(data.ColumnNames, mainOrder);
             for (int i = 0; i < orderedColumns.Length; i++)
             {
                 string code = orderedColumns[i];
@@ -98,7 +107,8 @@ namespace JSQViewer.Application.Channels
                     }
                 }
 
-                _sourceOrders[sourceRoot] = orderedItems;
+                WorkspaceSourceLayoutState sourceLayout = effectiveLayout.GetSource(sourceRoot);
+                _sourceOrders[sourceRoot] = ApplySavedEntryOrder(orderedItems, sourceLayout == null ? null : sourceLayout.Order);
             }
         }
 
@@ -150,6 +160,17 @@ namespace JSQViewer.Application.Channels
 
             AddOrder(result, seen, _channels);
             return result;
+        }
+
+        public IReadOnlyList<string> GetSourceOrder(string sourceRoot)
+        {
+            List<ChannelWorkspaceEntry> sourceItems;
+            if (!_sourceOrders.TryGetValue(sourceRoot ?? string.Empty, out sourceItems))
+            {
+                return new string[0];
+            }
+
+            return sourceItems.Select(entry => entry.Code).ToArray();
         }
 
         public void ReplaceSelectedCodes(IEnumerable<string> checkedCodes)
@@ -289,28 +310,22 @@ namespace JSQViewer.Application.Channels
 
             _channels.Clear();
             _channels.AddRange(reordered);
-
-            foreach (string sourceRoot in _sourceRoots)
-            {
-                List<ChannelWorkspaceEntry> sourceItems = _sourceOrders[sourceRoot];
-                var sourceMap = sourceItems.ToDictionary(entry => entry.Code, StringComparer.OrdinalIgnoreCase);
-                var sourceReordered = new List<ChannelWorkspaceEntry>(sourceItems.Count);
-                for (int i = 0; i < _channels.Count; i++)
-                {
-                    ChannelWorkspaceEntry entry;
-                    if (sourceMap.TryGetValue(_channels[i].Code, out entry))
-                    {
-                        sourceReordered.Add(entry);
-                    }
-                }
-
-                _sourceOrders[sourceRoot] = sourceReordered;
-            }
         }
 
         public void ApplyOrder(string firstCode, string secondCode, string thirdCode)
         {
             ApplyOrder(new[] { firstCode, secondCode, thirdCode });
+        }
+
+        public void ApplySourceOrder(string sourceRoot, IEnumerable<string> order)
+        {
+            List<ChannelWorkspaceEntry> sourceItems;
+            if (!_sourceOrders.TryGetValue(sourceRoot ?? string.Empty, out sourceItems))
+            {
+                return;
+            }
+
+            _sourceOrders[sourceRoot ?? string.Empty] = ApplySavedEntryOrder(sourceItems, order);
         }
 
         private IReadOnlyList<ChannelListProjectionItem> BuildProjection(IEnumerable<ChannelWorkspaceEntry> source, string filterText, string sortMode, bool selectedOnly, bool useSourceLabel)
@@ -403,6 +418,42 @@ namespace JSQViewer.Application.Channels
             }
 
             return result.ToArray();
+        }
+
+        private static List<ChannelWorkspaceEntry> ApplySavedEntryOrder(IEnumerable<ChannelWorkspaceEntry> items, IEnumerable<string> savedOrder)
+        {
+            var source = (items ?? Enumerable.Empty<ChannelWorkspaceEntry>()).ToList();
+            var saved = savedOrder == null
+                ? new List<string>()
+                : savedOrder.Where(code => !string.IsNullOrWhiteSpace(code)).ToList();
+            if (saved.Count == 0)
+            {
+                return source;
+            }
+
+            var map = source.ToDictionary(entry => entry.Code, StringComparer.OrdinalIgnoreCase);
+            var result = new List<ChannelWorkspaceEntry>(source.Count);
+            for (int i = 0; i < saved.Count; i++)
+            {
+                ChannelWorkspaceEntry entry;
+                if (map.TryGetValue(saved[i], out entry))
+                {
+                    result.Add(entry);
+                    map.Remove(saved[i]);
+                }
+            }
+
+            for (int i = 0; i < source.Count; i++)
+            {
+                ChannelWorkspaceEntry entry = source[i];
+                if (map.ContainsKey(entry.Code))
+                {
+                    result.Add(entry);
+                    map.Remove(entry.Code);
+                }
+            }
+
+            return result;
         }
 
         private static bool IsMovableIndex<T>(IList<T> items, int fromIndex, int toIndex)

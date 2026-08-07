@@ -14,6 +14,7 @@ using JSQViewer.Application.Charting;
 using JSQViewer.Application.Charting.UseCases;
 using JSQViewer.Application.Exporting;
 using JSQViewer.Application.Session;
+using JSQViewer.Application.Channels;
 using JSQViewer.Application.Workspace;
 using JSQViewer.Application.Workspace.UseCases;
 using JSQViewer.Presentation.WinForms.Presenters;
@@ -123,6 +124,7 @@ namespace JSQViewer.UI
         private readonly IUiStateRepository _uiStateRepository;
         private readonly IPresetRepository _presetRepository;
         private readonly IOrderRepository _orderRepository;
+        private readonly IWorkspaceLayoutRepository _workspaceLayoutRepository;
         private readonly IViewerSettingsRepository _viewerSettingsRepository;
         private readonly IViewerSession _viewerSession;
         private readonly TimestampRangeService _timestampRangeService;
@@ -136,6 +138,10 @@ namespace JSQViewer.UI
         private readonly WorkspaceFolderSpecParser _workspaceFolderSpecParser;
         private readonly LoadWorkspaceDataUseCase _loadWorkspaceDataUseCase;
         private ViewerSettingsModel _viewerSettings;
+        private string _currentWorkspaceKey = string.Empty;
+        private bool _syncingOrderSelections;
+        private Func<string, string> _folderPickerOverrideForTests;
+        private Func<string, string, bool> _confirmDeleteOrderOverrideForTests;
         private static readonly Regex NaturalSplitRegex = new Regex("(\\d+)", RegexOptions.Compiled);
 
         internal bool IsChartRequestedForTests
@@ -153,6 +159,7 @@ namespace JSQViewer.UI
             IUiStateRepository uiStateRepository,
             IPresetRepository presetRepository,
             IOrderRepository orderRepository,
+            IWorkspaceLayoutRepository workspaceLayoutRepository,
             IViewerSettingsRepository viewerSettingsRepository,
             IViewerSession viewerSession,
             TimestampRangeService timestampRangeService,
@@ -175,6 +182,7 @@ namespace JSQViewer.UI
             if (uiStateRepository == null) throw new ArgumentNullException(nameof(uiStateRepository));
             if (presetRepository == null) throw new ArgumentNullException(nameof(presetRepository));
             if (orderRepository == null) throw new ArgumentNullException(nameof(orderRepository));
+            if (workspaceLayoutRepository == null) throw new ArgumentNullException(nameof(workspaceLayoutRepository));
             if (viewerSettingsRepository == null) throw new ArgumentNullException(nameof(viewerSettingsRepository));
             if (viewerSession == null) throw new ArgumentNullException(nameof(viewerSession));
             if (timestampRangeService == null) throw new ArgumentNullException(nameof(timestampRangeService));
@@ -197,6 +205,7 @@ namespace JSQViewer.UI
             _uiStateRepository = uiStateRepository;
             _presetRepository = presetRepository;
             _orderRepository = orderRepository;
+            _workspaceLayoutRepository = workspaceLayoutRepository;
             _viewerSettingsRepository = viewerSettingsRepository;
             _viewerSession = viewerSession;
             _timestampRangeService = timestampRangeService;
@@ -316,7 +325,7 @@ namespace JSQViewer.UI
             var orderRow = NewRow(); left.Controls.Add(orderRow, 0, 13);
             _orderNameBox = new TextBox(); _orderNameBox.Width = 150; _orderNameBox.Text = Loc.Get("OrderName"); orderRow.Controls.Add(_orderNameBox);
             _saveOrderButton = new Button(); _saveOrderButton.Text = Loc.Get("SaveOrder"); _saveOrderButton.AutoSize = true; _saveOrderButton.Enabled = false; _saveOrderButton.Click += SaveOrderButtonOnClick; orderRow.Controls.Add(_saveOrderButton);
-            _ordersBox = new ComboBox(); _ordersBox.Width = 200; _ordersBox.DropDownStyle = ComboBoxStyle.DropDownList; orderRow.Controls.Add(_ordersBox);
+            _ordersBox = new ComboBox(); _ordersBox.Width = 200; _ordersBox.DropDownStyle = ComboBoxStyle.DropDownList; _ordersBox.SelectedIndexChanged += MainOrdersBoxOnSelectedIndexChanged; orderRow.Controls.Add(_ordersBox);
             _loadOrderButton = new Button(); _loadOrderButton.Text = Loc.Get("Load"); _loadOrderButton.AutoSize = true; _loadOrderButton.Enabled = false; _loadOrderButton.Click += LoadOrderButtonOnClick; orderRow.Controls.Add(_loadOrderButton);
             _deleteOrderButton = new Button(); _deleteOrderButton.Text = Loc.Get("Delete"); _deleteOrderButton.AutoSize = true; _deleteOrderButton.Enabled = false; _deleteOrderButton.Click += DeleteOrderButtonOnClick; orderRow.Controls.Add(_deleteOrderButton);
 
@@ -514,6 +523,7 @@ namespace JSQViewer.UI
                 SourceWindowState state = kv.Value;
                 state.ViewModel = _channelWorkspacePresenter.GetSourceWindow(state.SourceRoot);
                 ApplySourceWindowViewModelToControls(state);
+                BindOrderControlsForSource(state);
                 RebuildSourceWindowList(state);
             }
         }
@@ -1522,7 +1532,7 @@ namespace JSQViewer.UI
                 current.Add(picked);
                 string spec = JoinFolderSpec(current);
                 _folderBox.Text = spec;
-                LoadFolder(spec, true);
+                LoadFolder(spec, true, true, _compareOverlayCheck.Checked, true);
             }
             catch (Exception ex)
             {
@@ -1539,6 +1549,11 @@ namespace JSQViewer.UI
 
         private string SelectSingleFolder(string initial)
         {
+            if (_folderPickerOverrideForTests != null)
+            {
+                return _folderPickerOverrideForTests(initial ?? string.Empty) ?? string.Empty;
+            }
+
             using (var dialog = new FolderBrowserDialog())
             {
                 dialog.SelectedPath = initial ?? string.Empty;
@@ -1729,12 +1744,15 @@ namespace JSQViewer.UI
             SyncPresenterFromMainControls();
             string[] preferredCheckedCodes = _pendingCheckedCodes.Count == 0 ? null : _pendingCheckedCodes.ToArray();
             _pendingCheckedCodes.Clear();
+            _currentWorkspaceKey = CreateWorkspaceKey(data);
+            WorkspaceLayoutState workspaceLayout = LoadWorkspaceLayoutState(_currentWorkspaceKey);
 
             SourceWindowRefreshPlan refreshPlan = _channelWorkspacePresenter.BindData(
                 data,
-                LoadSavedOrder(),
+                null,
                 preferredCheckedCodes,
-                preserveSourceWindowsLayout);
+                preserveSourceWindowsLayout,
+                workspaceLayout);
 
             RebuildChannelList();
             bool canOverlay = IsOverlayCompareModeAvailable(data);
@@ -1764,6 +1782,9 @@ namespace JSQViewer.UI
             {
                 RebuildSourceChannelWindows(refreshPlan.Windows);
             }
+
+            ApplyOrderSelectionControls();
+            SaveCurrentWorkspaceLayout();
             DataSummary summary = _buildWorkspaceSummaryUseCase.Execute(data);
             _summaryLabel.Text = string.Format(Loc.Get("Points"), summary.Points, summary.Start, summary.End);
             if (_chartHostForm != null && !_chartHostForm.IsDisposed)
@@ -1896,6 +1917,7 @@ namespace JSQViewer.UI
                 filterBox.TextChanged += delegate { SourceWindowOptionsChanged(state); };
                 sortBox.SelectedIndexChanged += delegate { SourceWindowOptionsChanged(state); };
                 selectedOnly.CheckedChanged += delegate { SourceWindowOptionsChanged(state); };
+                ordersBox.SelectedIndexChanged += delegate { SourceOrderSelectionChanged(state); };
                 selectAll.Click += delegate { SelectAllInSource(state); };
                 clear.Click += delegate { ClearAllInSource(state); };
                 saveOrderButton.Click += delegate { SaveOrderFromSource(state); };
@@ -2225,6 +2247,7 @@ namespace JSQViewer.UI
             {
                 RebuildSourceWindowList(state);
                 state.List.SelectedIndex = targetIndex;
+                SaveCurrentWorkspaceLayout();
             }
         }
 
@@ -2960,8 +2983,9 @@ namespace JSQViewer.UI
                 saved == null ? string.Empty : saved.key,
                 order.Count,
                 GetSelectedSortKey()));
+            _channelWorkspacePresenter.SetMainSelectedOrderKey(saved == null ? string.Empty : saved.key);
             ReloadOrders();
-            SelectOrderByKey(saved.key);
+            SaveCurrentWorkspaceLayout();
             NotifySuccess(string.Format(existed ? Loc.Get("OrderUpdated") : Loc.Get("OrderSaved"), saved.name));
         }
 
@@ -2993,11 +3017,11 @@ namespace JSQViewer.UI
                 order.Count,
                 state.SourceRoot ?? string.Empty,
                 GetSelectedSortKey(state.SortModeBox)));
+            _channelWorkspacePresenter.SetSourceSelectedOrderKey(state.SourceRoot, saved == null ? string.Empty : saved.key);
             ReloadOrders();
-            SelectOrderByKey(saved.key);
+            SaveCurrentWorkspaceLayout();
             NotifySuccess(string.Format(existed ? Loc.Get("OrderUpdated") : Loc.Get("OrderSaved"), saved.name));
 
-            _orderNameBox.Text = name;
             if (state.OrderNameBox != null) state.OrderNameBox.Text = name;
             BindOrderControlsForSource(state);
         }
@@ -3024,6 +3048,8 @@ namespace JSQViewer.UI
                 "ORDER load applied key='{0}' mode_after='{1}'",
                 item.Key,
                 GetSelectedSortKey()));
+            _channelWorkspacePresenter.SetMainSelectedOrderKey(item.Key);
+            SaveCurrentWorkspaceLayout();
             NotifySuccess(string.Format(Loc.Get("OrderLoaded"), order.name ?? item.Key));
         }
 
@@ -3034,21 +3060,46 @@ namespace JSQViewer.UI
             RefreshChannelViews();
         }
 
+        private void EnsureUserSortModeForSourceOrderApply(SourceWindowState state)
+        {
+            if (state == null || state.SortModeBox == null)
+            {
+                return;
+            }
+
+            SelectSortModeByKey(state.SortModeBox, "User");
+            _channelWorkspacePresenter.UpdateSourceWindowOptions(state.SourceRoot, state.FilterBox == null ? string.Empty : state.FilterBox.Text, "User", state.SelectedOnlyCheck != null && state.SelectedOnlyCheck.Checked);
+        }
+
         private void LoadOrderFromSource(SourceWindowState state)
         {
             if (state == null || state.OrdersBox == null) return;
-            _ordersBox.SelectedIndex = state.OrdersBox.SelectedIndex;
-            LoadOrderButtonOnClick(this, EventArgs.Empty);
-            BindOrderControlsForSource(state);
+            var item = state.OrdersBox.SelectedItem as OrderItem;
+            if (item == null) return;
+
+            ChannelOrderModel order = _orderRepository.Load(item.Key);
+            if (order == null || order.order == null)
+            {
+                NotifyError(Loc.Get("OrderInvalid"));
+                return;
+            }
+
+            EnsureUserSortModeForSourceOrderApply(state);
+            _channelWorkspacePresenter.SetSourceSelectedOrderKey(state.SourceRoot, item.Key);
+            _channelWorkspacePresenter.ApplySourceOrder(state.SourceRoot, order.order);
+            RefreshChannelViews();
+            SaveCurrentWorkspaceLayout();
+            NotifySuccess(string.Format(Loc.Get("OrderLoaded"), order.name ?? item.Key));
         }
 
         private void DeleteOrderButtonOnClick(object sender, EventArgs e)
         {
             var item = _ordersBox.SelectedItem as OrderItem;
             if (item == null) return;
-            if (MessageBox.Show(this, string.Format(Loc.Get("DeleteOrderQ"), item.Name), Loc.Get("DeleteOrderTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            if (!ConfirmDeleteOrder(item.Name)) return;
             bool ok = _orderRepository.Delete(item.Key);
             ReloadOrders();
+            SaveCurrentWorkspaceLayout();
             if (ok) NotifySuccess(string.Format(Loc.Get("OrderDeleted"), item.Name));
             else NotifyError(Loc.Get("OrderDeleteFailed"));
         }
@@ -3056,9 +3107,14 @@ namespace JSQViewer.UI
         private void DeleteOrderFromSource(SourceWindowState state)
         {
             if (state == null || state.OrdersBox == null) return;
-            _ordersBox.SelectedIndex = state.OrdersBox.SelectedIndex;
-            DeleteOrderButtonOnClick(this, EventArgs.Empty);
-            BindOrderControlsForSource(state);
+            var item = state.OrdersBox.SelectedItem as OrderItem;
+            if (item == null) return;
+            if (!ConfirmDeleteOrder(item.Name)) return;
+            bool ok = _orderRepository.Delete(item.Key);
+            ReloadOrders();
+            SaveCurrentWorkspaceLayout();
+            if (ok) NotifySuccess(string.Format(Loc.Get("OrderDeleted"), item.Name));
+            else NotifyError(Loc.Get("OrderDeleteFailed"));
         }
 
         private void ApplyChannelChecks(IList<string> checkedCodes)
@@ -3182,10 +3238,18 @@ namespace JSQViewer.UI
                 ChannelOrderModel o = orders[i];
                 _ordersBox.Items.Add(new OrderItem(o.key, o.name, o.order == null ? 0 : o.order.Count));
             }
-            if (_ordersBox.Items.Count > 0)
+
+            _syncingOrderSelections = true;
+            try
             {
-                _ordersBox.SelectedIndex = 0;
+                TrySelectOrderByKey(_ordersBox, _channelWorkspacePresenter.GetMainSelectedOrderKey());
             }
+            finally
+            {
+                _syncingOrderSelections = false;
+            }
+
+            _channelWorkspacePresenter.SetMainSelectedOrderKey(GetSelectedOrderKey(_ordersBox));
             _loadOrderButton.Enabled = _deleteOrderButton.Enabled = _ordersBox.Items.Count > 0;
             foreach (var kv in _sourceWindows)
             {
@@ -3217,9 +3281,18 @@ namespace JSQViewer.UI
             {
                 state.OrdersBox.Items.Add(_ordersBox.Items[i]);
             }
-            if (_ordersBox.SelectedIndex >= 0 && _ordersBox.SelectedIndex < state.OrdersBox.Items.Count)
+
+            _syncingOrderSelections = true;
+            try
             {
-                state.OrdersBox.SelectedIndex = _ordersBox.SelectedIndex;
+                if (!TrySelectOrderByKey(state.OrdersBox, _channelWorkspacePresenter.GetSourceSelectedOrderKey(state.SourceRoot)))
+                {
+                    _channelWorkspacePresenter.SetSourceSelectedOrderKey(state.SourceRoot, string.Empty);
+                }
+            }
+            finally
+            {
+                _syncingOrderSelections = false;
             }
             if (state.LoadOrderButton != null) state.LoadOrderButton.Enabled = state.OrdersBox.Items.Count > 0;
             if (state.DeleteOrderButton != null) state.DeleteOrderButton.Enabled = state.OrdersBox.Items.Count > 0;
@@ -3236,11 +3309,37 @@ namespace JSQViewer.UI
 
         private void SelectOrderByKey(string key)
         {
-            for (int i = 0; i < _ordersBox.Items.Count; i++)
+            SelectOrderByKey(_ordersBox, key);
+        }
+
+        private static void SelectOrderByKey(ComboBox box, string key)
+        {
+            if (box == null)
             {
-                var item = _ordersBox.Items[i] as OrderItem;
-                if (item != null && string.Equals(item.Key, key, StringComparison.OrdinalIgnoreCase)) { _ordersBox.SelectedIndex = i; return; }
+                return;
             }
+
+            box.SelectedIndex = -1;
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return;
+            }
+
+            for (int i = 0; i < box.Items.Count; i++)
+            {
+                var item = box.Items[i] as OrderItem;
+                if (item != null && string.Equals(item.Key, key, StringComparison.OrdinalIgnoreCase))
+                {
+                    box.SelectedIndex = i;
+                    return;
+                }
+            }
+        }
+
+        private static bool TrySelectOrderByKey(ComboBox box, string key)
+        {
+            SelectOrderByKey(box, key);
+            return box != null && box.SelectedIndex >= 0;
         }
 
         private void SelectSortModeByKey(string key)
@@ -3370,15 +3469,122 @@ namespace JSQViewer.UI
                 _channelWorkspacePresenter.TotalChannelCount,
                 GetSelectedSortKey()));
             RefreshChannelViews();
+            SaveCurrentWorkspaceLayout();
         }
 
-        private List<string> LoadSavedOrder()
+        private void MainOrdersBoxOnSelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_syncingOrderSelections)
+            {
+                return;
+            }
+
+            _channelWorkspacePresenter.SetMainSelectedOrderKey(GetSelectedOrderKey(_ordersBox));
+            SaveCurrentWorkspaceLayout();
+        }
+
+        private void SourceOrderSelectionChanged(SourceWindowState state)
+        {
+            if (_syncingOrderSelections || state == null || state.OrdersBox == null)
+            {
+                return;
+            }
+
+            _channelWorkspacePresenter.SetSourceSelectedOrderKey(state.SourceRoot, GetSelectedOrderKey(state.OrdersBox));
+            SaveCurrentWorkspaceLayout();
+        }
+
+        private void ApplyOrderSelectionControls()
+        {
+            _syncingOrderSelections = true;
+            try
+            {
+                if (!TrySelectOrderByKey(_ordersBox, _channelWorkspacePresenter.GetMainSelectedOrderKey()))
+                {
+                    _channelWorkspacePresenter.SetMainSelectedOrderKey(string.Empty);
+                }
+
+                foreach (var kv in _sourceWindows)
+                {
+                    BindOrderControlsForSource(kv.Value);
+                }
+            }
+            finally
+            {
+                _syncingOrderSelections = false;
+            }
+        }
+
+        private string CreateWorkspaceKey(TestData data)
+        {
+            if (data == null || data.SourceColumns == null)
+            {
+                return string.Empty;
+            }
+
+            return _workspaceFolderSpecParser.CreateWorkspaceKey(data.SourceColumns.Keys);
+        }
+
+        private WorkspaceLayoutState LoadWorkspaceLayoutState(string workspaceKey)
         {
             try
             {
-                return _orderRepository.LoadLegacyOrder();
+                bool hasWorkspaceLayout = _workspaceLayoutRepository.Exists(workspaceKey);
+                WorkspaceLayoutState state = _workspaceLayoutRepository.Load(workspaceKey) ?? new WorkspaceLayoutState();
+                state.EnsureInitialized();
+
+                if (!hasWorkspaceLayout && state.MainOrder.Count == 0)
+                {
+                    List<string> legacyMainOrder = _orderRepository.LoadLegacyOrder();
+                    if (legacyMainOrder != null && legacyMainOrder.Count > 0)
+                    {
+                        state.MainOrder = legacyMainOrder.ToList();
+                    }
+                }
+
+                return state;
             }
-            catch { return new List<string>(); }
+            catch
+            {
+                return new WorkspaceLayoutState();
+            }
+        }
+
+        private void SaveCurrentWorkspaceLayout()
+        {
+            if (string.IsNullOrWhiteSpace(_currentWorkspaceKey))
+            {
+                return;
+            }
+
+            try
+            {
+                _workspaceLayoutRepository.Save(_currentWorkspaceKey, _channelWorkspacePresenter.GetWorkspaceLayoutState());
+            }
+            catch
+            {
+            }
+        }
+
+        private static string GetSelectedOrderKey(ComboBox box)
+        {
+            var item = box == null ? null : box.SelectedItem as OrderItem;
+            return item == null ? string.Empty : (item.Key ?? string.Empty);
+        }
+
+        private bool ConfirmDeleteOrder(string orderName)
+        {
+            if (_confirmDeleteOrderOverrideForTests != null)
+            {
+                return _confirmDeleteOrderOverrideForTests(orderName ?? string.Empty, Loc.Get("DeleteOrderTitle"));
+            }
+
+            return MessageBox.Show(
+                       this,
+                       string.Format(Loc.Get("DeleteOrderQ"), orderName),
+                       Loc.Get("DeleteOrderTitle"),
+                       MessageBoxButtons.YesNo,
+                       MessageBoxIcon.Question) == DialogResult.Yes;
         }
 
         private void LoadRecentFolders()
@@ -3433,7 +3639,7 @@ namespace JSQViewer.UI
         {
             try
             {
-                _orderRepository.SaveLegacyOrder(BuildCurrentOrder());
+                SaveCurrentWorkspaceLayout();
             }
             catch { }
         }

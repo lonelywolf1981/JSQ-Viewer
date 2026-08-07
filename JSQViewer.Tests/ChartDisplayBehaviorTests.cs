@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
+using System.Linq;
 using JSQViewer.Application.Abstractions;
+using JSQViewer.Application.Channels;
 using JSQViewer.Application.Charting;
 using JSQViewer.Application.Charting.UseCases;
 using JSQViewer.Application.Exporting;
@@ -17,6 +19,7 @@ using JSQViewer.Infrastructure.Platform;
 using JSQViewer.Presentation.WinForms.Charting;
 using JSQViewer.Presentation.WinForms.Composition;
 using JSQViewer.Presentation.WinForms.Presenters;
+using JSQViewer.Presentation.WinForms.ViewModels;
 using System.Windows.Forms.DataVisualization.Charting;
 using JSQViewer.Settings;
 using JSQViewer.UI;
@@ -221,6 +224,104 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void LoadFolder_WhenAddingSource_PreservesExistingSourceLayoutState()
+        {
+            var dataReader = new FakeTestDataSourceReader();
+            dataReader.SetSource(@"C:\tests\source-1", "A-01", "A-02");
+            dataReader.SetSource(@"C:\tests\source-2", "B-01");
+            dataReader.SetSource(@"C:\tests\source-3", "C-01");
+
+            using (TestMainFormHarness harness = TestMainFormHarness.Create(dataSourceReader: dataReader))
+            {
+                harness.AllowExistingDirectories(3);
+                harness.LoadFolderSpec(harness.BuildFolderSpec(2));
+                harness.SetAllSortModes("User");
+                harness.SetSourceLayoutState(@"C:\tests\source-1", "src-a-order", new[] { "A-02", "A-01" });
+                harness.LoadFolderSpec(harness.BuildFolderSpec(3), true, true);
+
+                harness.WaitForSessionFolder(harness.BuildFolderSpec(3));
+                Assert.AreEqual("src-a-order", harness.GetSourceSelectedOrderKey(@"C:\tests\source-1"));
+                CollectionAssert.AreEqual(
+                    new[] { "A-02", "A-01" },
+                    harness.GetSourceWindowItemCodes(@"C:\tests\source-1"));
+                Assert.AreEqual(string.Empty, harness.GetSourceSelectedOrderKey(@"C:\tests\source-3"));
+            }
+        }
+
+        [TestMethod]
+        public void BindLoadedData_UsesLegacyMainOrderWhenWorkspaceLayoutIsAbsent()
+        {
+            var orderRepository = new FakeOrderRepository
+            {
+                LegacyOrder = new List<string> { "B-01", "A-01" }
+            };
+            var workspaceLayoutRepository = new FakeWorkspaceLayoutRepository
+            {
+                ExistsResult = false
+            };
+
+            using (TestMainFormHarness harness = TestMainFormHarness.Create(
+                orderRepository: orderRepository,
+                workspaceLayoutRepository: workspaceLayoutRepository))
+            {
+                harness.LoadMultiSourceSession();
+
+                CollectionAssert.AreEqual(
+                    new[] { "B-01", "A-01" },
+                    harness.GetMainOrder());
+            }
+        }
+
+        [TestMethod]
+        public void SaveOrderFromSource_DoesNotMaterializeBlankMainSelection()
+        {
+            var workspaceLayoutRepository = new FakeWorkspaceLayoutRepository();
+
+            using (TestMainFormHarness harness = TestMainFormHarness.Create(
+                orderRepository: new FakeOrderRepository(),
+                workspaceLayoutRepository: workspaceLayoutRepository))
+            {
+                harness.LoadMultiSourceSession();
+
+                Assert.AreEqual(string.Empty, harness.GetMainSelectedOrderKey());
+
+                harness.InvokeSaveOrderFromSource(@"C:\tests\source-a\", "Source A Saved");
+
+                Assert.AreEqual(string.Empty, harness.GetMainSelectedOrderKey());
+                Assert.IsNotNull(workspaceLayoutRepository.LastSavedState);
+                Assert.AreEqual(string.Empty, workspaceLayoutRepository.LastSavedState.MainSelectedOrderKey);
+            }
+        }
+
+        [TestMethod]
+        public void DeleteOrderFromSource_ClearsDanglingSelectedKeyBeforeLayoutSave()
+        {
+            var orderRepository = new FakeOrderRepository();
+            ChannelOrderModel saved = orderRepository.Save("Source A Saved", new[] { "A-01" });
+            var workspaceLayoutRepository = new FakeWorkspaceLayoutRepository();
+
+            using (TestMainFormHarness harness = TestMainFormHarness.Create(
+                orderRepository: orderRepository,
+                workspaceLayoutRepository: workspaceLayoutRepository))
+            {
+                harness.LoadMultiSourceSession();
+                harness.SetDeleteOrderConfirmationResult(true);
+                harness.SetSourceSelectedOrderKey(@"C:\tests\source-a\", saved.key);
+                harness.SelectSourceOrderKey(@"C:\tests\source-a\", saved.key);
+
+                harness.InvokeDeleteOrderFromSource(@"C:\tests\source-a\");
+                harness.InvokeSaveCurrentWorkspaceLayout();
+
+                Assert.AreEqual(string.Empty, harness.GetSourceSelectedOrderKey(@"C:\tests\source-a\"));
+                Assert.IsNotNull(workspaceLayoutRepository.LastSavedState);
+                Assert.IsTrue(workspaceLayoutRepository.LastSavedState.Sources.ContainsKey(@"C:\tests\source-a\"));
+                Assert.AreEqual(
+                    string.Empty,
+                    workspaceLayoutRepository.LastSavedState.Sources[@"C:\tests\source-a\"].SelectedOrderKey);
+            }
+        }
+
+        [TestMethod]
         public void IsValidFolderSpec_AllowsFourSixAndRejectsSevenFolders()
         {
             using (TestMainFormHarness harness = TestMainFormHarness.Create())
@@ -376,7 +477,10 @@ namespace JSQViewer.Tests
             get { return _localization; }
         }
 
-        public static TestMainFormHarness Create()
+        public static TestMainFormHarness Create(
+            FakeOrderRepository orderRepository = null,
+            FakeWorkspaceLayoutRepository workspaceLayoutRepository = null,
+            FakeTestDataSourceReader dataSourceReader = null)
         {
             var localization = new FakeLocalizationService();
             Loc.Initialize(localization);
@@ -384,6 +488,9 @@ namespace JSQViewer.Tests
             var logger = new FakeLogger();
             var notificationService = new FakeNotificationService();
             var session = new ViewerSession(new MemorySeriesSliceCache());
+            orderRepository = orderRepository ?? new FakeOrderRepository();
+            workspaceLayoutRepository = workspaceLayoutRepository ?? new FakeWorkspaceLayoutRepository();
+            dataSourceReader = dataSourceReader ?? new FakeTestDataSourceReader();
             var form = new MainForm(
                 new FakeAppPaths(),
                 fileSystem,
@@ -393,7 +500,8 @@ namespace JSQViewer.Tests
                 new FakeRecentFoldersRepository(),
                 new FakeUiStateRepository(),
                 new FakePresetRepository(),
-                new FakeOrderRepository(),
+                orderRepository,
+                workspaceLayoutRepository,
                 new FakeViewerSettingsRepository(),
                 session,
                 new TimestampRangeService(),
@@ -410,7 +518,7 @@ namespace JSQViewer.Tests
                     new FakeTestRootLocator(),
                     new FakeTestMetadataReader(),
                     new FakeCanaliDefinitionReader(),
-                    new FakeTestDataSourceReader(),
+                    dataSourceReader,
                     new MergeLoadedSourcesUseCase()));
 
             return new TestMainFormHarness(session, form, fileSystem, notificationService, localization);
@@ -581,6 +689,99 @@ namespace JSQViewer.Tests
             System.Windows.Forms.Application.DoEvents();
         }
 
+        public void LoadFolderSpec(string spec, bool preserveSelection = false, bool preserveSourceWindowsLayout = false)
+        {
+            InvokePrivate(_form, "LoadFolder", spec, false, preserveSelection, null, preserveSourceWindowsLayout);
+            WaitForSessionFolder(spec);
+        }
+
+        public void SetFolderPickerResult(string pickedFolder)
+        {
+            SetPrivateField(_form, "_folderPickerOverrideForTests", new Func<string, string>(delegate { return pickedFolder; }));
+        }
+
+        public void SetDeleteOrderConfirmationResult(bool confirmed)
+        {
+            SetPrivateField(_form, "_confirmDeleteOrderOverrideForTests", new Func<string, string, bool>(delegate { return confirmed; }));
+        }
+
+        public void SetSourceLayoutState(string sourceRoot, string selectedOrderKey, IList<string> order)
+        {
+            ChannelWorkspacePresenter presenter = GetPrivateField<ChannelWorkspacePresenter>(_form, "_channelWorkspacePresenter");
+            presenter.SetSourceSelectedOrderKey(sourceRoot, selectedOrderKey);
+            presenter.ApplySourceOrder(sourceRoot, order);
+        }
+
+        public void SetAllSortModes(string sortMode)
+        {
+            ChannelWorkspacePresenter presenter = GetPrivateField<ChannelWorkspacePresenter>(_form, "_channelWorkspacePresenter");
+            presenter.SetAllSortModes(sortMode);
+        }
+
+        public string GetSourceSelectedOrderKey(string sourceRoot)
+        {
+            ChannelWorkspacePresenter presenter = GetPrivateField<ChannelWorkspacePresenter>(_form, "_channelWorkspacePresenter");
+            return presenter.GetSourceSelectedOrderKey(sourceRoot);
+        }
+
+        public string[] GetSourceOrder(string sourceRoot)
+        {
+            ChannelWorkspacePresenter presenter = GetPrivateField<ChannelWorkspacePresenter>(_form, "_channelWorkspacePresenter");
+            return presenter.GetCurrentOrderForSource(sourceRoot).ToArray();
+        }
+
+        public string[] GetSourceWindowItemCodes(string sourceRoot)
+        {
+            ChannelWorkspacePresenter presenter = GetPrivateField<ChannelWorkspacePresenter>(_form, "_channelWorkspacePresenter");
+            SourceChannelWindowViewModel window = presenter.GetSourceWindow(sourceRoot);
+            return window.Items.Select(item => item.Code).ToArray();
+        }
+
+        public string[] GetMainOrder()
+        {
+            ChannelWorkspacePresenter presenter = GetPrivateField<ChannelWorkspacePresenter>(_form, "_channelWorkspacePresenter");
+            return presenter.GetCurrentOrder().ToArray();
+        }
+
+        public string GetMainSelectedOrderKey()
+        {
+            ChannelWorkspacePresenter presenter = GetPrivateField<ChannelWorkspacePresenter>(_form, "_channelWorkspacePresenter");
+            return presenter.GetMainSelectedOrderKey();
+        }
+
+        public void InvokeSaveOrderFromSource(string sourceRoot, string orderName)
+        {
+            object state = GetSourceWindowState(sourceRoot);
+            SetSourceStateTextBox(state, "OrderNameBox", orderName);
+            InvokePrivate(_form, "SaveOrderFromSource", state);
+            System.Windows.Forms.Application.DoEvents();
+        }
+
+        public void SetSourceSelectedOrderKey(string sourceRoot, string selectedOrderKey)
+        {
+            ChannelWorkspacePresenter presenter = GetPrivateField<ChannelWorkspacePresenter>(_form, "_channelWorkspacePresenter");
+            presenter.SetSourceSelectedOrderKey(sourceRoot, selectedOrderKey);
+            InvokePrivate(_form, "BindOrderControlsForSource", GetSourceWindowState(sourceRoot));
+        }
+
+        public void SelectSourceOrderKey(string sourceRoot, string orderKey)
+        {
+            object state = GetSourceWindowState(sourceRoot);
+            ComboBox ordersBox = GetSourceStateValue<ComboBox>(state, "OrdersBox");
+            SelectOrderByKey(ordersBox, orderKey);
+        }
+
+        public void InvokeDeleteOrderFromSource(string sourceRoot)
+        {
+            InvokePrivate(_form, "DeleteOrderFromSource", GetSourceWindowState(sourceRoot));
+            System.Windows.Forms.Application.DoEvents();
+        }
+
+        public void InvokeSaveCurrentWorkspaceLayout()
+        {
+            InvokePrivate(_form, "SaveCurrentWorkspaceLayout");
+        }
+
         public void WaitForSessionFolder(string expectedFolder)
         {
             DateTime deadline = DateTime.UtcNow.AddSeconds(2);
@@ -622,11 +823,58 @@ namespace JSQViewer.Tests
             InvokePrivate(_form, "BindLoadedData", data, false);
         }
 
+        private object GetSourceWindowState(string sourceRoot)
+        {
+            object dictionary = GetPrivateField<object>(_form, "_sourceWindows");
+            PropertyInfo itemProperty = dictionary.GetType().GetProperty("Item");
+            Assert.IsNotNull(itemProperty, "Missing Item property on _sourceWindows.");
+            return itemProperty.GetValue(dictionary, new object[] { sourceRoot });
+        }
+
+        private static T GetSourceStateValue<T>(object state, string propertyName) where T : class
+        {
+            PropertyInfo property = state.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+            Assert.IsNotNull(property, "Missing property: " + propertyName);
+            return property.GetValue(state, null) as T;
+        }
+
+        private static void SetSourceStateTextBox(object state, string propertyName, string text)
+        {
+            TextBox box = GetSourceStateValue<TextBox>(state, propertyName);
+            Assert.IsNotNull(box, "Missing textbox: " + propertyName);
+            box.Text = text;
+        }
+
+        private static void SelectOrderByKey(ComboBox box, string orderKey)
+        {
+            Assert.IsNotNull(box);
+            box.SelectedIndex = -1;
+            for (int i = 0; i < box.Items.Count; i++)
+            {
+                object item = box.Items[i];
+                PropertyInfo keyProperty = item.GetType().GetProperty("Key", BindingFlags.Instance | BindingFlags.Public);
+                Assert.IsNotNull(keyProperty, "Order item is missing Key.");
+                string currentKey = keyProperty.GetValue(item, null) as string;
+                if (string.Equals(currentKey, orderKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    box.SelectedIndex = i;
+                    return;
+                }
+            }
+        }
+
         private static T GetPrivateField<T>(object target, string fieldName) where T : class
         {
             FieldInfo field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.IsNotNull(field, "Missing field: " + fieldName);
             return field.GetValue(target) as T;
+        }
+
+        private static void SetPrivateField(object target, string fieldName, object value)
+        {
+            FieldInfo field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(field, "Missing field: " + fieldName);
+            field.SetValue(target, value);
         }
     }
 
@@ -732,13 +980,103 @@ namespace JSQViewer.Tests
 
     internal sealed class FakeOrderRepository : IOrderRepository
     {
-        public List<ChannelOrderModel> List() { return new List<ChannelOrderModel>(); }
-        public ChannelOrderModel Load(string keyOrName) { return null; }
-        public bool Exists(string keyOrName) { return false; }
-        public ChannelOrderModel Save(string name, IList<string> order) { return null; }
-        public bool Delete(string keyOrName) { return false; }
-        public List<string> LoadLegacyOrder() { return new List<string>(); }
+        private readonly List<ChannelOrderModel> _orders = new List<ChannelOrderModel>();
+
+        public List<string> LegacyOrder { get; set; } = new List<string>();
+
+        public List<ChannelOrderModel> List() { return _orders.Select(Clone).ToList(); }
+
+        public ChannelOrderModel Load(string keyOrName)
+        {
+            ChannelOrderModel model = _orders.FirstOrDefault(order =>
+                string.Equals(order.key, keyOrName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(order.name, keyOrName, StringComparison.OrdinalIgnoreCase));
+            return model == null ? null : Clone(model);
+        }
+
+        public bool Exists(string keyOrName)
+        {
+            return _orders.Any(order =>
+                string.Equals(order.key, keyOrName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(order.name, keyOrName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public ChannelOrderModel Save(string name, IList<string> order)
+        {
+            string key = BuildKey(name);
+            ChannelOrderModel existing = _orders.FirstOrDefault(item => string.Equals(item.key, key, StringComparison.OrdinalIgnoreCase));
+            if (existing == null)
+            {
+                existing = new ChannelOrderModel();
+                _orders.Add(existing);
+            }
+
+            existing.key = key;
+            existing.name = name;
+            existing.order = order == null ? new List<string>() : order.ToList();
+            return Clone(existing);
+        }
+
+        public bool Delete(string keyOrName)
+        {
+            ChannelOrderModel existing = _orders.FirstOrDefault(order =>
+                string.Equals(order.key, keyOrName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(order.name, keyOrName, StringComparison.OrdinalIgnoreCase));
+            if (existing == null)
+            {
+                return false;
+            }
+
+            _orders.Remove(existing);
+            return true;
+        }
+
+        public List<string> LoadLegacyOrder() { return LegacyOrder == null ? new List<string>() : new List<string>(LegacyOrder); }
         public bool SaveLegacyOrder(IList<string> order) { return true; }
+
+        private static string BuildKey(string name)
+        {
+            string value = (name ?? string.Empty).Trim().ToLowerInvariant();
+            var chars = value
+                .Select(ch => char.IsLetterOrDigit(ch) ? ch : '-')
+                .ToArray();
+            return new string(chars).Trim('-');
+        }
+
+        private static ChannelOrderModel Clone(ChannelOrderModel model)
+        {
+            return new ChannelOrderModel
+            {
+                key = model.key,
+                name = model.name,
+                order = model.order == null ? new List<string>() : new List<string>(model.order)
+            };
+        }
+    }
+
+    internal sealed class FakeWorkspaceLayoutRepository : IWorkspaceLayoutRepository
+    {
+        public bool ExistsResult { get; set; } = true;
+
+        public WorkspaceLayoutState LoadedState { get; set; } = new WorkspaceLayoutState();
+
+        public WorkspaceLayoutState LastSavedState { get; private set; }
+
+        public bool Exists(string workspaceKey)
+        {
+            return ExistsResult;
+        }
+
+        public WorkspaceLayoutState Load(string workspaceKey)
+        {
+            return LoadedState == null ? new WorkspaceLayoutState() : LoadedState.Clone();
+        }
+
+        public bool Save(string workspaceKey, WorkspaceLayoutState state)
+        {
+            LastSavedState = state == null ? new WorkspaceLayoutState() : state.Clone();
+            return true;
+        }
     }
 
     internal sealed class FakeViewerSettingsRepository : IViewerSettingsRepository
@@ -774,17 +1112,30 @@ namespace JSQViewer.Tests
 
     internal sealed class FakeTestDataSourceReader : ITestDataSourceReader
     {
+        private readonly Dictionary<string, string[]> _sourceColumns = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+
+        public void SetSource(string root, params string[] columns)
+        {
+            _sourceColumns[root] = columns ?? Array.Empty<string>();
+        }
+
         public TestData Read(string root, Dictionary<string, ChannelInfo> channels, Dictionary<string, string> metadata)
         {
+            string[] columns;
+            if (!_sourceColumns.TryGetValue(root, out columns))
+            {
+                columns = new[] { "A-01" };
+            }
+
             var data = new TestData
             {
                 Root = root,
                 RowCount = 1,
                 TimestampsMs = new[] { 0L },
-                ColumnNames = new[] { "A-01" },
+                ColumnNames = columns,
                 SourceColumns = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
                 {
-                    [root] = new[] { "A-01" }
+                    [root] = columns
                 },
                 SourceStartMs = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
                 {
@@ -796,9 +1147,14 @@ namespace JSQViewer.Tests
                 }
             };
 
-            data.Columns["A-01"] = new double?[] { 1d };
-            data.Channels["A-01"] = new ChannelInfo { Code = "A-01", Name = "A-01", Unit = "u" };
-            data.CodeSources["A-01"] = root;
+            for (int i = 0; i < columns.Length; i++)
+            {
+                string code = columns[i];
+                data.Columns[code] = new double?[] { i + 1d };
+                data.Channels[code] = new ChannelInfo { Code = code, Name = code, Unit = "u" };
+                data.CodeSources[code] = root;
+            }
+
             return data;
         }
     }
