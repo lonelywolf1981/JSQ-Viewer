@@ -113,6 +113,21 @@ namespace JSQViewer.Application.Database
 
         public TestData Append(TestData existing, string postId, IList<RecordingAggregateRow> rows)
         {
+            return Append(existing, postId, rows, null);
+        }
+
+        /// <summary>
+        /// Appends newly measured windows. <paramref name="freshMetadata"/> is the recording card as it
+        /// reads right now: passing it lets the display name follow the recording's status, so the
+        /// "still recording" marker disappears as soon as the run stops — even on a tick that brought
+        /// no new windows.
+        /// </summary>
+        public TestData Append(
+            TestData existing,
+            string postId,
+            IList<RecordingAggregateRow> rows,
+            IDictionary<string, string> freshMetadata)
+        {
             if (existing == null) throw new ArgumentNullException(nameof(existing));
 
             long lastTimestamp = GetLastTimestampMs(existing);
@@ -122,7 +137,7 @@ namespace JSQViewer.Application.Database
 
             if (freshRows.Count == 0)
             {
-                return existing;
+                return RefreshIdentity(existing, freshMetadata);
             }
 
             long[] newTimestamps = freshRows
@@ -176,11 +191,16 @@ namespace JSQViewer.Application.Database
             string[] sourceOrder = existing.SourceOrder == null
                 ? new string[0]
                 : existing.SourceOrder.ToArray();
+            Dictionary<string, string> metadata = NormalizeMetadata(existing, freshMetadata);
+            if (freshMetadata != null)
+            {
+                sourceDisplayNames[source] = GetDisplayName(source, metadata);
+            }
 
             return new TestData
             {
                 Root = source,
-                Meta = existing.Meta,
+                Meta = metadata,
                 Channels = existing.Channels,
                 CodeSources = mergedColumnNames.ToDictionary(code => code, code => source, StringComparer.OrdinalIgnoreCase),
                 SourceStartMs = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
@@ -202,6 +222,63 @@ namespace JSQViewer.Application.Database
                 },
                 RowCount = newLength
             };
+        }
+
+        /// <summary>
+        /// Returns the workspace with a display name rebuilt from the recording card, or the very same
+        /// instance when nothing about its identity changed — callers rebind on reference change, so an
+        /// unchanged tick must not create a new object.
+        /// </summary>
+        private static TestData RefreshIdentity(TestData existing, IDictionary<string, string> freshMetadata)
+        {
+            if (freshMetadata == null || string.IsNullOrWhiteSpace(existing.Root))
+            {
+                return existing;
+            }
+
+            Dictionary<string, string> metadata = NormalizeMetadata(existing, freshMetadata);
+            string displayName = GetDisplayName(existing.Root, metadata);
+            string currentName;
+            if (existing.SourceDisplayNames != null
+                && existing.SourceDisplayNames.TryGetValue(existing.Root, out currentName)
+                && string.Equals(currentName, displayName, StringComparison.Ordinal))
+            {
+                return existing;
+            }
+
+            var sourceDisplayNames = existing.SourceDisplayNames == null
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(existing.SourceDisplayNames, StringComparer.OrdinalIgnoreCase);
+            sourceDisplayNames[existing.Root] = displayName;
+
+            return new TestData
+            {
+                Root = existing.Root,
+                Meta = metadata,
+                Channels = existing.Channels,
+                CodeSources = existing.CodeSources,
+                SourceStartMs = existing.SourceStartMs,
+                SourceEndMs = existing.SourceEndMs,
+                SourceDisplayNames = sourceDisplayNames,
+                SourceOrder = existing.SourceOrder,
+                TimestampsMs = existing.TimestampsMs,
+                Columns = existing.Columns,
+                ColumnNames = existing.ColumnNames,
+                SourceColumns = existing.SourceColumns,
+                RowCount = existing.RowCount
+            };
+        }
+
+        private static Dictionary<string, string> NormalizeMetadata(
+            TestData existing,
+            IDictionary<string, string> freshMetadata)
+        {
+            if (freshMetadata == null)
+            {
+                return existing.Meta;
+            }
+
+            return new Dictionary<string, string>(freshMetadata, StringComparer.OrdinalIgnoreCase);
         }
 
         private static string GetDisplayName(string source, IDictionary<string, string> metadata)

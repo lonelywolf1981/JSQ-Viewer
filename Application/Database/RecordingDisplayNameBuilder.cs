@@ -13,6 +13,12 @@ namespace JSQViewer.Application.Database
     {
         public const string Separator = " · ";
 
+        /// <summary>Marks a recording that is still running, so live data is recognisable at a glance.</summary>
+        public const string ActiveMarker = "●";
+
+        private const string StatusKey = "Статус";
+        private const string ActiveStatus = "recording";
+
         private static readonly string[] AppendedKeys =
         {
             "Модель оборудования",
@@ -41,7 +47,13 @@ namespace JSQViewer.Application.Database
                     : value);
             }
 
-            return string.Join(Separator, parts.ToArray());
+            string name = string.Join(Separator, parts.ToArray());
+            return IsActive(metadata) ? ActiveMarker + " " + name : name;
+        }
+
+        private static bool IsActive(IDictionary<string, string> metadata)
+        {
+            return string.Equals(ReadValue(metadata, StatusKey), ActiveStatus, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>

@@ -195,6 +195,55 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Append_WhenRecordingStopped_DropsActiveMarkerWithoutNewRows()
+        {
+            var mapper = new RecordingRowsToTestDataMapper();
+            TestData data = mapper.Map(Source, "B",
+                new List<RecordingAggregateRow> { Row("B-T1", 1000, 10.0) },
+                Channels(),
+                new Dictionary<string, string> { { "Название", "Прогон" }, { "Статус", "recording" } });
+            Assert.AreEqual("● Прогон", data.SourceDisplayNames[Source]);
+
+            TestData appended = mapper.Append(data, "B", new List<RecordingAggregateRow>(),
+                new Dictionary<string, string> { { "Название", "Прогон" }, { "Статус", "stopped" } });
+
+            Assert.AreEqual("Прогон", appended.SourceDisplayNames[Source]);
+            Assert.AreEqual("stopped", appended.Meta["Статус"]);
+        }
+
+        [TestMethod]
+        public void Append_WhenStatusUnchanged_ReturnsSameInstance()
+        {
+            var mapper = new RecordingRowsToTestDataMapper();
+            TestData data = mapper.Map(Source, "B",
+                new List<RecordingAggregateRow> { Row("B-T1", 1000, 10.0) },
+                Channels(),
+                new Dictionary<string, string> { { "Название", "Прогон" }, { "Статус", "recording" } });
+
+            TestData appended = mapper.Append(data, "B", new List<RecordingAggregateRow>(),
+                new Dictionary<string, string> { { "Название", "Прогон" }, { "Статус", "recording" } });
+
+            Assert.AreSame(data, appended);
+        }
+
+        [TestMethod]
+        public void Append_WithNewRows_RefreshesDisplayNameFromFreshMetadata()
+        {
+            var mapper = new RecordingRowsToTestDataMapper();
+            TestData data = mapper.Map(Source, "B",
+                new List<RecordingAggregateRow> { Row("B-T1", 1000, 10.0) },
+                Channels(),
+                new Dictionary<string, string> { { "Название", "Прогон" }, { "Статус", "recording" } });
+
+            TestData appended = mapper.Append(data, "B",
+                new List<RecordingAggregateRow> { Row("B-T1", 2000, 11.0) },
+                new Dictionary<string, string> { { "Название", "Прогон" }, { "Статус", "stopped" } });
+
+            Assert.AreEqual("Прогон", appended.SourceDisplayNames[Source]);
+            Assert.AreEqual(2, appended.RowCount);
+        }
+
+        [TestMethod]
         public void Append_WithoutNewRows_ReturnsSameInstance()
         {
             var mapper = new RecordingRowsToTestDataMapper();

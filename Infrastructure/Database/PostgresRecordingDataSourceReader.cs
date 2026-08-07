@@ -130,7 +130,7 @@ ORDER BY a.window_start";
                 }
 
                 List<RecordingAggregateRow> rows = ReadRows(connection, normalizedId, since);
-                return _mapper.Append(existing, recording.PostId, rows);
+                return _mapper.Append(existing, recording.PostId, rows, recording.Metadata);
             }
         }
 

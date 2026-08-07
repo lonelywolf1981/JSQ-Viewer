@@ -81,6 +81,36 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Build_WhileRecordingIsRunning_PrefixesActiveMarker()
+        {
+            Dictionary<string, string> metadata = CreateMetadata();
+            metadata["Статус"] = "recording";
+
+            string name = RecordingDisplayNameBuilder.Build(metadata, "8aa4fe95");
+
+            Assert.AreEqual("● Post B 2026-08-06 14-33-12 · LIDER · NPT14RA · FUNC · 32/65", name);
+        }
+
+        [TestMethod]
+        public void Build_WhenRecordingStopped_HasNoMarker()
+        {
+            Dictionary<string, string> metadata = CreateMetadata();
+            metadata["Статус"] = "stopped";
+
+            string name = RecordingDisplayNameBuilder.Build(metadata, "8aa4fe95");
+
+            Assert.IsFalse(name.StartsWith("●", StringComparison.Ordinal), "Завершённый прогон не помечается.");
+        }
+
+        [TestMethod]
+        public void Build_WithoutStatus_HasNoMarker()
+        {
+            string name = RecordingDisplayNameBuilder.Build(CreateMetadata(), "8aa4fe95");
+
+            Assert.IsFalse(name.StartsWith("●", StringComparison.Ordinal));
+        }
+
+        [TestMethod]
         public void Build_WithoutMetadata_ReturnsFallback()
         {
             Assert.AreEqual("e165ba52", RecordingDisplayNameBuilder.Build(null, "e165ba52"));
