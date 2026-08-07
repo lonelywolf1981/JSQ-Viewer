@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using JSQViewer.Application.Workspace;
 using JSQViewer.Application.Workspace.UseCases;
 using JSQViewer.Core;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -189,6 +190,46 @@ namespace JSQViewer.Tests
             Assert.AreEqual(2, result.SourceColumns.Count);
             Assert.AreEqual(2, result.SourceDisplayNames.Count);
             CollectionAssert.AreEqual(new[] { first.Root, second.Root }, result.SourceOrder);
+        }
+
+        [TestMethod]
+        public void Execute_DropsSourceSpecificMetadataKeys()
+        {
+            TestData first = CreateData("jsqdb://recording/first", "A", 10L);
+            first.Meta[WorkspaceMetadataKeys.EquipmentModel] = "DINAMIC";
+            first.Meta[WorkspaceMetadataKeys.ExperimentType] = "FUNC";
+            first.Meta[WorkspaceMetadataKeys.ClimateMode] = "32/65";
+            TestData second = CreateData("C:\\second", "B", 20L);
+
+            TestData result = new MergeLoadedSourcesUseCase().Execute(
+                new[] { first, second },
+                false);
+
+            Assert.IsFalse(result.Meta.ContainsKey(WorkspaceMetadataKeys.EquipmentModel));
+            Assert.IsFalse(result.Meta.ContainsKey(WorkspaceMetadataKeys.ExperimentType));
+            Assert.IsFalse(result.Meta.ContainsKey(WorkspaceMetadataKeys.ClimateMode));
+        }
+
+        [TestMethod]
+        public void Execute_ThenRemoveFirstSource_TitleHasNoMetadataTailFromRemovedSource()
+        {
+            TestData first = CreateData("jsqdb://recording/first", "A", 10L);
+            first.SourceDisplayNames[first.Root] = "Post A 2026-08-06 10-00-00";
+            first.Meta[WorkspaceMetadataKeys.EquipmentModel] = "DINAMIC";
+            first.Meta[WorkspaceMetadataKeys.ExperimentType] = "FUNC";
+            first.Meta[WorkspaceMetadataKeys.ClimateMode] = "32/65";
+            TestData second = CreateData("jsqdb://recording/second", "B", 20L);
+            second.SourceDisplayNames[second.Root] = "Post B 2026-08-06 14-33-12";
+
+            TestData merged = new MergeLoadedSourcesUseCase().Execute(
+                new[] { first, second },
+                false);
+            TestData afterRemove = new RemoveLoadedSourceUseCase().Execute(merged, first.Root);
+
+            string title = new WorkspaceTitleBuilder(new SourceDisplayNameResolver())
+                .Build(afterRemove, "запасной");
+
+            Assert.AreEqual("Post B 2026-08-06 14-33-12", title);
         }
 
         [TestMethod]

@@ -41,9 +41,9 @@ namespace JSQViewer.Application.Workspace
             }
 
             var parts = new List<string> { titles[0] };
-            AppendMetaPart(parts, data, "Модель оборудования");
-            AppendMetaPart(parts, data, "Тип испытания");
-            AppendMetaPart(parts, data, "Климатический режим");
+            AppendMetaPart(parts, data, WorkspaceMetadataKeys.EquipmentModel);
+            AppendMetaPart(parts, data, WorkspaceMetadataKeys.ExperimentType);
+            AppendMetaPart(parts, data, WorkspaceMetadataKeys.ClimateMode);
             return string.Join(" · ", parts.ToArray());
         }
 

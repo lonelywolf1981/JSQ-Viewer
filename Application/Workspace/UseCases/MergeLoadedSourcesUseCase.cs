@@ -267,6 +267,12 @@ namespace JSQViewer.Application.Workspace.UseCases
                 sourceDisplayNames,
                 sourceColumnMap.Keys);
 
+            // A merged Meta is workspace-global and cannot be attributed to any single source
+            // once several recordings are combined, so the per-recording keys are dropped here.
+            metadata.Remove(WorkspaceMetadataKeys.EquipmentModel);
+            metadata.Remove(WorkspaceMetadataKeys.ExperimentType);
+            metadata.Remove(WorkspaceMetadataKeys.ClimateMode);
+
             return new TestData
             {
                 Root = string.Join(" ; ", normalizedSourceOrder),
