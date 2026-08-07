@@ -66,6 +66,7 @@ namespace JSQViewer.Infrastructure.Database
             sql.AppendLine("           WHERE a.recording_id = p.id AND a.channel_id = 'UR-sie' AND a.avg_value IS NOT NULL");
             sql.AppendLine("           ORDER BY a.window_start LIMIT 5) u) AS ur_sie_avg");
             sql.AppendLine("FROM page p");
+            sql.AppendLine("ORDER BY p.started_at DESC NULLS LAST");
             parameterNames.Add("limit");
             return sql.ToString();
         }

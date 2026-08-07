@@ -117,6 +117,19 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Build_AppliesOuterOrderByAfterFromPage()
+        {
+            string sql = new RecordingCatalogQueryBuilder().Build(new RecordingCatalogFilter(), new List<string>());
+
+            int fromPageIndex = sql.IndexOf("FROM page p", StringComparison.Ordinal);
+            int outerOrderByIndex = sql.IndexOf("ORDER BY p.started_at DESC NULLS LAST", StringComparison.Ordinal);
+            Assert.IsTrue(fromPageIndex > 0, "Ожидался FROM page p.");
+            Assert.IsTrue(
+                outerOrderByIndex > fromPageIndex,
+                "Внешний запрос должен явно сортировать результат: порядок строк CTE не гарантирован.");
+        }
+
+        [TestMethod]
         public void Build_SelectsClimateModeColumn()
         {
             string sql = new RecordingCatalogQueryBuilder().Build(new RecordingCatalogFilter(), new List<string>());
