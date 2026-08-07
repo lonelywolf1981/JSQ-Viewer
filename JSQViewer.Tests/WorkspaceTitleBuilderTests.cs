@@ -24,32 +24,44 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
-        public void Build_WithSingleRecording_AppendsModelExperimentAndClimateMode()
+        public void Build_WithSingleRecording_ShowsComposedDisplayNameVerbatim()
         {
-            TestData data = CreateSingleRecording(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            // RecordingDisplayNameBuilder composes model, compressor, experiment type and climate
+            // mode into the display name when the recording is read, so every window that shows a
+            // source name shows the same text. The title builder must not append them a second time.
+            var data = new TestData
             {
-                { "Модель оборудования", "DINAMIC" },
-                { "Тип испытания", "FUNC" },
-                { "Климатический режим", "32/65" }
-            });
+                Root = "jsqdb://recording/abc123",
+                SourceOrder = new[] { "jsqdb://recording/abc123" },
+                SourceDisplayNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    { "jsqdb://recording/abc123", "Post B 2026-08-06 14-33-12 · LIDER · NPT14RA · FUNC · 32/65" }
+                },
+                Meta = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    { "Модель оборудования", "LIDER" },
+                    { "Тип испытания", "FUNC" },
+                    { "Климатический режим", "32/65" }
+                }
+            };
 
             string title = new WorkspaceTitleBuilder(new SourceDisplayNameResolver()).Build(data, "запасной");
 
-            Assert.AreEqual("Post B 2026-08-06 14-33-12 · DINAMIC · FUNC · 32/65", title);
+            Assert.AreEqual("Post B 2026-08-06 14-33-12 · LIDER · NPT14RA · FUNC · 32/65", title);
         }
 
         [TestMethod]
-        public void Build_WithSingleRecording_SkipsMissingParts()
+        public void Build_WithSingleRecording_DoesNotAppendMetadataToTheName()
         {
             TestData data = CreateSingleRecording(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 { "Модель оборудования", "LIDER" },
-                { "Тип испытания", "   " }
+                { "Тип испытания", "FUNC" }
             });
 
             string title = new WorkspaceTitleBuilder(new SourceDisplayNameResolver()).Build(data, "запасной");
 
-            Assert.AreEqual("Post B 2026-08-06 14-33-12 · LIDER", title);
+            Assert.AreEqual("Post B 2026-08-06 14-33-12", title);
         }
 
         [TestMethod]

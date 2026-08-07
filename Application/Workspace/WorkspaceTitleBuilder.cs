@@ -30,35 +30,12 @@ namespace JSQViewer.Application.Workspace
                 }
             }
 
-            if (titles.Count == 0)
-            {
-                return fallback ?? string.Empty;
-            }
-
-            if (titles.Count > 1)
-            {
-                return string.Join("; ", titles);
-            }
-
-            var parts = new List<string> { titles[0] };
-            AppendMetaPart(parts, data, WorkspaceMetadataKeys.EquipmentModel);
-            AppendMetaPart(parts, data, WorkspaceMetadataKeys.ExperimentType);
-            AppendMetaPart(parts, data, WorkspaceMetadataKeys.ClimateMode);
-            return string.Join(" · ", parts.ToArray());
-        }
-
-        private static void AppendMetaPart(ICollection<string> parts, TestData data, string metaKey)
-        {
-            if (data == null || data.Meta == null)
-            {
-                return;
-            }
-
-            string value;
-            if (data.Meta.TryGetValue(metaKey, out value) && !string.IsNullOrWhiteSpace(value))
-            {
-                parts.Add(value.Trim());
-            }
+            // Recording names already carry model, compressor, experiment type and climate mode —
+            // RecordingDisplayNameBuilder composes them when the recording is read, so that every
+            // window showing a source name shows the same text. Nothing is appended here.
+            return titles.Count == 0
+                ? fallback ?? string.Empty
+                : string.Join("; ", titles);
         }
 
         public string BuildCaption(TestData data, string fallback, string format)

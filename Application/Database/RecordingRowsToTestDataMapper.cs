@@ -206,16 +206,9 @@ namespace JSQViewer.Application.Database
 
         private static string GetDisplayName(string source, IDictionary<string, string> metadata)
         {
-            string title;
-            if (metadata != null
-                && metadata.TryGetValue("Название", out title)
-                && !string.IsNullOrWhiteSpace(title))
-            {
-                return title.Trim();
-            }
-
             string recordingId;
-            return RecordingSourceRef.TryParse(source, out recordingId) ? recordingId : source;
+            string fallback = RecordingSourceRef.TryParse(source, out recordingId) ? recordingId : source;
+            return RecordingDisplayNameBuilder.Build(metadata, fallback);
         }
     }
 }
