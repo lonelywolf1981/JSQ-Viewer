@@ -155,6 +155,10 @@ namespace JSQViewer.UI
         private readonly IDatabaseSettingsRepository _databaseSettingsRepository;
         private readonly IRecordingDataReader _recordingDataReader;
         private readonly Timer _liveRefreshTimer;
+        private const int ActiveMarkerBlinkIntervalMs = 900;
+        private readonly Timer _activeMarkerTimer;
+        private readonly Label _liveRecordingLabel;
+        private bool _activeMarkerVisible = true;
         private readonly GetRecordingInfoUseCase _getRecordingInfoUseCase;
         private readonly RemoveLoadedSourceUseCase _removeLoadedSourceUseCase;
         private readonly SourceDisplayNameResolver _sourceDisplayNameResolver;
@@ -252,6 +256,11 @@ namespace JSQViewer.UI
             _liveRefreshTimer = new Timer();
             _liveRefreshTimer.Enabled = false;
             _liveRefreshTimer.Tick += LiveRefreshTimerOnTick;
+
+            _activeMarkerTimer = new Timer();
+            _activeMarkerTimer.Enabled = false;
+            _activeMarkerTimer.Interval = ActiveMarkerBlinkIntervalMs;
+            _activeMarkerTimer.Tick += ActiveMarkerTimerOnTick;
             _removeLoadedSourceUseCase = new RemoveLoadedSourceUseCase();
             _getRecordingInfoUseCase = new GetRecordingInfoUseCase(_timestampRangeService, new ProvaMetadataReader());
             _viewerSettings = _viewerSettingsRepository.Load();
@@ -307,6 +316,20 @@ namespace JSQViewer.UI
             _refreshButton = new Button(); _refreshButton.Text = Loc.Get("Refresh"); _refreshButton.AutoSize = true; _refreshButton.Click += RefreshButtonOnClick; folderRow.Controls.Add(_refreshButton);
             _closeAllButton = new Button(); _closeAllButton.Text = Loc.Get("CloseAll"); _closeAllButton.AutoSize = true; _closeAllButton.Click += CloseAllButtonOnClick; folderRow.Controls.Add(_closeAllButton);
             _langButton = new Button(); _langButton.Text = Loc.Get("Language"); _langButton.Width = 40; _langButton.Click += LangButtonOnClick; folderRow.Controls.Add(_langButton);
+
+            // Window captions are drawn by Windows and cannot be coloured, so the red "recording"
+            // indicator lives here, next to the source, and blinks together with the caption marker.
+            _liveRecordingLabel = new Label();
+            _liveRecordingLabel.AutoSize = false;
+            _liveRecordingLabel.Width = 108;
+            _liveRecordingLabel.Height = 22;
+            _liveRecordingLabel.Margin = new Padding(8, 6, 4, 0);
+            _liveRecordingLabel.ForeColor = Color.Red;
+            _liveRecordingLabel.Font = new Font(Font, FontStyle.Bold);
+            _liveRecordingLabel.TextAlign = ContentAlignment.MiddleLeft;
+            _liveRecordingLabel.Text = RecordingDisplayNameBuilder.ActiveMarker + " " + Loc.Get("RecordingLiveIndicator");
+            _liveRecordingLabel.Visible = false;
+            folderRow.Controls.Add(_liveRecordingLabel);
 
             var recentRow = NewRow(); left.Controls.Add(recentRow, 0, 1);
             _recentLabel = new Label(); _recentLabel.Text = Loc.Get("Recent"); _recentLabel.AutoSize = true; _recentLabel.Padding = new Padding(0, 6, 4, 0); recentRow.Controls.Add(_recentLabel);
@@ -510,6 +533,9 @@ namespace JSQViewer.UI
                 _liveRefreshTimer.Stop();
                 _liveRefreshTimer.Tick -= LiveRefreshTimerOnTick;
                 _liveRefreshTimer.Dispose();
+                _activeMarkerTimer.Stop();
+                _activeMarkerTimer.Tick -= ActiveMarkerTimerOnTick;
+                _activeMarkerTimer.Dispose();
             }
             base.Dispose(disposing);
         }
@@ -1028,10 +1054,82 @@ namespace JSQViewer.UI
 
         private string BuildChartWindowCaption()
         {
-            return _workspaceTitleBuilder.BuildCaption(
-                _viewerSession.Data,
-                GetWorkspaceTitleFallback(),
-                Loc.Get("ChartWindowTitle"));
+            string workspaceTitle = ActiveRecordingMarkerBlink.Apply(
+                _workspaceTitleBuilder.Build(_viewerSession.Data, GetWorkspaceTitleFallback()),
+                _activeMarkerVisible);
+            return string.Format(Loc.Get("ChartWindowTitle"), workspaceTitle);
+        }
+
+        private void ApplySourceWindowCaptions()
+        {
+            foreach (KeyValuePair<string, SourceWindowState> pair in _sourceWindows)
+            {
+                SourceWindowState sw = pair.Value;
+                if (sw == null || sw.Form == null || sw.Form.IsDisposed)
+                {
+                    continue;
+                }
+
+                string sourceTitle = sw.ViewModel == null
+                    ? _sourceDisplayNameResolver.Resolve(_viewerSession.Data, sw.SourceRoot)
+                    : sw.ViewModel.Title;
+                sw.Form.Text = string.Format(
+                    Loc.Get("ChannelsForSource"),
+                    ActiveRecordingMarkerBlink.Apply(sourceTitle, _activeMarkerVisible));
+            }
+        }
+
+        private void ActiveMarkerTimerOnTick(object sender, EventArgs e)
+        {
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+
+            _activeMarkerVisible = !_activeMarkerVisible;
+            ApplyChartWindowTitles();
+            ApplySourceWindowCaptions();
+            ApplyLiveRecordingIndicator();
+        }
+
+        private void ApplyLiveRecordingIndicator()
+        {
+            if (_liveRecordingLabel == null || _liveRecordingLabel.IsDisposed)
+            {
+                return;
+            }
+
+            _liveRecordingLabel.Text = ActiveRecordingMarkerBlink.Apply(
+                RecordingDisplayNameBuilder.ActiveMarker + " " + Loc.Get("RecordingLiveIndicator"),
+                _activeMarkerVisible);
+        }
+
+        private void StartActiveMarkerBlink()
+        {
+            _activeMarkerVisible = true;
+            if (_liveRecordingLabel != null && !_liveRecordingLabel.IsDisposed)
+            {
+                _liveRecordingLabel.Visible = true;
+            }
+
+            ApplyLiveRecordingIndicator();
+            _activeMarkerTimer.Start();
+        }
+
+        private void StopActiveMarkerBlink()
+        {
+            _activeMarkerTimer.Stop();
+            _activeMarkerVisible = true;
+            if (_liveRecordingLabel != null && !_liveRecordingLabel.IsDisposed)
+            {
+                _liveRecordingLabel.Visible = false;
+            }
+
+            if (!IsDisposed && !Disposing)
+            {
+                ApplyChartWindowTitles();
+                ApplySourceWindowCaptions();
+            }
         }
 
         private void ApplyChartWindowTitles()
@@ -2213,6 +2311,7 @@ namespace JSQViewer.UI
                 if (IsRecordingStatus(status))
                 {
                     _liveRefreshTimer.Start();
+                    StartActiveMarkerBlink();
                     NotifySuccess(Loc.Get("RecordingLiveUpdating"));
                     return;
                 }
@@ -2328,6 +2427,7 @@ namespace JSQViewer.UI
             _liveRefreshTimer.Stop();
             _liveRecordingId = null;
             _liveRefreshConnectionLost = false;
+            StopActiveMarkerBlink();
         }
 
         private LiveRefreshState CaptureLiveRefreshState()
