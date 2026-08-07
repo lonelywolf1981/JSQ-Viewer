@@ -157,7 +157,6 @@ namespace JSQViewer.UI
         private readonly Timer _liveRefreshTimer;
         private const int ActiveMarkerBlinkIntervalMs = 900;
         private readonly Timer _activeMarkerTimer;
-        private readonly Label _liveRecordingLabel;
         private bool _activeMarkerVisible = true;
         private readonly GetRecordingInfoUseCase _getRecordingInfoUseCase;
         private readonly RemoveLoadedSourceUseCase _removeLoadedSourceUseCase;
@@ -316,20 +315,6 @@ namespace JSQViewer.UI
             _refreshButton = new Button(); _refreshButton.Text = Loc.Get("Refresh"); _refreshButton.AutoSize = true; _refreshButton.Click += RefreshButtonOnClick; folderRow.Controls.Add(_refreshButton);
             _closeAllButton = new Button(); _closeAllButton.Text = Loc.Get("CloseAll"); _closeAllButton.AutoSize = true; _closeAllButton.Click += CloseAllButtonOnClick; folderRow.Controls.Add(_closeAllButton);
             _langButton = new Button(); _langButton.Text = Loc.Get("Language"); _langButton.Width = 40; _langButton.Click += LangButtonOnClick; folderRow.Controls.Add(_langButton);
-
-            // Window captions are drawn by Windows and cannot be coloured, so the red "recording"
-            // indicator lives here, next to the source, and blinks together with the caption marker.
-            _liveRecordingLabel = new Label();
-            _liveRecordingLabel.AutoSize = false;
-            _liveRecordingLabel.Width = 108;
-            _liveRecordingLabel.Height = 22;
-            _liveRecordingLabel.Margin = new Padding(8, 6, 4, 0);
-            _liveRecordingLabel.ForeColor = Color.Red;
-            _liveRecordingLabel.Font = new Font(Font, FontStyle.Bold);
-            _liveRecordingLabel.TextAlign = ContentAlignment.MiddleLeft;
-            _liveRecordingLabel.Text = RecordingDisplayNameBuilder.ActiveMarker + " " + Loc.Get("RecordingLiveIndicator");
-            _liveRecordingLabel.Visible = false;
-            folderRow.Controls.Add(_liveRecordingLabel);
 
             var recentRow = NewRow(); left.Controls.Add(recentRow, 0, 1);
             _recentLabel = new Label(); _recentLabel.Text = Loc.Get("Recent"); _recentLabel.AutoSize = true; _recentLabel.Padding = new Padding(0, 6, 4, 0); recentRow.Controls.Add(_recentLabel);
@@ -1089,30 +1074,11 @@ namespace JSQViewer.UI
             _activeMarkerVisible = !_activeMarkerVisible;
             ApplyChartWindowTitles();
             ApplySourceWindowCaptions();
-            ApplyLiveRecordingIndicator();
-        }
-
-        private void ApplyLiveRecordingIndicator()
-        {
-            if (_liveRecordingLabel == null || _liveRecordingLabel.IsDisposed)
-            {
-                return;
-            }
-
-            _liveRecordingLabel.Text = ActiveRecordingMarkerBlink.Apply(
-                RecordingDisplayNameBuilder.ActiveMarker + " " + Loc.Get("RecordingLiveIndicator"),
-                _activeMarkerVisible);
         }
 
         private void StartActiveMarkerBlink()
         {
             _activeMarkerVisible = true;
-            if (_liveRecordingLabel != null && !_liveRecordingLabel.IsDisposed)
-            {
-                _liveRecordingLabel.Visible = true;
-            }
-
-            ApplyLiveRecordingIndicator();
             _activeMarkerTimer.Start();
         }
 
@@ -1120,11 +1086,6 @@ namespace JSQViewer.UI
         {
             _activeMarkerTimer.Stop();
             _activeMarkerVisible = true;
-            if (_liveRecordingLabel != null && !_liveRecordingLabel.IsDisposed)
-            {
-                _liveRecordingLabel.Visible = false;
-            }
-
             if (!IsDisposed && !Disposing)
             {
                 ApplyChartWindowTitles();

@@ -15,12 +15,13 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
-        public void Apply_WhenMarkerHidden_ReplacesMarkerWithSpace()
+        public void Apply_WhenMarkerHidden_ReplacesMarkerWithTwoSpaces()
         {
             string dark = ActiveRecordingMarkerBlink.Apply(Lit, false);
 
-            Assert.AreEqual("  Post B 2026-08-06 14-33-12 · LIDER · FUNC · 32/65", dark);
-            Assert.AreEqual(Lit.Length, dark.Length, "Длина не меняется, чтобы текст не дёргался.");
+            // Два пробела, а не один: одиночный пробел заметно уже глифа метки, из-за чего
+            // остаток заголовка дёргался влево-вправо на каждом мигании.
+            Assert.AreEqual("   Post B 2026-08-06 14-33-12 · LIDER · FUNC · 32/65", dark);
         }
 
         [TestMethod]
