@@ -111,7 +111,7 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
-        public void Render_WhenTwoSourcesShareARole_SecondMaximumGoesBelowTheLine()
+        public void Render_WhenTwoSourcesShareARole_SecondMaximumGoesToTheRight()
         {
             using (Chart chart = CreateChart())
             {
@@ -121,12 +121,12 @@ namespace JSQViewer.Tests
 
                 StripLine[] strips = chart.ChartAreas[0].AxisY.StripLines.Cast<StripLine>().ToArray();
 
-                // Обе подписи слева, но вторая уходит под свою линию — иначе при
-                // разнице в градус они полностью перекрывают друг друга.
+                // Первая подпись слева, вторая справа — иначе при разнице в градус
+                // они полностью перекрывают друг друга. Обе остаются над линией.
                 Assert.AreEqual(StringAlignment.Near, strips[0].TextAlignment);
+                Assert.AreEqual(StringAlignment.Far, strips[1].TextAlignment);
                 Assert.AreEqual(StringAlignment.Far, strips[0].TextLineAlignment);
-                Assert.AreEqual(StringAlignment.Near, strips[1].TextAlignment);
-                Assert.AreEqual(StringAlignment.Near, strips[1].TextLineAlignment);
+                Assert.AreEqual(StringAlignment.Far, strips[1].TextLineAlignment);
             }
         }
 
@@ -141,8 +141,7 @@ namespace JSQViewer.Tests
 
                 StripLine[] strips = chart.ChartAreas[0].AxisY.StripLines.Cast<StripLine>().ToArray();
 
-                // Под линиями минимума места нет — они у самой нижней границы,
-                // поэтому вторая подпись разводится вправо, а не вниз.
+                // Минимум ведёт себя так же, как остальные роли: вторая подпись вправо.
                 Assert.AreEqual(StringAlignment.Near, strips[0].TextAlignment);
                 Assert.AreEqual(StringAlignment.Far, strips[1].TextAlignment);
                 Assert.AreEqual(StringAlignment.Far, strips[0].TextLineAlignment);
@@ -164,12 +163,13 @@ namespace JSQViewer.Tests
 
                 // Порядок устойчив: сначала роль, затем источник. Счётчик мест
                 // ведётся отдельно по каждой роли, поэтому единственный максимум
-                // остаётся над своей линией.
+                // остаётся слева, хотя средних уже две.
                 Assert.AreEqual("a-avg", strips[0].Text);
-                Assert.AreEqual(StringAlignment.Far, strips[0].TextLineAlignment);
+                Assert.AreEqual(StringAlignment.Near, strips[0].TextAlignment);
                 Assert.AreEqual("b-avg", strips[1].Text);
-                Assert.AreEqual(StringAlignment.Near, strips[1].TextLineAlignment);
+                Assert.AreEqual(StringAlignment.Far, strips[1].TextAlignment);
                 Assert.AreEqual("a-max", strips[2].Text);
+                Assert.AreEqual(StringAlignment.Near, strips[2].TextAlignment);
                 Assert.AreEqual(StringAlignment.Far, strips[2].TextLineAlignment);
             }
         }

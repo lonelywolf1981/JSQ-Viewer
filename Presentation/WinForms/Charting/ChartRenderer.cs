@@ -107,7 +107,7 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 strip.BorderWidth = 2;
                 strip.BorderDashStyle = ResolveLevelDashStyle(level.Role);
                 strip.Text = level.Label ?? string.Empty;
-                ApplyLabelPlacement(strip, level.Role, ordinal);
+                ApplyLabelPlacement(strip, ordinal);
                 area.AxisY.StripLines.Add(strip);
             }
         }
@@ -121,21 +121,14 @@ namespace JSQViewer.Presentation.WinForms.Charting
         /// <summary>
         /// Разводит подписи уровней одной роли, чтобы при сравнении прогонов они
         /// не ложились одна на другую: у близких по значению линий подписи иначе
-        /// полностью перекрываются.
+        /// полностью перекрываются. Правило одно на все роли — первая подпись
+        /// слева, вторая справа; вертикаль задействуется только начиная с третьего
+        /// источника, потому что под линиями минимума места нет.
         /// </summary>
-        private static void ApplyLabelPlacement(StripLine strip, ChartSeriesRole role, int ordinal)
+        private static void ApplyLabelPlacement(StripLine strip, int ordinal)
         {
-            if (role == ChartSeriesRole.T8Minimum)
-            {
-                // Линии минимума жмутся к нижней границе области, и места под ними
-                // нет — поэтому подписи разводятся по горизонтали, а не по вертикали.
-                strip.TextAlignment = (ordinal % 2) == 0 ? StringAlignment.Near : StringAlignment.Far;
-                strip.TextLineAlignment = ((ordinal / 2) % 2) == 0 ? StringAlignment.Far : StringAlignment.Near;
-                return;
-            }
-
-            strip.TextAlignment = ((ordinal / 2) % 2) == 0 ? StringAlignment.Near : StringAlignment.Far;
-            strip.TextLineAlignment = (ordinal % 2) == 0 ? StringAlignment.Far : StringAlignment.Near;
+            strip.TextAlignment = (ordinal % 2) == 0 ? StringAlignment.Near : StringAlignment.Far;
+            strip.TextLineAlignment = ((ordinal / 2) % 2) == 0 ? StringAlignment.Far : StringAlignment.Near;
         }
 
         private static ChartDashStyle ResolveLevelDashStyle(ChartSeriesRole role)
