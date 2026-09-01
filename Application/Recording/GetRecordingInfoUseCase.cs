@@ -17,6 +17,7 @@ namespace JSQViewer.Application.Recording
 
         private readonly TimestampRangeService _timestampRangeService;
         private readonly ITestMetadataReader _metadataReader;
+        private readonly T8PlusSeriesBuilder _t8PlusSeriesBuilder = new T8PlusSeriesBuilder();
 
         public GetRecordingInfoUseCase(
             TimestampRangeService timestampRangeService,
@@ -284,8 +285,8 @@ namespace JSQViewer.Application.Recording
             long startMs,
             T8PlusTemperatureThresholds thresholds)
         {
-            List<string> columns = FindTColumns(data, sourceRoot, 8);
-            if (columns.Count == 0)
+            T8PlusSeries series = _t8PlusSeriesBuilder.Build(data, sourceRoot);
+            if (!series.HasChannels)
             {
                 return null;
             }
@@ -305,39 +306,16 @@ namespace JSQViewer.Application.Recording
 
             for (int i = i0; i < i1; i++)
             {
-                double sum = 0d;
-                double min = double.MaxValue;
-                double max = double.MinValue;
-                int count = 0;
-
-                foreach (string column in columns)
-                {
-                    double?[] values;
-                    if (!data.Columns.TryGetValue(column, out values) || values == null ||
-                        i >= values.Length || !values[i].HasValue)
-                    {
-                        continue;
-                    }
-
-                    double value = values[i].Value;
-                    if (!IsValidRecordingTemperature(value))
-                    {
-                        continue;
-                    }
-
-                    sum += value;
-                    if (value < min) min = value;
-                    if (value > max) max = value;
-                    count++;
-                }
-
-                if (count == 0)
+                if (i >= series.Average.Length || !series.Average[i].HasValue)
                 {
                     continue;
                 }
 
                 long timestampMs = data.TimestampsMs[i];
-                double average = sum / count;
+                double average = series.Average[i].Value;
+                double min = series.Minimum[i].Value;
+                double max = series.Maximum[i].Value;
+
                 if (!firstAverage.HasValue)
                 {
                     firstAverage = average;
@@ -358,6 +336,8 @@ namespace JSQViewer.Application.Recording
                     hasMinimum = true;
                 }
 
+                // Именно «меньше»: карточка ищет момент, когда самый тёплый
+                // датчик опустился ниже всего, а не глобальный максимум прогона.
                 if (max < bestMaximum)
                 {
                     bestMaximum = max;
@@ -465,36 +445,6 @@ namespace JSQViewer.Application.Recording
             return null;
         }
 
-        private static List<string> FindTColumns(TestData data, string sourceRoot, int minimumNumber)
-        {
-            var result = new List<string>();
-            string[] cols;
-            if (data.SourceColumns.TryGetValue(sourceRoot, out cols) && cols != null)
-            {
-                AddTColumns(result, cols, minimumNumber);
-                return result;
-            }
-
-            if (data.ColumnNames != null && data.SourceColumns.Count <= 1)
-            {
-                AddTColumns(result, data.ColumnNames, minimumNumber);
-            }
-
-            return result;
-        }
-
-        private static void AddTColumns(List<string> result, string[] cols, int minimumNumber)
-        {
-            foreach (string col in cols)
-            {
-                int number;
-                if (TryGetTChannelNumber(col, out number) && number >= minimumNumber)
-                {
-                    result.Add(col);
-                }
-            }
-        }
-
         private static IReadOnlyList<KeyValuePair<string, string>> FilterDisplayMetadata(
             IEnumerable<KeyValuePair<string, string>> meta)
         {
@@ -541,7 +491,7 @@ namespace JSQViewer.Application.Recording
             foreach (string col in cols)
             {
                 int number;
-                if (TryGetTChannelNumber(col, out number) && number == 1) return col;
+                if (T8PlusChannelSelector.TryGetChannelNumber(col, out number) && number == 1) return col;
             }
             return null;
         }
@@ -559,56 +509,8 @@ namespace JSQViewer.Application.Recording
         {
             if (string.IsNullOrEmpty(col)) return false;
 
-            string name = NormalizeChannelName(col);
+            string name = T8PlusChannelSelector.NormalizeChannelName(col);
             return string.Equals(name, "W", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool TryGetTChannelNumber(string col, out int number)
-        {
-            number = 0;
-            if (string.IsNullOrEmpty(col)) return false;
-
-            string name = NormalizeChannelName(col);
-            if (name.Length < 2 || (name[0] != 'T' && name[0] != 't'))
-                return false;
-
-            string digits = name.Substring(1);
-            if (digits.Length == 0)
-                return false;
-
-            foreach (char c in digits)
-            {
-                if (!char.IsDigit(c))
-                    return false;
-            }
-
-            return int.TryParse(digits, out number);
-        }
-
-        private static string NormalizeChannelName(string col)
-        {
-            string name = col.Trim();
-            int sep = name.LastIndexOf("::", StringComparison.Ordinal);
-            if (sep >= 0)
-                name = name.Substring(sep + 2);
-
-            int hash = name.LastIndexOf('#');
-            if (hash > 0)
-            {
-                string hashPart = name.Substring(hash + 1);
-                bool allDigits = hashPart.Length > 0;
-                foreach (char c in hashPart)
-                {
-                    if (!char.IsDigit(c)) { allDigits = false; break; }
-                }
-                if (allDigits)
-                    name = name.Substring(0, hash);
-            }
-
-            if (name.Length >= 3 && name[1] == '-')
-                name = name.Substring(2);
-
-            return name;
         }
     }
 }

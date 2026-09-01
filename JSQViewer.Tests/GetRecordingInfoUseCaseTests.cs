@@ -643,5 +643,29 @@ namespace JSQViewer.Tests
             Assert.IsNotNull(r.T8PlusStats);
             Assert.AreEqual(-4.0, r.T8PlusStats.AverageDropRatePerMinute.Value, 0.001);
         }
+
+        [TestMethod]
+        public void Execute_T8PlusStats_MatchesSeriesBuilderOutput()
+        {
+            var data = new TestData();
+            data.TimestampsMs = new[] { 0L, 60_000L, 120_000L };
+            data.RowCount = 3;
+            data.SourceColumns["A"] = new[] { "T8", "T9" };
+            data.Columns["T8"] = new double?[] { 20.0, 8.0, 4.0 };
+            data.Columns["T9"] = new double?[] { 22.0, 10.0, 6.0 };
+            data.SourceStartMs["A"] = 0L;
+            data.SourceEndMs["A"] = 120_000L;
+
+            var useCase = new GetRecordingInfoUseCase(new TimestampRangeService());
+            RecordingInfoResult result = useCase.Execute(data, "A");
+
+            T8PlusSeries series = new T8PlusSeriesBuilder().Build(data, "A");
+
+            Assert.IsTrue(result.T8PlusStats.HasChannels);
+            // Наименьшее среднее по отсчётам — последний отсчёт: (4 + 6) / 2.
+            Assert.AreEqual(series.Average[2].Value, result.T8PlusStats.AverageValue.Value, 1e-9);
+            Assert.AreEqual(series.Minimum[2].Value, result.T8PlusStats.MinimumValue.Value, 1e-9);
+            Assert.AreEqual(series.Maximum[2].Value, result.T8PlusStats.MaximumValue.Value, 1e-9);
+        }
     }
 }
