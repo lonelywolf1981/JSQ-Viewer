@@ -48,6 +48,7 @@ namespace JSQViewer.Presentation.WinForms.Charting
                     ApplyOverlayXAxisLabels(area, viewModel != null && viewModel.OverlayMode);
                     ApplyAxis(area.AxisY, viewModel.YAxis);
                     ApplyLevelLines(area, viewModel);
+                    EnsureLevelsFitAxis(area, viewModel);
                 }
             }
             finally
@@ -110,6 +111,98 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 ApplyLabelPlacement(strip, ordinal);
                 area.AxisY.StripLines.Add(strip);
             }
+        }
+
+        /// <summary>
+        /// Раздвигает ось Y так, чтобы уровни попали в видимую область.
+        /// MS Chart считает автоматический диапазон только по сериям, а полосы в
+        /// него не входят: уровень ниже самой холодной показанной кривой иначе
+        /// обрезается краем области и выглядит как «линия не работает».
+        /// Двигается только та граница, которой не хватает, — вторая остаётся
+        /// автоматической, чтобы подписи оси сохранили круглые значения.
+        /// </summary>
+        private static void EnsureLevelsFitAxis(ChartArea area, ChartViewModel viewModel)
+        {
+            if (viewModel.YAxis != null && viewModel.YAxis.IsManualEnabled)
+            {
+                return;
+            }
+
+            IReadOnlyList<ChartLevelLineViewModel> levels = viewModel.LevelLines;
+            if (levels == null || levels.Count == 0)
+            {
+                return;
+            }
+
+            double seriesMinimum;
+            double seriesMaximum;
+            if (!TryGetSeriesRange(viewModel, out seriesMinimum, out seriesMaximum))
+            {
+                return;
+            }
+
+            double levelMinimum = levels[0].Value;
+            double levelMaximum = levels[0].Value;
+            for (int i = 1; i < levels.Count; i++)
+            {
+                if (levels[i].Value < levelMinimum) levelMinimum = levels[i].Value;
+                if (levels[i].Value > levelMaximum) levelMaximum = levels[i].Value;
+            }
+
+            double low = Math.Min(seriesMinimum, levelMinimum);
+            double high = Math.Max(seriesMaximum, levelMaximum);
+            double margin = (high - low) * 0.03;
+            if (margin <= 0d)
+            {
+                margin = 1d;
+            }
+
+            if (levelMinimum < seriesMinimum)
+            {
+                area.AxisY.Minimum = levelMinimum - margin;
+            }
+
+            if (levelMaximum > seriesMaximum)
+            {
+                area.AxisY.Maximum = levelMaximum + margin;
+            }
+        }
+
+        private static bool TryGetSeriesRange(ChartViewModel viewModel, out double minimum, out double maximum)
+        {
+            minimum = 0d;
+            maximum = 0d;
+            bool found = false;
+
+            IReadOnlyList<ChartSeriesViewModel> series = viewModel.Series;
+            if (series == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < series.Count; i++)
+            {
+                double[] values = series[i].YValues;
+                if (values == null)
+                {
+                    continue;
+                }
+
+                for (int v = 0; v < values.Length; v++)
+                {
+                    double value = values[v];
+                    if (double.IsNaN(value) || double.IsInfinity(value))
+                    {
+                        continue;
+                    }
+
+                    if (!found || value < minimum) minimum = value;
+                    if (!found || value > maximum) maximum = value;
+                    found = true;
+                }
+            }
+
+            return found;
         }
 
         private static int CompareLevelLines(ChartLevelLineViewModel first, ChartLevelLineViewModel second)

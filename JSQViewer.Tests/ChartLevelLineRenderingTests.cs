@@ -175,6 +175,76 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Render_WhenLevelSitsBelowEveryShownSeries_ExtendsTheAxisToReachIt()
+        {
+            using (Chart chart = CreateChart())
+            {
+                // Воспроизводит случай с реального прогона: на графике показаны
+                // только тёплые термопары, а минимум группы принадлежит скрытой
+                // и лежит ниже нижней границы автоматической шкалы.
+                new ChartRenderer().Render(chart, ViewModel(
+                    new ChartLevelLineViewModel { SourceIndex = 0, Role = ChartSeriesRole.T8Minimum, Value = -4.0, Label = "T8+ мин -4.0 (T26)" }));
+
+                Axis axisY = chart.ChartAreas[0].AxisY;
+
+                Assert.IsFalse(double.IsNaN(axisY.Minimum), "нижняя граница осталась автоматической");
+                Assert.IsTrue(axisY.Minimum < -4.0, "уровень -4.0 не попал в область, минимум оси " + axisY.Minimum);
+                // Верхняя граница не тронута: подписи оси сохраняют круглые значения.
+                Assert.IsTrue(double.IsNaN(axisY.Maximum));
+            }
+        }
+
+        [TestMethod]
+        public void Render_WhenLevelSitsAboveEveryShownSeries_ExtendsTheUpperBound()
+        {
+            using (Chart chart = CreateChart())
+            {
+                new ChartRenderer().Render(chart, ViewModel(
+                    new ChartLevelLineViewModel { SourceIndex = 0, Role = ChartSeriesRole.T8Maximum, Value = 40.0, Label = "T8+ макс 40.0 (T27)" }));
+
+                Axis axisY = chart.ChartAreas[0].AxisY;
+
+                Assert.IsTrue(axisY.Maximum > 40.0, "уровень 40.0 не попал в область, максимум оси " + axisY.Maximum);
+                Assert.IsTrue(double.IsNaN(axisY.Minimum));
+            }
+        }
+
+        [TestMethod]
+        public void Render_WhenLevelIsInsideSeriesRange_LeavesAxisAutomatic()
+        {
+            using (Chart chart = CreateChart())
+            {
+                // Серии в ViewModel идут от 5 до 6, уровень между ними.
+                new ChartRenderer().Render(chart, ViewModel(
+                    new ChartLevelLineViewModel { SourceIndex = 0, Role = ChartSeriesRole.T8Average, Value = 5.5, Label = "T8+ сред 5.5" }));
+
+                Axis axisY = chart.ChartAreas[0].AxisY;
+
+                Assert.IsTrue(double.IsNaN(axisY.Minimum));
+                Assert.IsTrue(double.IsNaN(axisY.Maximum));
+            }
+        }
+
+        [TestMethod]
+        public void Render_WithManualYAxis_DoesNotOverrideTheUserBounds()
+        {
+            using (Chart chart = CreateChart())
+            {
+                ChartViewModel model = ViewModel(
+                    new ChartLevelLineViewModel { SourceIndex = 0, Role = ChartSeriesRole.T8Minimum, Value = -4.0, Label = "a" });
+                model.YAxis = new ChartAxisSettingsViewModel { IsManualEnabled = true, Minimum = 0d, Maximum = 10d };
+
+                new ChartRenderer().Render(chart, model);
+
+                Axis axisY = chart.ChartAreas[0].AxisY;
+
+                // Заданные вручную границы важнее видимости уровня.
+                Assert.AreEqual(0d, axisY.Minimum, 1e-9);
+                Assert.AreEqual(10d, axisY.Maximum, 1e-9);
+            }
+        }
+
+        [TestMethod]
         public void Render_WithoutLevels_LeavesNoStripLines()
         {
             using (Chart chart = CreateChart())
