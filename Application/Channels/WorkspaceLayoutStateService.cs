@@ -100,6 +100,46 @@ namespace JSQViewer.Application.Channels
             return workspaceState;
         }
 
+        public T8PlusLineSelection GetSourceT8PlusLines(WorkspaceLayoutState state, string sourceRoot)
+        {
+            WorkspaceLayoutState workspaceState = EnsureState(state);
+            string normalizedRoot = WorkspaceLayoutState.NormalizeSourceRoot(sourceRoot);
+
+            T8PlusLineSelection selection;
+            if (workspaceState.SourceT8PlusLines.TryGetValue(normalizedRoot, out selection) && selection != null)
+            {
+                return selection;
+            }
+
+            return T8PlusLineSelection.None;
+        }
+
+        public WorkspaceLayoutState SaveSourceT8PlusLines(
+            string workspaceKey,
+            WorkspaceLayoutState state,
+            string sourceRoot,
+            T8PlusLineSelection selection)
+        {
+            WorkspaceLayoutState workspaceState = EnsureState(state);
+            string normalizedRoot = WorkspaceLayoutState.NormalizeSourceRoot(sourceRoot);
+            if (normalizedRoot.Length == 0)
+            {
+                return workspaceState;
+            }
+
+            if (selection == null || !selection.HasAny)
+            {
+                workspaceState.SourceT8PlusLines.Remove(normalizedRoot);
+            }
+            else
+            {
+                workspaceState.SourceT8PlusLines[normalizedRoot] = selection;
+            }
+
+            Save(workspaceKey, workspaceState);
+            return workspaceState;
+        }
+
         private WorkspaceLayoutRestoreSelection CreateRestoreSelection(string selectedOrderKey, IEnumerable<string> effectiveOrder)
         {
             string normalizedSelectedOrderKey = NormalizeSelectedOrderKey(selectedOrderKey);
