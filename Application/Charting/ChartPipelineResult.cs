@@ -7,6 +7,7 @@ namespace JSQViewer.Application.Charting
         public ChartPipelineResult()
         {
             Series = new ChartPipelineSeries[0];
+            LevelLines = new ChartLevelLine[0];
             XAxis = ChartAxisSettings.Automatic();
             YAxis = ChartAxisSettings.Automatic();
         }
@@ -30,6 +31,8 @@ namespace JSQViewer.Application.Charting
         public long MaxOverlayDurationMs { get; set; }
 
         public IReadOnlyList<ChartPipelineSeries> Series { get; set; }
+
+        public IReadOnlyList<ChartLevelLine> LevelLines { get; set; }
 
         public ChartAxisSettings XAxis { get; set; }
 

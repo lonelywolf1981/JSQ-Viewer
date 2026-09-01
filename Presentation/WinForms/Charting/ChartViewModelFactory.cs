@@ -31,9 +31,7 @@ namespace JSQViewer.Presentation.WinForms.Charting
                     YValues = item.YValues ?? new double[0],
                     BorderWidth = item.BorderWidth,
                     IsVisibleInLegend = item.IsVisibleInLegend,
-                    IsForecast = item.IsForecast,
-                    Role = item.Role,
-                    SourceIndex = item.SourceIndex
+                    IsForecast = item.IsForecast
                 });
             }
 

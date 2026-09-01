@@ -33,61 +33,77 @@ namespace JSQViewer.Tests
             return data;
         }
 
-        private static ChartPipelineRequest Request(TestData data, IReadOnlyList<T8PlusSeriesRequest> t8)
+        private static ChartPipelineRequest Request(
+            TestData data,
+            IReadOnlyList<T8PlusSeriesRequest> t8,
+            bool overlayMode = false,
+            double rangeStart = double.NaN,
+            double rangeEnd = double.NaN)
         {
             return ChartPipelineRequest.ForChart(
-                data, new[] { "T1" }, false, 1, false, 1, 1000, 1,
-                double.NaN, double.NaN, null, null, false, null, t8);
+                data, new[] { "T1" }, overlayMode, 1, false, 1, 1000, 1,
+                rangeStart, rangeEnd, null, null, false, null, t8);
         }
 
         [TestMethod]
-        public void Execute_WithAllThreeFlags_AddsThreeSeriesWithRolesAndSourceRoot()
+        public void Execute_WithAllThreeFlags_ProducesThreeLevelsAtLastSample()
         {
-            TestData data = BuildData();
             var t8 = new[] { new T8PlusSeriesRequest("A", true, true, true) };
 
-            ChartPipelineResult result = CreateService().Execute(Request(data, t8));
+            ChartPipelineResult result = CreateService().Execute(Request(BuildData(), t8));
 
-            List<ChartPipelineSeries> extra = result.Series
-                .Where(s => s.Role != ChartSeriesRole.Channel)
-                .ToList();
-
-            Assert.AreEqual(3, extra.Count);
-            CollectionAssert.AreEquivalent(
-                new[] { ChartSeriesRole.T8Minimum, ChartSeriesRole.T8Average, ChartSeriesRole.T8Maximum },
-                extra.Select(s => s.Role).ToArray());
-            Assert.IsTrue(extra.All(s => s.SourceRoot == "A"));
-            Assert.IsTrue(extra.All(s => s.SourceIndex == 0));
+            Assert.AreEqual(3, result.LevelLines.Count);
+            // Последний отсчёт: T8=4, T9=14.
+            Assert.AreEqual(4.0, result.LevelLines.Single(l => l.Role == ChartSeriesRole.T8Minimum).Value, 1e-9);
+            Assert.AreEqual(9.0, result.LevelLines.Single(l => l.Role == ChartSeriesRole.T8Average).Value, 1e-9);
+            Assert.AreEqual(14.0, result.LevelLines.Single(l => l.Role == ChartSeriesRole.T8Maximum).Value, 1e-9);
+            Assert.IsTrue(result.LevelLines.All(l => l.SourceRoot == "A" && l.SourceIndex == 0));
         }
 
         [TestMethod]
-        public void Execute_WithSingleFlag_AddsOnlyThatSeriesWithExpectedValues()
+        public void Execute_WithNarrowedRange_UsesLastSampleInsideRange()
+        {
+            var t8 = new[] { new T8PlusSeriesRequest("A", false, true, false) };
+
+            ChartPipelineResult result = CreateService().Execute(
+                Request(BuildData(), t8, false, 0d, 1500d));
+
+            // Правый край 1500 мс: последний попавший отсчёт — 1000 мс, T8=8, T9=18.
+            Assert.AreEqual(13.0, result.LevelLines.Single().Value, 1e-9);
+        }
+
+        [TestMethod]
+        public void Execute_WhenEdgeSampleHasNoValue_StepsBackToNearestValidSample()
         {
             TestData data = BuildData();
+            data.Columns["T8"] = new double?[] { 10.0, 8.0, 6.0, null };
+            data.Columns["T9"] = new double?[] { 20.0, 18.0, 16.0, null };
             var t8 = new[] { new T8PlusSeriesRequest("A", false, true, false) };
 
             ChartPipelineResult result = CreateService().Execute(Request(data, t8));
 
-            ChartPipelineSeries average = result.Series.Single(s => s.Role == ChartSeriesRole.T8Average);
-
-            Assert.AreEqual(4, average.YValues.Length);
-            Assert.AreEqual(15.0, average.YValues[0], 1e-9);
-            Assert.AreEqual(9.0, average.YValues[3], 1e-9);
+            // На последнем отсчёте значений нет, берётся предыдущий: (6 + 16) / 2.
+            Assert.AreEqual(11.0, result.LevelLines.Single().Value, 1e-9);
         }
 
         [TestMethod]
-        public void Execute_WithoutFlags_AddsNothing()
+        public void Execute_WhenNoValidSampleInRange_ProducesNoLevels()
         {
             TestData data = BuildData();
+            data.Columns["T8"] = new double?[] { null, null, null, null };
+            data.Columns["T9"] = new double?[] { null, null, null, null };
+            var t8 = new[] { new T8PlusSeriesRequest("A", true, true, true) };
 
-            ChartPipelineResult result = CreateService().Execute(Request(data, null));
+            ChartPipelineResult result = CreateService().Execute(Request(data, t8));
 
-            Assert.IsTrue(result.Series.All(s => s.Role == ChartSeriesRole.Channel));
+            Assert.AreEqual(0, result.LevelLines.Count);
         }
 
         [TestMethod]
-        public void Execute_WithoutT8Channels_AddsNothing()
+        public void Execute_WithoutFlagsOrWithoutT8Channels_ProducesNoLevels()
         {
+            Assert.AreEqual(0, CreateService().Execute(Request(BuildData(), null)).LevelLines.Count);
+
             var data = new TestData();
             data.Root = "A";
             data.TimestampsMs = new[] { 0L, 1000L };
@@ -98,33 +114,63 @@ namespace JSQViewer.Tests
             data.Columns["T1"] = new double?[] { 1.0, 1.0 };
             var t8 = new[] { new T8PlusSeriesRequest("A", true, true, true) };
 
-            ChartPipelineResult result = CreateService().Execute(Request(data, t8));
-
-            Assert.IsTrue(result.Series.All(s => s.Role == ChartSeriesRole.Channel));
+            Assert.AreEqual(0, CreateService().Execute(Request(data, t8)).LevelLines.Count);
         }
 
         [TestMethod]
-        public void Execute_RespectsDecimationStep()
+        public void Execute_InOverlayMode_ResolvesEdgePerSourceStart()
         {
-            TestData data = BuildData();
-            var t8 = new[] { new T8PlusSeriesRequest("A", false, true, false) };
-            ChartPipelineRequest request = ChartPipelineRequest.ForChart(
-                data, new[] { "T1" }, false, 1, false, 2, 1000, 1,
-                double.NaN, double.NaN, null, null, false, null, t8);
+            var data = new TestData();
+            data.Root = "A";
+            data.TimestampsMs = new[] { 0L, 1000L, 2000L, 3000L, 4000L };
+            data.RowCount = 5;
+            data.SourceOrder = new[] { "A", "B" };
+            data.SourceColumns["A"] = new[] { "T8" };
+            data.SourceColumns["B"] = new[] { "T9" };
+            data.SourceStartMs["A"] = 0L;
+            data.SourceEndMs["A"] = 4000L;
+            data.SourceStartMs["B"] = 2000L;
+            data.SourceEndMs["B"] = 4000L;
+            data.CodeSources["T8"] = "A";
+            data.CodeSources["T9"] = "B";
+            data.Columns["T8"] = new double?[] { 10.0, 20.0, 30.0, 40.0, 50.0 };
+            data.Columns["T9"] = new double?[] { 11.0, 21.0, 31.0, 41.0, 51.0 };
 
-            ChartPipelineResult result = CreateService().Execute(request);
+            var t8 = new[]
+            {
+                new T8PlusSeriesRequest("A", false, true, false),
+                new T8PlusSeriesRequest("B", false, true, false)
+            };
 
-            ChartPipelineSeries average = result.Series.Single(s => s.Role == ChartSeriesRole.T8Average);
-            ChartPipelineSeries channel = result.Series.Single(s => s.Role == ChartSeriesRole.Channel);
+            // В наложении ось — часы от начала своего прогона. Край в 1 час
+            // для A это абсолютные 3600000 мс, для B — 2000 + 3600000 мс;
+            // оба за пределами данных, поэтому берётся последний отсчёт каждого.
+            ChartPipelineResult result = CreateService().Execute(
+                Request(data, t8, true, 0d, 1d));
 
-            Assert.AreEqual(2, result.Step);
-            Assert.AreEqual(channel.XValues.Length, average.XValues.Length);
-            Assert.AreEqual(15.0, average.YValues[0], 1e-9);
-            Assert.AreEqual(11.0, average.YValues[1], 1e-9);
+            ChartLevelLine a = result.LevelLines.Single(l => l.SourceRoot == "A");
+            ChartLevelLine b = result.LevelLines.Single(l => l.SourceRoot == "B");
+
+            Assert.AreEqual(0, a.SourceIndex);
+            Assert.AreEqual(1, b.SourceIndex);
+            Assert.AreEqual(50.0, a.Value, 1e-9);
+            Assert.AreEqual(51.0, b.Value, 1e-9);
         }
 
         [TestMethod]
-        public void Execute_WhenManyChannels_KeepsOnlyT8LinesInLegend()
+        public void Execute_WithSingleSource_LabelOmitsSourceName()
+        {
+            var t8 = new[] { new T8PlusSeriesRequest("A", false, true, false) };
+
+            ChartPipelineResult result = CreateService().Execute(Request(BuildData(), t8));
+
+            string label = result.LevelLines.Single().Label;
+            Assert.IsTrue(label.Contains("T8+"), label);
+            Assert.IsFalse(label.Contains("["), label);
+        }
+
+        [TestMethod]
+        public void Execute_WithLevelsEnabled_DoesNotChangeSeriesOrLegend()
         {
             var data = new TestData();
             data.Root = "A";
@@ -144,153 +190,16 @@ namespace JSQViewer.Tests
             data.Columns["T8"] = new double?[] { 5.0, 5.0 };
             data.SourceColumns["A"] = columns.ToArray();
 
-            var t8 = new[] { new T8PlusSeriesRequest("A", false, true, false) };
+            var t8 = new[] { new T8PlusSeriesRequest("A", true, true, true) };
             ChartPipelineResult result = CreateService().Execute(
                 ChartPipelineRequest.ForChart(
                     data, columns, false, 1, false, 1, 1000, columns.Count,
                     double.NaN, double.NaN, null, null, false, null, t8));
 
-            Assert.IsTrue(result.ShowLegend);
-            Assert.IsTrue(result.Series.Where(s => s.Role == ChartSeriesRole.Channel).All(s => !s.IsVisibleInLegend));
-            Assert.IsTrue(result.Series.Where(s => s.Role != ChartSeriesRole.Channel).All(s => s.IsVisibleInLegend));
-        }
-
-        private static TestData BuildTwoSourceData()
-        {
-            // Общая временная ось на 6 точек: 0..5000 мс с шагом 1000 мс.
-            var data = new TestData();
-            data.Root = "A";
-            data.TimestampsMs = new[] { 0L, 1000L, 2000L, 3000L, 4000L, 5000L };
-            data.RowCount = 6;
-            data.SourceOrder = new[] { "A", "B" };
-
-            data.SourceColumns["A"] = new[] { "T1" };
-            data.SourceColumns["B"] = new[] { "T8", "T9" };
-
-            data.CodeSources["T1"] = "A";
-            data.CodeSources["T8"] = "B";
-            data.CodeSources["T9"] = "B";
-
-            // Источник A: короткая выбранная запись, метаданные фиксируют 2000 мс.
-            data.SourceStartMs["A"] = 0L;
-            data.SourceEndMs["A"] = 2000L;
-            data.Columns["T1"] = new double?[] { 1.0, 1.0, 1.0, null, null, null };
-
-            // Источник B: каналы T8+ доступны на всю ось, метаданные фиксируют 5000 мс.
-            data.SourceStartMs["B"] = 0L;
-            data.SourceEndMs["B"] = 5000L;
-            data.Columns["T8"] = new double?[] { 10.0, 9.0, 8.0, 7.0, 6.0, 5.0 };
-            data.Columns["T9"] = new double?[] { 20.0, 18.0, 16.0, 14.0, 12.0, 10.0 };
-
-            return data;
-        }
-
-        [TestMethod]
-        public void Execute_OverlayMode_T8PlusLineFromDeselectedSourceExtendsOverlayMaximum()
-        {
-            TestData data = BuildTwoSourceData();
-            var t8 = new[] { new T8PlusSeriesRequest("B", false, true, false) };
-            ChartPipelineRequest request = ChartPipelineRequest.ForChart(
-                data, new[] { "T1" }, true, 1, false, 1, 1000, 1,
-                double.NaN, double.NaN, null, null, false, null, t8);
-
-            ChartPipelineResult result = CreateService().Execute(request);
-
-            // Селектированный канал T1 источника A охватывает только 2000 мс,
-            // но линия T8+ источника B (не выбран по каналам) тянется до 5000 мс.
-            Assert.AreEqual(5000L, result.MaxOverlayDurationMs);
-            Assert.AreEqual(5000.0 / 3600000.0, result.DataMaximum, 1e-9);
-        }
-
-        [TestMethod]
-        public void Execute_OverlayMode_T8PlusLineAlignsToItsOwnSourceStart()
-        {
-            var data = new TestData();
-            data.Root = "A";
-            data.TimestampsMs = new[] { 0L, 1000L, 2000L, 3000L, 4000L };
-            data.RowCount = 5;
-            data.SourceOrder = new[] { "A", "B" };
-
-            data.SourceColumns["A"] = new[] { "T1" };
-            data.SourceColumns["B"] = new[] { "T8", "T9" };
-
-            data.CodeSources["T1"] = "A";
-            data.CodeSources["T8"] = "B";
-            data.CodeSources["T9"] = "B";
-
-            data.SourceStartMs["A"] = 0L;
-            data.SourceEndMs["A"] = 4000L;
-            data.Columns["T1"] = new double?[] { 1.0, 1.0, 1.0, 1.0, 1.0 };
-
-            // Источник B начинается позже (глобальная отметка 2000 мс), а не с
-            // первого общего отсчёта.
-            data.SourceStartMs["B"] = 2000L;
-            data.SourceEndMs["B"] = 4000L;
-            data.Columns["T8"] = new double?[] { null, null, 8.0, 7.0, 6.0 };
-            data.Columns["T9"] = new double?[] { null, null, 16.0, 14.0, 12.0 };
-
-            var t8 = new[] { new T8PlusSeriesRequest("B", false, true, false) };
-            ChartPipelineRequest request = ChartPipelineRequest.ForChart(
-                data, new[] { "T1" }, true, 1, false, 1, 1000, 1,
-                double.NaN, double.NaN, null, null, false, null, t8);
-
-            ChartPipelineResult result = CreateService().Execute(request);
-
-            ChartPipelineSeries average = result.Series.Single(s => s.Role == ChartSeriesRole.T8Average);
-
-            // Первая точка линии B (глобальная отметка 2000 мс) должна лечь на
-            // ноль часов, поскольку она отсчитывается от начала самого источника
-            // B, а не от первого общего отсчёта таймлайна (0 мс).
-            Assert.AreEqual(0.0, average.XValues[0], 1e-9);
-        }
-
-        [TestMethod]
-        public void Execute_MultiSourceWithBothT8PlusEnabled_AssignsSourceIndexByOrder()
-        {
-            var data = new TestData();
-            data.Root = "A";
-            data.TimestampsMs = new[] { 0L, 1000L, 2000L, 3000L };
-            data.RowCount = 4;
-            data.SourceOrder = new[] { "A", "B" };
-
-            data.SourceColumns["A"] = new[] { "A::T1", "A::T8", "A::T9" };
-            data.SourceColumns["B"] = new[] { "B::T1", "B::T8", "B::T9" };
-
-            data.CodeSources["A::T1"] = "A";
-            data.CodeSources["A::T8"] = "A";
-            data.CodeSources["A::T9"] = "A";
-            data.CodeSources["B::T1"] = "B";
-            data.CodeSources["B::T8"] = "B";
-            data.CodeSources["B::T9"] = "B";
-
-            data.SourceStartMs["A"] = 0L;
-            data.SourceEndMs["A"] = 3000L;
-            data.SourceStartMs["B"] = 0L;
-            data.SourceEndMs["B"] = 3000L;
-
-            data.Columns["A::T1"] = new double?[] { 1.0, 1.0, 1.0, 1.0 };
-            data.Columns["A::T8"] = new double?[] { 10.0, 9.0, 8.0, 7.0 };
-            data.Columns["A::T9"] = new double?[] { 20.0, 18.0, 16.0, 14.0 };
-            data.Columns["B::T1"] = new double?[] { 2.0, 2.0, 2.0, 2.0 };
-            data.Columns["B::T8"] = new double?[] { 30.0, 29.0, 28.0, 27.0 };
-            data.Columns["B::T9"] = new double?[] { 40.0, 38.0, 36.0, 34.0 };
-
-            var t8Both = new[]
-            {
-                new T8PlusSeriesRequest("A", false, true, false),
-                new T8PlusSeriesRequest("B", false, true, false)
-            };
-            ChartPipelineRequest request = ChartPipelineRequest.ForChart(
-                data, new[] { "A::T1", "B::T1" }, true, 1, false, 1, 1000, 2,
-                double.NaN, double.NaN, null, null, false, null, t8Both);
-
-            ChartPipelineResult result = CreateService().Execute(request);
-
-            ChartPipelineSeries seriesA = result.Series.Single(s => s.Role == ChartSeriesRole.T8Average && s.SourceRoot == "A");
-            ChartPipelineSeries seriesB = result.Series.Single(s => s.Role == ChartSeriesRole.T8Average && s.SourceRoot == "B");
-
-            Assert.AreEqual(0, seriesA.SourceIndex);
-            Assert.AreEqual(1, seriesB.SourceIndex);
+            // Уровни не являются сериями: набор серий и правило легенды не меняются.
+            Assert.AreEqual(columns.Count, result.Series.Count);
+            Assert.IsFalse(result.ShowLegend);
+            Assert.AreEqual(3, result.LevelLines.Count);
         }
     }
 }
