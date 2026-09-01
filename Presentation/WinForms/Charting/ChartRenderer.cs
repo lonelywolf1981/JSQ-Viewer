@@ -95,8 +95,8 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 strip.BorderWidth = 2;
                 strip.BorderDashStyle = ResolveLevelDashStyle(level.Role);
                 strip.Text = level.Label ?? string.Empty;
-                strip.TextAlignment = StringAlignment.Far;
-                strip.TextLineAlignment = StringAlignment.Near;
+                strip.TextAlignment = StringAlignment.Near;
+                strip.TextLineAlignment = StringAlignment.Far;
                 area.AxisY.StripLines.Add(strip);
             }
         }

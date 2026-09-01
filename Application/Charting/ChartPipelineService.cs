@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -492,8 +492,8 @@ namespace JSQViewer.Application.Charting
                 }
 
                 long startMs = ResolveVisibleStartMs(request, data, item.SourceRoot, overlayMode);
-                int valueIndex = FindLastValidIndex(built.Average, edgeIndex, data.TimestampsMs, startMs);
-                if (valueIndex < 0)
+                int startIndex = ResolveStartIndex(data.TimestampsMs, startMs);
+                if (startIndex > edgeIndex)
                 {
                     continue;
                 }
@@ -503,19 +503,21 @@ namespace JSQViewer.Application.Charting
                     ? _sourceDisplayNameResolver.Resolve(data, item.SourceRoot)
                     : null;
 
-                if (item.ShowMinimum)
+                double value;
+
+                if (item.ShowMinimum && TryLowest(built.Minimum, startIndex, edgeIndex, out value))
                 {
-                    AddLevel(levels, built.Minimum, valueIndex, item.SourceRoot, sourceIndex, sourceName, ChartSeriesRole.T8Minimum);
+                    AddLevel(levels, value, item.SourceRoot, sourceIndex, sourceName, ChartSeriesRole.T8Minimum);
                 }
 
-                if (item.ShowAverage)
+                if (item.ShowAverage && TryMean(built.Average, startIndex, edgeIndex, out value))
                 {
-                    AddLevel(levels, built.Average, valueIndex, item.SourceRoot, sourceIndex, sourceName, ChartSeriesRole.T8Average);
+                    AddLevel(levels, value, item.SourceRoot, sourceIndex, sourceName, ChartSeriesRole.T8Average);
                 }
 
-                if (item.ShowMaximum)
+                if (item.ShowMaximum && TryHighest(built.Maximum, startIndex, edgeIndex, out value))
                 {
-                    AddLevel(levels, built.Maximum, valueIndex, item.SourceRoot, sourceIndex, sourceName, ChartSeriesRole.T8Maximum);
+                    AddLevel(levels, value, item.SourceRoot, sourceIndex, sourceName, ChartSeriesRole.T8Maximum);
                 }
             }
 
@@ -524,21 +526,114 @@ namespace JSQViewer.Application.Charting
 
         private static void AddLevel(
             List<ChartLevelLine> levels,
-            double?[] values,
-            int index,
+            double value,
             string sourceRoot,
             int sourceIndex,
             string sourceName,
             ChartSeriesRole role)
         {
-            if (values == null || index >= values.Length || !values[index].HasValue)
-            {
-                return;
-            }
-
-            double value = values[index].Value;
             levels.Add(new ChartLevelLine(
                 sourceRoot, sourceIndex, role, value, BuildLevelLabel(sourceName, role, value)));
+        }
+
+        /// <summary>
+        /// Индекс первого отсчёта, попадающего в видимый участок слева.
+        /// </summary>
+        private static int ResolveStartIndex(long[] timestampsMs, long startMs)
+        {
+            int last = VisibleRangeEdgeResolver.ResolveIndex(timestampsMs, startMs);
+            if (last < 0)
+            {
+                return 0;
+            }
+
+            return timestampsMs[last] == startMs ? last : last + 1;
+        }
+
+        private static bool TryLowest(double?[] values, int from, int to, out double result)
+        {
+            result = 0d;
+            bool found = false;
+            if (values == null)
+            {
+                return false;
+            }
+
+            for (int i = from; i <= to && i < values.Length; i++)
+            {
+                if (!values[i].HasValue)
+                {
+                    continue;
+                }
+
+                if (!found || values[i].Value < result)
+                {
+                    result = values[i].Value;
+                    found = true;
+                }
+            }
+
+            return found;
+        }
+
+        private static bool TryHighest(double?[] values, int from, int to, out double result)
+        {
+            result = 0d;
+            bool found = false;
+            if (values == null)
+            {
+                return false;
+            }
+
+            for (int i = from; i <= to && i < values.Length; i++)
+            {
+                if (!values[i].HasValue)
+                {
+                    continue;
+                }
+
+                if (!found || values[i].Value > result)
+                {
+                    result = values[i].Value;
+                    found = true;
+                }
+            }
+
+            return found;
+        }
+
+        /// <summary>
+        /// Среднее по отсчётам участка: каждый момент времени весит одинаково,
+        /// независимо от того, сколько термопар дали значение в этот момент.
+        /// </summary>
+        private static bool TryMean(double?[] values, int from, int to, out double result)
+        {
+            result = 0d;
+            if (values == null)
+            {
+                return false;
+            }
+
+            double sum = 0d;
+            int count = 0;
+            for (int i = from; i <= to && i < values.Length; i++)
+            {
+                if (!values[i].HasValue)
+                {
+                    continue;
+                }
+
+                sum += values[i].Value;
+                count++;
+            }
+
+            if (count == 0)
+            {
+                return false;
+            }
+
+            result = sum / count;
+            return true;
         }
 
         private static string BuildLevelLabel(string sourceName, ChartSeriesRole role, double value)
@@ -561,34 +656,6 @@ namespace JSQViewer.Application.Charting
             return string.IsNullOrWhiteSpace(sourceName)
                 ? string.Format(CultureInfo.InvariantCulture, "{0} {1}", roleText, valueText)
                 : string.Format(CultureInfo.InvariantCulture, "[{0}] {1} {2}", sourceName, roleText, valueText);
-        }
-
-        /// <summary>
-        /// Ищет ближайший к правому краю отсчёт с валидным значением, не выходя
-        /// за левую границу видимого участка. Без этого отступа линия пропадала бы
-        /// на любом пропуске в данных ровно на крае.
-        /// </summary>
-        private static int FindLastValidIndex(double?[] values, int edgeIndex, long[] timestampsMs, long startMs)
-        {
-            if (values == null)
-            {
-                return -1;
-            }
-
-            for (int i = Math.Min(edgeIndex, values.Length - 1); i >= 0; i--)
-            {
-                if (timestampsMs[i] < startMs)
-                {
-                    return -1;
-                }
-
-                if (values[i].HasValue)
-                {
-                    return i;
-                }
-            }
-
-            return -1;
         }
 
         private static long ResolveVisibleEdgeMs(

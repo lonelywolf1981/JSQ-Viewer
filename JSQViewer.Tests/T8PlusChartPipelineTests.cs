@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using JSQViewer.Application.Charting;
 using JSQViewer.Core;
@@ -46,44 +46,51 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
-        public void Execute_WithAllThreeFlags_ProducesThreeLevelsAtLastSample()
+        public void Execute_WithAllThreeFlags_AggregatesOverWholeVisibleRange()
         {
             var t8 = new[] { new T8PlusSeriesRequest("A", true, true, true) };
 
             ChartPipelineResult result = CreateService().Execute(Request(BuildData(), t8));
 
             Assert.AreEqual(3, result.LevelLines.Count);
-            // Последний отсчёт: T8=4, T9=14.
+            // По всему участку: минимумы [10,8,6,4] -> 4; максимумы [20,18,16,14] -> 20;
+            // средние по отсчётам [15,13,11,9] -> 12.
             Assert.AreEqual(4.0, result.LevelLines.Single(l => l.Role == ChartSeriesRole.T8Minimum).Value, 1e-9);
-            Assert.AreEqual(9.0, result.LevelLines.Single(l => l.Role == ChartSeriesRole.T8Average).Value, 1e-9);
-            Assert.AreEqual(14.0, result.LevelLines.Single(l => l.Role == ChartSeriesRole.T8Maximum).Value, 1e-9);
+            Assert.AreEqual(12.0, result.LevelLines.Single(l => l.Role == ChartSeriesRole.T8Average).Value, 1e-9);
+            Assert.AreEqual(20.0, result.LevelLines.Single(l => l.Role == ChartSeriesRole.T8Maximum).Value, 1e-9);
             Assert.IsTrue(result.LevelLines.All(l => l.SourceRoot == "A" && l.SourceIndex == 0));
         }
 
         [TestMethod]
-        public void Execute_WithNarrowedRange_UsesLastSampleInsideRange()
+        public void Execute_WithNarrowedRange_AggregatesOnlyInsideRange()
         {
-            var t8 = new[] { new T8PlusSeriesRequest("A", false, true, false) };
+            var t8 = new[] { new T8PlusSeriesRequest("A", true, true, true) };
 
             ChartPipelineResult result = CreateService().Execute(
                 Request(BuildData(), t8, false, 0d, 1500d));
 
-            // Правый край 1500 мс: последний попавший отсчёт — 1000 мс, T8=8, T9=18.
-            Assert.AreEqual(13.0, result.LevelLines.Single().Value, 1e-9);
+            // В диапазон попадают отсчёты 0 и 1000 мс. Минимумы [10,8] -> 8,
+            // максимумы [20,18] -> 20, средние [15,13] -> 14.
+            Assert.AreEqual(8.0, result.LevelLines.Single(l => l.Role == ChartSeriesRole.T8Minimum).Value, 1e-9);
+            Assert.AreEqual(14.0, result.LevelLines.Single(l => l.Role == ChartSeriesRole.T8Average).Value, 1e-9);
+            Assert.AreEqual(20.0, result.LevelLines.Single(l => l.Role == ChartSeriesRole.T8Maximum).Value, 1e-9);
         }
 
         [TestMethod]
-        public void Execute_WhenEdgeSampleHasNoValue_StepsBackToNearestValidSample()
+        public void Execute_WithGapsInsideRange_SkipsThemInsteadOfBreaking()
         {
             TestData data = BuildData();
             data.Columns["T8"] = new double?[] { 10.0, 8.0, 6.0, null };
             data.Columns["T9"] = new double?[] { 20.0, 18.0, 16.0, null };
-            var t8 = new[] { new T8PlusSeriesRequest("A", false, true, false) };
+            var t8 = new[] { new T8PlusSeriesRequest("A", true, true, true) };
 
             ChartPipelineResult result = CreateService().Execute(Request(data, t8));
 
-            // На последнем отсчёте значений нет, берётся предыдущий: (6 + 16) / 2.
-            Assert.AreEqual(11.0, result.LevelLines.Single().Value, 1e-9);
+            // Последний отсчёт пуст и в свёртку не входит: минимумы [10,8,6] -> 6,
+            // максимумы [20,18,16] -> 20, средние [15,13,11] -> 13.
+            Assert.AreEqual(6.0, result.LevelLines.Single(l => l.Role == ChartSeriesRole.T8Minimum).Value, 1e-9);
+            Assert.AreEqual(13.0, result.LevelLines.Single(l => l.Role == ChartSeriesRole.T8Average).Value, 1e-9);
+            Assert.AreEqual(20.0, result.LevelLines.Single(l => l.Role == ChartSeriesRole.T8Maximum).Value, 1e-9);
         }
 
         [TestMethod]
@@ -143,8 +150,8 @@ namespace JSQViewer.Tests
             };
 
             // В наложении ось — часы от начала своего прогона. Край в 1 час
-            // для A это абсолютные 3600000 мс, для B — 2000 + 3600000 мс;
-            // оба за пределами данных, поэтому берётся последний отсчёт каждого.
+            // для A это абсолютные 3600000 мс, для B — 2000 + 3600000 мс; оба за
+            // пределами данных, поэтому свёртка идёт по всем отсчётам каждого.
             ChartPipelineResult result = CreateService().Execute(
                 Request(data, t8, true, 0d, 1d));
 
@@ -153,8 +160,11 @@ namespace JSQViewer.Tests
 
             Assert.AreEqual(0, a.SourceIndex);
             Assert.AreEqual(1, b.SourceIndex);
-            Assert.AreEqual(50.0, a.Value, 1e-9);
-            Assert.AreEqual(51.0, b.Value, 1e-9);
+            // Участок каждого источника начинается от его собственного старта:
+            // у A это индексы 0..4, средние [10,20,30,40,50] -> 30;
+            // у B старт 2000 мс, то есть индексы 2..4, средние [31,41,51] -> 41.
+            Assert.AreEqual(30.0, a.Value, 1e-9);
+            Assert.AreEqual(41.0, b.Value, 1e-9);
         }
 
         [TestMethod]
@@ -216,14 +226,14 @@ namespace JSQViewer.Tests
                     data, new[] { "T1" }, false, 1, false, 1, 1000, 1,
                     double.NaN, double.NaN, xAxis, null, false, null, t8));
 
-            // На индексе 2: T8=6, T9=16, среднее 11.
-            // На индексе 3: T8=4, T9=14, среднее 9 (не этот!).
+            // Свёртка по индексам 0..2: средние [15,13,11] -> 13.
+            // Если бы участок доходил до конца записи, вышло бы 12 (не этот!).
             Assert.AreEqual(1, result.LevelLines.Count);
-            Assert.AreEqual(11.0, result.LevelLines.Single().Value, 1e-9);
+            Assert.AreEqual(13.0, result.LevelLines.Single().Value, 1e-9);
         }
 
         [TestMethod]
-        public void Execute_WhenAllSamplesInRangeAreNull_ProducesNoLevels_GuardStopsWalk()
+        public void Execute_WhenAllSamplesInRangeAreNull_IgnoresValidSamplesOutsideIt()
         {
             TestData data = BuildData();
             // Валидные значения существуют раньше (индексы 0-1), но внутри диапазона (индексы 2-3) — null.
@@ -231,9 +241,8 @@ namespace JSQViewer.Tests
             data.Columns["T9"] = new double?[] { 20.0, 18.0, null, null };
             var t8 = new[] { new T8PlusSeriesRequest("A", false, true, false) };
 
-            // Диапазон 1500-3500: включает индексы 2 и 3 (2000 и 3000 мс).
-            // Все они null, поэтому walk идёт назад, но охранник (startMs >= 1500)
-            // остановит её перед выходом за левую границу.
+            // Диапазон 1500-3500 включает индексы 2 и 3, оба null. Валидные значения
+            // на индексах 0-1 лежат левее границы и в свёртку попасть не должны.
             ChartPipelineResult result = CreateService().Execute(
                 Request(data, t8, false, 1500d, 3500d));
 
