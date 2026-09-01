@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Web.Script.Serialization;
 using JSQViewer.Application.Abstractions;
 using JSQViewer.Application.Channels;
 using JSQViewer.Settings;
@@ -78,6 +79,28 @@ namespace JSQViewer.Tests
             state = service.SaveSourceT8PlusLines("ws", state, "C:\\runs\\A", T8PlusLineSelection.None);
 
             Assert.AreEqual(0, state.SourceT8PlusLines.Count);
+        }
+
+        [TestMethod]
+        public void SourceT8PlusLines_RoundTripsThroughJavaScriptSerializer()
+        {
+            var state = new WorkspaceLayoutState();
+            state.SourceT8PlusLines["C:\\runs\\A"] = new T8PlusLineSelection(true, false, true);
+            state.EnsureInitialized();
+
+            var serializer = new JavaScriptSerializer();
+            string json = serializer.Serialize(state);
+            WorkspaceLayoutState restoredState = serializer.Deserialize<WorkspaceLayoutState>(json);
+            restoredState.EnsureInitialized();
+
+            string queryRoot = WorkspaceLayoutState.NormalizeSourceRoot("c:\\runs\\a\\");
+            T8PlusLineSelection restored;
+            bool found = restoredState.SourceT8PlusLines.TryGetValue(queryRoot, out restored);
+
+            Assert.IsTrue(found);
+            Assert.IsTrue(restored.ShowMinimum);
+            Assert.IsFalse(restored.ShowAverage);
+            Assert.IsTrue(restored.ShowMaximum);
         }
     }
 }
