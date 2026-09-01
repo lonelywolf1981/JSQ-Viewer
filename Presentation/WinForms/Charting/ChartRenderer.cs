@@ -47,11 +47,7 @@ namespace JSQViewer.Presentation.WinForms.Charting
                     ApplyXAxis(area, viewModel);
                     ApplyOverlayXAxisLabels(area, viewModel != null && viewModel.OverlayMode);
                     ApplyAxis(area.AxisY, viewModel.YAxis);
-                }
-
-                if (chart.ChartAreas.Count > 0)
-                {
-                    ApplyLevelLines(chart.ChartAreas[0], viewModel);
+                    ApplyLevelLines(area, viewModel);
                 }
             }
             finally

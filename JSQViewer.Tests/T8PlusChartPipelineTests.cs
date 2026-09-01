@@ -201,5 +201,43 @@ namespace JSQViewer.Tests
             Assert.IsFalse(result.ShowLegend);
             Assert.AreEqual(3, result.LevelLines.Count);
         }
+
+        [TestMethod]
+        public void Execute_WithManualXAxisAndNaNRange_UsesManualAxisEdges()
+        {
+            TestData data = BuildData();
+            var t8 = new[] { new T8PlusSeriesRequest("A", false, true, false) };
+
+            // Ось задана вручную от 0 до 2500. Последний отсчёт в этом диапазоне —
+            // 2000 мс (индекс 2). Проверяем, что берётся именно он, а не последний отсчёт всей записи.
+            ChartAxisSettings xAxis = ChartAxisSettings.ForManual(0d, 2500d);
+            ChartPipelineResult result = CreateService().Execute(
+                ChartPipelineRequest.ForChart(
+                    data, new[] { "T1" }, false, 1, false, 1, 1000, 1,
+                    double.NaN, double.NaN, xAxis, null, false, null, t8));
+
+            // На индексе 2: T8=6, T9=16, среднее 11.
+            // На индексе 3: T8=4, T9=14, среднее 9 (не этот!).
+            Assert.AreEqual(1, result.LevelLines.Count);
+            Assert.AreEqual(11.0, result.LevelLines.Single().Value, 1e-9);
+        }
+
+        [TestMethod]
+        public void Execute_WhenAllSamplesInRangeAreNull_ProducesNoLevels_GuardStopsWalk()
+        {
+            TestData data = BuildData();
+            // Валидные значения существуют раньше (индексы 0-1), но внутри диапазона (индексы 2-3) — null.
+            data.Columns["T8"] = new double?[] { 10.0, 8.0, null, null };
+            data.Columns["T9"] = new double?[] { 20.0, 18.0, null, null };
+            var t8 = new[] { new T8PlusSeriesRequest("A", false, true, false) };
+
+            // Диапазон 1500-3500: включает индексы 2 и 3 (2000 и 3000 мс).
+            // Все они null, поэтому walk идёт назад, но охранник (startMs >= 1500)
+            // остановит её перед выходом за левую границу.
+            ChartPipelineResult result = CreateService().Execute(
+                Request(data, t8, false, 1500d, 3500d));
+
+            Assert.AreEqual(0, result.LevelLines.Count);
+        }
     }
 }
