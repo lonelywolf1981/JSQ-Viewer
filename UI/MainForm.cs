@@ -1391,7 +1391,13 @@ namespace JSQViewer.UI
                 _lastHighlightedSeries = closestSeries;
                 foreach (Series s in chart.Series)
                 {
-                    s.BorderWidth = s == closestSeries ? 2 : 1;
+                    if (!(s.Tag is int))
+                    {
+                        s.Tag = s.BorderWidth;
+                    }
+
+                    int baseWidth = (int)s.Tag;
+                    s.BorderWidth = s == closestSeries ? baseWidth + 1 : baseWidth;
                 }
             }
 
@@ -2641,6 +2647,25 @@ namespace JSQViewer.UI
                 infoButton.Font = new Font(top.Font, FontStyle.Bold | FontStyle.Italic);
                 top.Controls.Add(infoButton);
 
+                var t8Panel = new FlowLayoutPanel();
+                t8Panel.Dock = DockStyle.Top;
+                t8Panel.AutoSize = true;
+                t8Panel.WrapContents = false;
+                t8Panel.Padding = new Padding(4, 0, 4, 4);
+
+                var t8Label = new Label();
+                t8Label.Text = Loc.Get("T8PlusGroup");
+                t8Label.AutoSize = true;
+                t8Label.Padding = new Padding(0, 4, 4, 0);
+                t8Panel.Controls.Add(t8Label);
+
+                var t8Minimum = new CheckBox { Text = Loc.Get("T8PlusMinimum"), AutoSize = true };
+                var t8Average = new CheckBox { Text = Loc.Get("T8PlusAverage"), AutoSize = true };
+                var t8Maximum = new CheckBox { Text = Loc.Get("T8PlusMaximum"), AutoSize = true };
+                t8Panel.Controls.Add(t8Minimum);
+                t8Panel.Controls.Add(t8Average);
+                t8Panel.Controls.Add(t8Maximum);
+
                 var list = new CheckedListBox();
                 list.Dock = DockStyle.Fill;
                 list.CheckOnClick = true;
@@ -2677,8 +2702,14 @@ namespace JSQViewer.UI
                     DeleteOrderButton = null,
                     StatusLabel = status,
                     List = list,
-                    ViewModel = window
+                    ViewModel = window,
+                    T8PlusMinimumCheck = t8Minimum,
+                    T8PlusAverageCheck = t8Average,
+                    T8PlusMaximumCheck = t8Maximum,
                 };
+
+                ApplyT8PlusAvailability(state);
+                RestoreT8PlusSelection(state);
 
                 selectedOnly.CheckedChanged += delegate { SourceWindowOptionsChanged(state); };
                 selectAll.Click += delegate { SelectAllInSource(state); };
@@ -2714,8 +2745,13 @@ namespace JSQViewer.UI
                 list.DragDrop += delegate(object s, DragEventArgs de) { SourceListDragDrop(state, de); };
                 form.ResizeEnd += delegate { RememberSourceWindowWidth(form); };
 
+                t8Minimum.CheckedChanged += delegate { T8PlusSelectionChanged(state); };
+                t8Average.CheckedChanged += delegate { T8PlusSelectionChanged(state); };
+                t8Maximum.CheckedChanged += delegate { T8PlusSelectionChanged(state); };
+
                 form.Controls.Add(list);
                 form.Controls.Add(bottom);
+                form.Controls.Add(t8Panel);
                 form.Controls.Add(top);
                 form.FormClosed += delegate
                 {
@@ -3239,7 +3275,8 @@ namespace JSQViewer.UI
                   xAxisSettings,
                   BuildYAxisSettingsViewModel().ToChartAxisSettings(),
                   includeDynamicsForecast,
-                  forecastRoles);
+                  forecastRoles,
+                  BuildT8PlusSeriesRequests());
               ChartPipelineResult chartState = _buildChartViewUseCase.Execute(request);
               if (includeDynamicsForecast && !chartState.Series.Any(series => series.IsForecast))
               {
@@ -4349,6 +4386,109 @@ namespace JSQViewer.UI
             }
         }
 
+        private void ApplyT8PlusAvailability(SourceWindowState state)
+        {
+            if (state == null) return;
+            TestData data = _viewerSession.Data;
+            bool available = data != null
+                && T8PlusChannelSelector.SelectColumns(
+                        data, state.SourceRoot, T8PlusChannelSelector.DefaultMinimumNumber).Count > 0;
+
+            string tip = Loc.Get(available ? "TipT8PlusLines" : "TipT8PlusUnavailable");
+            CheckBox[] checks = { state.T8PlusMinimumCheck, state.T8PlusAverageCheck, state.T8PlusMaximumCheck };
+
+            // Тот же флаг, что и в RestoreT8PlusSelection: снятие галки здесь —
+            // программное, а не действие пользователя, и не должно тянуть за собой
+            // сохранение раскладки и перерисовку графика при построении окна.
+            _syncingChannelWorkspaceOptions = true;
+            try
+            {
+                for (int i = 0; i < checks.Length; i++)
+                {
+                    if (checks[i] == null) continue;
+                    checks[i].Enabled = available;
+                    if (!available)
+                    {
+                        checks[i].Checked = false;
+                    }
+
+                    _toolTip.SetToolTip(checks[i], tip);
+                }
+            }
+            finally
+            {
+                _syncingChannelWorkspaceOptions = false;
+            }
+        }
+
+        private void RestoreT8PlusSelection(SourceWindowState state)
+        {
+            if (state == null || string.IsNullOrWhiteSpace(_currentWorkspaceKey)) return;
+
+            EnsureWorkspaceLayoutState();
+            T8PlusLineSelection selection = _workspaceLayoutStateService.GetSourceT8PlusLines(
+                _workspaceLayoutState, state.SourceRoot);
+
+            _syncingChannelWorkspaceOptions = true;
+            try
+            {
+                if (state.T8PlusMinimumCheck != null && state.T8PlusMinimumCheck.Enabled)
+                    state.T8PlusMinimumCheck.Checked = selection.ShowMinimum;
+                if (state.T8PlusAverageCheck != null && state.T8PlusAverageCheck.Enabled)
+                    state.T8PlusAverageCheck.Checked = selection.ShowAverage;
+                if (state.T8PlusMaximumCheck != null && state.T8PlusMaximumCheck.Enabled)
+                    state.T8PlusMaximumCheck.Checked = selection.ShowMaximum;
+            }
+            finally
+            {
+                _syncingChannelWorkspaceOptions = false;
+            }
+        }
+
+        private void T8PlusSelectionChanged(SourceWindowState state)
+        {
+            if (state == null) return;
+            if (_syncingChannelWorkspaceOptions) return;
+
+            if (!string.IsNullOrWhiteSpace(_currentWorkspaceKey))
+            {
+                EnsureWorkspaceLayoutState();
+                _workspaceLayoutState = _workspaceLayoutStateService.SaveSourceT8PlusLines(
+                    _currentWorkspaceKey,
+                    _workspaceLayoutState,
+                    state.SourceRoot,
+                    BuildT8PlusSelection(state));
+            }
+
+            RedrawChart();
+        }
+
+        private static T8PlusLineSelection BuildT8PlusSelection(SourceWindowState state)
+        {
+            return new T8PlusLineSelection(
+                state.T8PlusMinimumCheck != null && state.T8PlusMinimumCheck.Checked,
+                state.T8PlusAverageCheck != null && state.T8PlusAverageCheck.Checked,
+                state.T8PlusMaximumCheck != null && state.T8PlusMaximumCheck.Checked);
+        }
+
+        private List<T8PlusSeriesRequest> BuildT8PlusSeriesRequests()
+        {
+            var requests = new List<T8PlusSeriesRequest>();
+            foreach (KeyValuePair<string, SourceWindowState> pair in _sourceWindows)
+            {
+                SourceWindowState state = pair.Value;
+                if (state == null) continue;
+
+                T8PlusLineSelection selection = BuildT8PlusSelection(state);
+                if (!selection.HasAny) continue;
+
+                requests.Add(new T8PlusSeriesRequest(
+                    state.SourceRoot, selection.ShowMinimum, selection.ShowAverage, selection.ShowMaximum));
+            }
+
+            return requests;
+        }
+
         private void RememberSourceWindowWidth(Form form)
         {
             if (form == null || form.IsDisposed)
@@ -5054,6 +5194,9 @@ namespace JSQViewer.UI
             public CheckedListBox List { get; set; }
             public List<ChannelItem> Items { get; set; }
             public Form InfoForm { get; set; }
+            public CheckBox T8PlusMinimumCheck { get; set; }
+            public CheckBox T8PlusAverageCheck { get; set; }
+            public CheckBox T8PlusMaximumCheck { get; set; }
         }
 
         private sealed class DetachedChartState
