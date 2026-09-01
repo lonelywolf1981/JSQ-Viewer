@@ -2601,6 +2601,8 @@ namespace JSQViewer.UI
                     existingState.Form.Bounds = SourceChannelWindowLayout.GetBounds(wa, Bounds, col, _sourceWindowWidth, GetSourceWindowChannelCount(window));
                     ApplySourceWindowViewModelToControls(existingState);
                     RebuildSourceWindowList(existingState);
+                    ApplyT8PlusAvailability(existingState);
+                    RestoreT8PlusSelection(existingState);
                     col++;
                     continue;
                 }

@@ -122,7 +122,10 @@ namespace JSQViewer.Application.Channels
 
     public sealed class T8PlusLineSelection
     {
-        public static readonly T8PlusLineSelection None = new T8PlusLineSelection(false, false, false);
+        public static T8PlusLineSelection None
+        {
+            get { return new T8PlusLineSelection(false, false, false); }
+        }
 
         public T8PlusLineSelection()
         {

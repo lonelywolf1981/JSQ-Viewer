@@ -166,7 +166,13 @@ namespace JSQViewer.Application.Charting
                 }
             }
 
-            int t8PlusCount = AppendT8PlusSeries(request, data, timestamps, step, series);
+            long t8PlusMaxDurationMs;
+            int t8PlusCount = AppendT8PlusSeries(request, data, timestamps, step, series, out t8PlusMaxDurationMs);
+            if (overlayMode && t8PlusMaxDurationMs > maxOverlayDurationMs)
+            {
+                maxOverlayDurationMs = t8PlusMaxDurationMs;
+            }
+
             if (t8PlusCount > 0)
             {
                 // Линии T8+ обязаны оставаться подписанными даже там, где легенда
@@ -461,8 +467,10 @@ namespace JSQViewer.Application.Charting
             TestData data,
             long[] timestamps,
             int step,
-            List<ChartPipelineSeries> series)
+            List<ChartPipelineSeries> series,
+            out long maxDurationMs)
         {
+            maxDurationMs = 0L;
             IReadOnlyList<T8PlusSeriesRequest> requests = request.T8PlusSeries;
             if (requests == null || requests.Count == 0 || timestamps.Length == 0)
             {
@@ -497,26 +505,32 @@ namespace JSQViewer.Application.Charting
 
                 if (item.ShowMinimum)
                 {
+                    long lineMaxMs;
                     series.Add(BuildT8PlusSeries(
                         data, item.SourceRoot, sourceIndex, sourceName,
-                        ChartSeriesRole.T8Minimum, built.Minimum, timestamps, step, request.OverlayMode));
+                        ChartSeriesRole.T8Minimum, built.Minimum, timestamps, step, request.OverlayMode, out lineMaxMs));
                     added++;
+                    if (lineMaxMs > maxDurationMs) maxDurationMs = lineMaxMs;
                 }
 
                 if (item.ShowAverage)
                 {
+                    long lineMaxMs;
                     series.Add(BuildT8PlusSeries(
                         data, item.SourceRoot, sourceIndex, sourceName,
-                        ChartSeriesRole.T8Average, built.Average, timestamps, step, request.OverlayMode));
+                        ChartSeriesRole.T8Average, built.Average, timestamps, step, request.OverlayMode, out lineMaxMs));
                     added++;
+                    if (lineMaxMs > maxDurationMs) maxDurationMs = lineMaxMs;
                 }
 
                 if (item.ShowMaximum)
                 {
+                    long lineMaxMs;
                     series.Add(BuildT8PlusSeries(
                         data, item.SourceRoot, sourceIndex, sourceName,
-                        ChartSeriesRole.T8Maximum, built.Maximum, timestamps, step, request.OverlayMode));
+                        ChartSeriesRole.T8Maximum, built.Maximum, timestamps, step, request.OverlayMode, out lineMaxMs));
                     added++;
+                    if (lineMaxMs > maxDurationMs) maxDurationMs = lineMaxMs;
                 }
             }
 
@@ -543,13 +557,15 @@ namespace JSQViewer.Application.Charting
             double?[] values,
             long[] timestamps,
             int step,
-            bool overlayMode)
+            bool overlayMode,
+            out long maxRelativeMs)
         {
             // Срез каналов строится от первого отсчёта с шагом step, поэтому
             // индекс i-й точки среза в полном массиве равен i * step.
             var xList = new List<double>(timestamps.Length);
             var yList = new List<double>(timestamps.Length);
             long baseMs = overlayMode ? ResolveSourceBaseMs(data, sourceRoot, timestamps[0]) : timestamps[0];
+            maxRelativeMs = 0L;
 
             for (int i = 0; i < timestamps.Length; i++)
             {
@@ -566,6 +582,11 @@ namespace JSQViewer.Application.Charting
                 }
 
                 long relativeMs = Math.Max(0L, timestamps[i] - baseMs);
+                if (overlayMode && relativeMs > maxRelativeMs)
+                {
+                    maxRelativeMs = relativeMs;
+                }
+
                 xList.Add(overlayMode ? relativeMs / 3600000.0 : timestamps[i]);
                 yList.Add(value.Value);
             }

@@ -154,5 +154,143 @@ namespace JSQViewer.Tests
             Assert.IsTrue(result.Series.Where(s => s.Role == ChartSeriesRole.Channel).All(s => !s.IsVisibleInLegend));
             Assert.IsTrue(result.Series.Where(s => s.Role != ChartSeriesRole.Channel).All(s => s.IsVisibleInLegend));
         }
+
+        private static TestData BuildTwoSourceData()
+        {
+            // Общая временная ось на 6 точек: 0..5000 мс с шагом 1000 мс.
+            var data = new TestData();
+            data.Root = "A";
+            data.TimestampsMs = new[] { 0L, 1000L, 2000L, 3000L, 4000L, 5000L };
+            data.RowCount = 6;
+            data.SourceOrder = new[] { "A", "B" };
+
+            data.SourceColumns["A"] = new[] { "T1" };
+            data.SourceColumns["B"] = new[] { "T8", "T9" };
+
+            data.CodeSources["T1"] = "A";
+            data.CodeSources["T8"] = "B";
+            data.CodeSources["T9"] = "B";
+
+            // Источник A: короткая выбранная запись, метаданные фиксируют 2000 мс.
+            data.SourceStartMs["A"] = 0L;
+            data.SourceEndMs["A"] = 2000L;
+            data.Columns["T1"] = new double?[] { 1.0, 1.0, 1.0, null, null, null };
+
+            // Источник B: каналы T8+ доступны на всю ось, метаданные фиксируют 5000 мс.
+            data.SourceStartMs["B"] = 0L;
+            data.SourceEndMs["B"] = 5000L;
+            data.Columns["T8"] = new double?[] { 10.0, 9.0, 8.0, 7.0, 6.0, 5.0 };
+            data.Columns["T9"] = new double?[] { 20.0, 18.0, 16.0, 14.0, 12.0, 10.0 };
+
+            return data;
+        }
+
+        [TestMethod]
+        public void Execute_OverlayMode_T8PlusLineFromDeselectedSourceExtendsOverlayMaximum()
+        {
+            TestData data = BuildTwoSourceData();
+            var t8 = new[] { new T8PlusSeriesRequest("B", false, true, false) };
+            ChartPipelineRequest request = ChartPipelineRequest.ForChart(
+                data, new[] { "T1" }, true, 1, false, 1, 1000, 1,
+                double.NaN, double.NaN, null, null, false, null, t8);
+
+            ChartPipelineResult result = CreateService().Execute(request);
+
+            // Селектированный канал T1 источника A охватывает только 2000 мс,
+            // но линия T8+ источника B (не выбран по каналам) тянется до 5000 мс.
+            Assert.AreEqual(5000L, result.MaxOverlayDurationMs);
+            Assert.AreEqual(5000.0 / 3600000.0, result.DataMaximum, 1e-9);
+        }
+
+        [TestMethod]
+        public void Execute_OverlayMode_T8PlusLineAlignsToItsOwnSourceStart()
+        {
+            var data = new TestData();
+            data.Root = "A";
+            data.TimestampsMs = new[] { 0L, 1000L, 2000L, 3000L, 4000L };
+            data.RowCount = 5;
+            data.SourceOrder = new[] { "A", "B" };
+
+            data.SourceColumns["A"] = new[] { "T1" };
+            data.SourceColumns["B"] = new[] { "T8", "T9" };
+
+            data.CodeSources["T1"] = "A";
+            data.CodeSources["T8"] = "B";
+            data.CodeSources["T9"] = "B";
+
+            data.SourceStartMs["A"] = 0L;
+            data.SourceEndMs["A"] = 4000L;
+            data.Columns["T1"] = new double?[] { 1.0, 1.0, 1.0, 1.0, 1.0 };
+
+            // Источник B начинается позже (глобальная отметка 2000 мс), а не с
+            // первого общего отсчёта.
+            data.SourceStartMs["B"] = 2000L;
+            data.SourceEndMs["B"] = 4000L;
+            data.Columns["T8"] = new double?[] { null, null, 8.0, 7.0, 6.0 };
+            data.Columns["T9"] = new double?[] { null, null, 16.0, 14.0, 12.0 };
+
+            var t8 = new[] { new T8PlusSeriesRequest("B", false, true, false) };
+            ChartPipelineRequest request = ChartPipelineRequest.ForChart(
+                data, new[] { "T1" }, true, 1, false, 1, 1000, 1,
+                double.NaN, double.NaN, null, null, false, null, t8);
+
+            ChartPipelineResult result = CreateService().Execute(request);
+
+            ChartPipelineSeries average = result.Series.Single(s => s.Role == ChartSeriesRole.T8Average);
+
+            // Первая точка линии B (глобальная отметка 2000 мс) должна лечь на
+            // ноль часов, поскольку она отсчитывается от начала самого источника
+            // B, а не от первого общего отсчёта таймлайна (0 мс).
+            Assert.AreEqual(0.0, average.XValues[0], 1e-9);
+        }
+
+        [TestMethod]
+        public void Execute_MultiSourceWithBothT8PlusEnabled_AssignsSourceIndexByOrder()
+        {
+            var data = new TestData();
+            data.Root = "A";
+            data.TimestampsMs = new[] { 0L, 1000L, 2000L, 3000L };
+            data.RowCount = 4;
+            data.SourceOrder = new[] { "A", "B" };
+
+            data.SourceColumns["A"] = new[] { "A::T1", "A::T8", "A::T9" };
+            data.SourceColumns["B"] = new[] { "B::T1", "B::T8", "B::T9" };
+
+            data.CodeSources["A::T1"] = "A";
+            data.CodeSources["A::T8"] = "A";
+            data.CodeSources["A::T9"] = "A";
+            data.CodeSources["B::T1"] = "B";
+            data.CodeSources["B::T8"] = "B";
+            data.CodeSources["B::T9"] = "B";
+
+            data.SourceStartMs["A"] = 0L;
+            data.SourceEndMs["A"] = 3000L;
+            data.SourceStartMs["B"] = 0L;
+            data.SourceEndMs["B"] = 3000L;
+
+            data.Columns["A::T1"] = new double?[] { 1.0, 1.0, 1.0, 1.0 };
+            data.Columns["A::T8"] = new double?[] { 10.0, 9.0, 8.0, 7.0 };
+            data.Columns["A::T9"] = new double?[] { 20.0, 18.0, 16.0, 14.0 };
+            data.Columns["B::T1"] = new double?[] { 2.0, 2.0, 2.0, 2.0 };
+            data.Columns["B::T8"] = new double?[] { 30.0, 29.0, 28.0, 27.0 };
+            data.Columns["B::T9"] = new double?[] { 40.0, 38.0, 36.0, 34.0 };
+
+            var t8Both = new[]
+            {
+                new T8PlusSeriesRequest("A", false, true, false),
+                new T8PlusSeriesRequest("B", false, true, false)
+            };
+            ChartPipelineRequest request = ChartPipelineRequest.ForChart(
+                data, new[] { "A::T1", "B::T1" }, true, 1, false, 1, 1000, 2,
+                double.NaN, double.NaN, null, null, false, null, t8Both);
+
+            ChartPipelineResult result = CreateService().Execute(request);
+
+            ChartPipelineSeries seriesA = result.Series.Single(s => s.Role == ChartSeriesRole.T8Average && s.SourceRoot == "A");
+            ChartPipelineSeries seriesB = result.Series.Single(s => s.Role == ChartSeriesRole.T8Average && s.SourceRoot == "B");
+
+            Assert.AreEqual(0, seriesA.SourceIndex);
+            Assert.AreEqual(1, seriesB.SourceIndex);
+        }
     }
 }

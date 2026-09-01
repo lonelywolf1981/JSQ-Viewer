@@ -82,6 +82,15 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void None_ReturnsFreshInstanceEachAccess()
+        {
+            T8PlusLineSelection first = T8PlusLineSelection.None;
+            first.ShowMinimum = true;
+
+            Assert.IsFalse(T8PlusLineSelection.None.ShowMinimum);
+        }
+
+        [TestMethod]
         public void SourceT8PlusLines_RoundTripsThroughJavaScriptSerializer()
         {
             var state = new WorkspaceLayoutState();
