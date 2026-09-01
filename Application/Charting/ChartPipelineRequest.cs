@@ -47,6 +47,7 @@ namespace JSQViewer.Application.Charting
             SelectedCodes = new string[0];
             XAxis = ChartAxisSettings.Automatic();
             YAxis = ChartAxisSettings.Automatic();
+            T8PlusSeries = new T8PlusSeriesRequest[0];
         }
 
         public TestData Data { get; private set; }
@@ -77,6 +78,8 @@ namespace JSQViewer.Application.Charting
 
         public DynamicsForecastRoleSelection DynamicsForecastRoleSelection { get; private set; }
 
+        public IReadOnlyList<T8PlusSeriesRequest> T8PlusSeries { get; private set; }
+
         public static ChartPipelineRequest ForChart(
             TestData data,
             IEnumerable<string> selectedCodes,
@@ -91,7 +94,8 @@ namespace JSQViewer.Application.Charting
             ChartAxisSettings xAxisSettings = null,
             ChartAxisSettings yAxisSettings = null,
             bool includeDynamicsForecast = false,
-            DynamicsForecastRoleSelection dynamicsForecastRoleSelection = null)
+            DynamicsForecastRoleSelection dynamicsForecastRoleSelection = null,
+            IReadOnlyList<T8PlusSeriesRequest> t8PlusSeries = null)
         {
             IReadOnlyList<string> codes;
             if (selectedCodes == null)
@@ -118,7 +122,10 @@ namespace JSQViewer.Application.Charting
                 XAxis = xAxisSettings ?? ChartAxisSettings.Automatic(),
                 YAxis = yAxisSettings ?? ChartAxisSettings.Automatic(),
                 IncludeDynamicsForecast = includeDynamicsForecast,
-                DynamicsForecastRoleSelection = dynamicsForecastRoleSelection
+                DynamicsForecastRoleSelection = dynamicsForecastRoleSelection,
+                T8PlusSeries = t8PlusSeries == null
+                    ? (IReadOnlyList<T8PlusSeriesRequest>)new T8PlusSeriesRequest[0]
+                    : new List<T8PlusSeriesRequest>(t8PlusSeries)
             };
         }
     }
