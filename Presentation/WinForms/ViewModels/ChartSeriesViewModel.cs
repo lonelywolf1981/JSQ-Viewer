@@ -1,3 +1,5 @@
+using JSQViewer.Application.Charting;
+
 namespace JSQViewer.Presentation.WinForms.ViewModels
 {
     public sealed class ChartSeriesViewModel
@@ -17,5 +19,9 @@ namespace JSQViewer.Presentation.WinForms.ViewModels
         public bool IsVisibleInLegend { get; set; }
 
         public bool IsForecast { get; set; }
+
+        public ChartSeriesRole Role { get; set; }
+
+        public int SourceIndex { get; set; }
     }
 }

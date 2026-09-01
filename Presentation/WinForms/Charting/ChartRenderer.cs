@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Windows.Forms.DataVisualization.Charting;
+using JSQViewer.Application.Charting;
 using JSQViewer.Presentation.WinForms.ViewModels;
 
 namespace JSQViewer.Presentation.WinForms.Charting
@@ -34,14 +35,25 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 for (int i = 0; i < viewModel.Series.Count; i++)
                 {
                     ChartSeriesViewModel model = viewModel.Series[i];
-                    var series = new Series(model.Code);
-                    series.ChartType = SeriesChartType.FastLine;
-                    series.XValueType = viewModel.OverlayMode ? ChartValueType.Double : ChartValueType.DateTime;
-                    series.BorderWidth = model.BorderWidth;
-                    series.BorderDashStyle = model.IsForecast ? ChartDashStyle.Dash : ChartDashStyle.Solid;
-                    series.IsVisibleInLegend = model.IsVisibleInLegend;
-                    series.LegendText = model.LegendText;
-                    series.Points.DataBindXY(model.XValues ?? new double[0], model.YValues ?? new double[0]);
+                    if (model.Role != ChartSeriesRole.Channel)
+                    {
+                        continue;
+                    }
+
+                    chart.Series.Add(CreateSeries(viewModel, model));
+                }
+
+                for (int i = 0; i < viewModel.Series.Count; i++)
+                {
+                    ChartSeriesViewModel model = viewModel.Series[i];
+                    if (model.Role == ChartSeriesRole.Channel)
+                    {
+                        continue;
+                    }
+
+                    Series series = CreateSeries(viewModel, model);
+                    series.Color = SourceColorPalette.ForSourceIndex(model.SourceIndex);
+                    series.BorderDashStyle = ResolveT8PlusDashStyle(model.Role);
                     chart.Series.Add(series);
                 }
 
@@ -62,6 +74,44 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 chart.Invalidate();
                 chart.Update();
             }
+        }
+
+        private static Series CreateSeries(ChartViewModel viewModel, ChartSeriesViewModel model)
+        {
+            // Имя серии в MS Chart обязано быть уникальным. У канальных и прогнозных
+            // серий именем остаётся Code — по нему к серии обращаются существующие
+            // тесты (ChartViewUseCaseTests: chart.Series["forecast"]). У линий T8+
+            // Code равен корню источника и повторяется до трёх раз, поэтому только
+            // им имя дополняется ролью.
+            string name = model.Role == ChartSeriesRole.Channel
+                ? model.Code
+                : model.Code + "|" + model.Role.ToString();
+
+            var series = new Series(name);
+            series.ChartType = SeriesChartType.FastLine;
+            series.XValueType = viewModel.OverlayMode ? ChartValueType.Double : ChartValueType.DateTime;
+            series.BorderWidth = model.BorderWidth;
+            series.BorderDashStyle = model.IsForecast ? ChartDashStyle.Dash : ChartDashStyle.Solid;
+            series.IsVisibleInLegend = model.IsVisibleInLegend;
+            series.LegendText = model.LegendText;
+            series.Points.DataBindXY(model.XValues ?? new double[0], model.YValues ?? new double[0]);
+            return series;
+        }
+
+        private static ChartDashStyle ResolveT8PlusDashStyle(ChartSeriesRole role)
+        {
+            if (role == ChartSeriesRole.T8Minimum)
+            {
+                return ChartDashStyle.Dot;
+            }
+
+            if (role == ChartSeriesRole.T8Maximum)
+            {
+                // Не Dash: штриховой стиль уже занят линией прогноза динамики.
+                return ChartDashStyle.DashDot;
+            }
+
+            return ChartDashStyle.Solid;
         }
 
         private static void ApplyXAxis(ChartArea area, ChartViewModel viewModel)
