@@ -54,8 +54,32 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 },
                 XAxis = CreateXAxis(result.XAxis, result.OverlayMode),
                 YAxis = CreateYAxis(result.YAxis),
-                Series = series
+                Series = series,
+                LevelLines = BuildLevelLines(result.LevelLines)
             };
+        }
+
+        private static IReadOnlyList<ChartLevelLineViewModel> BuildLevelLines(IReadOnlyList<ChartLevelLine> levels)
+        {
+            if (levels == null || levels.Count == 0)
+            {
+                return new ChartLevelLineViewModel[0];
+            }
+
+            var result = new List<ChartLevelLineViewModel>(levels.Count);
+            for (int i = 0; i < levels.Count; i++)
+            {
+                ChartLevelLine level = levels[i];
+                result.Add(new ChartLevelLineViewModel
+                {
+                    SourceIndex = level.SourceIndex,
+                    Role = level.Role,
+                    Value = level.Value,
+                    Label = level.Label
+                });
+            }
+
+            return result;
         }
 
         private ChartAxisSettingsViewModel CreateXAxis(ChartAxisSettings axis, bool overlayMode)
