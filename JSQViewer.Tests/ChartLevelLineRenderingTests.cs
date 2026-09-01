@@ -1,4 +1,5 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
 using System.Windows.Forms.DataVisualization.Charting;
 using JSQViewer.Application.Charting;
@@ -106,6 +107,70 @@ namespace JSQViewer.Tests
                 Assert.AreEqual(SourceColorPalette.ForSourceIndex(0), strips[0].BorderColor);
                 Assert.AreEqual(SourceColorPalette.ForSourceIndex(1), strips[1].BorderColor);
                 Assert.AreNotEqual(strips[0].BorderColor, strips[1].BorderColor);
+            }
+        }
+
+        [TestMethod]
+        public void Render_WhenTwoSourcesShareARole_SecondMaximumGoesBelowTheLine()
+        {
+            using (Chart chart = CreateChart())
+            {
+                new ChartRenderer().Render(chart, ViewModel(
+                    new ChartLevelLineViewModel { SourceIndex = 0, Role = ChartSeriesRole.T8Maximum, Value = 33.0, Label = "a" },
+                    new ChartLevelLineViewModel { SourceIndex = 1, Role = ChartSeriesRole.T8Maximum, Value = 32.2, Label = "b" }));
+
+                StripLine[] strips = chart.ChartAreas[0].AxisY.StripLines.Cast<StripLine>().ToArray();
+
+                // Обе подписи слева, но вторая уходит под свою линию — иначе при
+                // разнице в градус они полностью перекрывают друг друга.
+                Assert.AreEqual(StringAlignment.Near, strips[0].TextAlignment);
+                Assert.AreEqual(StringAlignment.Far, strips[0].TextLineAlignment);
+                Assert.AreEqual(StringAlignment.Near, strips[1].TextAlignment);
+                Assert.AreEqual(StringAlignment.Near, strips[1].TextLineAlignment);
+            }
+        }
+
+        [TestMethod]
+        public void Render_WhenTwoSourcesShareMinimum_SecondLabelGoesToTheRight()
+        {
+            using (Chart chart = CreateChart())
+            {
+                new ChartRenderer().Render(chart, ViewModel(
+                    new ChartLevelLineViewModel { SourceIndex = 0, Role = ChartSeriesRole.T8Minimum, Value = 0.5, Label = "a" },
+                    new ChartLevelLineViewModel { SourceIndex = 1, Role = ChartSeriesRole.T8Minimum, Value = 0.3, Label = "b" }));
+
+                StripLine[] strips = chart.ChartAreas[0].AxisY.StripLines.Cast<StripLine>().ToArray();
+
+                // Под линиями минимума места нет — они у самой нижней границы,
+                // поэтому вторая подпись разводится вправо, а не вниз.
+                Assert.AreEqual(StringAlignment.Near, strips[0].TextAlignment);
+                Assert.AreEqual(StringAlignment.Far, strips[1].TextAlignment);
+                Assert.AreEqual(StringAlignment.Far, strips[0].TextLineAlignment);
+                Assert.AreEqual(StringAlignment.Far, strips[1].TextLineAlignment);
+            }
+        }
+
+        [TestMethod]
+        public void Render_PlacementIsPerRole_NotGlobal()
+        {
+            using (Chart chart = CreateChart())
+            {
+                new ChartRenderer().Render(chart, ViewModel(
+                    new ChartLevelLineViewModel { SourceIndex = 1, Role = ChartSeriesRole.T8Average, Value = 7.0, Label = "b-avg" },
+                    new ChartLevelLineViewModel { SourceIndex = 0, Role = ChartSeriesRole.T8Average, Value = 8.0, Label = "a-avg" },
+                    new ChartLevelLineViewModel { SourceIndex = 0, Role = ChartSeriesRole.T8Maximum, Value = 20.0, Label = "a-max" }));
+
+                StripLine[] strips = chart.ChartAreas[0].AxisY.StripLines.Cast<StripLine>().ToArray();
+
+                // Порядок устойчив: сначала роль, затем источник. Счётчик мест
+                // ведётся отдельно по каждой роли, поэтому единственный максимум
+                // остаётся над своей линией.
+                Assert.AreEqual("a-avg", strips[0].Text);
+                Assert.AreEqual(StringAlignment.Far, strips[0].TextLineAlignment);
+                Assert.AreEqual("b-avg", strips[1].Text);
+                Assert.AreEqual(StringAlignment.Near, strips[1].TextLineAlignment);
+                Assert.AreEqual("a-max", strips[2].Text);
+                Assert.AreEqual(StringAlignment.Far, strips[2].TextLineAlignment);
             }
         }
 

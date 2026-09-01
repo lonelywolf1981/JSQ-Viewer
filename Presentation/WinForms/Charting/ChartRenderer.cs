@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms.DataVisualization.Charting;
@@ -84,9 +84,21 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 return;
             }
 
-            for (int i = 0; i < levels.Count; i++)
+            // Порядок задаёт место подписи, поэтому он должен быть устойчивым:
+            // сначала по роли, затем по источнику.
+            var ordered = new List<ChartLevelLineViewModel>(levels);
+            ordered.Sort(CompareLevelLines);
+
+            var placed = new Dictionary<ChartSeriesRole, int>();
+
+            for (int i = 0; i < ordered.Count; i++)
             {
-                ChartLevelLineViewModel level = levels[i];
+                ChartLevelLineViewModel level = ordered[i];
+
+                int ordinal;
+                placed.TryGetValue(level.Role, out ordinal);
+                placed[level.Role] = ordinal + 1;
+
                 var strip = new StripLine();
                 strip.IntervalOffset = level.Value;
                 strip.Interval = 0d;
@@ -95,10 +107,35 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 strip.BorderWidth = 2;
                 strip.BorderDashStyle = ResolveLevelDashStyle(level.Role);
                 strip.Text = level.Label ?? string.Empty;
-                strip.TextAlignment = StringAlignment.Near;
-                strip.TextLineAlignment = StringAlignment.Far;
+                ApplyLabelPlacement(strip, level.Role, ordinal);
                 area.AxisY.StripLines.Add(strip);
             }
+        }
+
+        private static int CompareLevelLines(ChartLevelLineViewModel first, ChartLevelLineViewModel second)
+        {
+            int byRole = ((int)first.Role).CompareTo((int)second.Role);
+            return byRole != 0 ? byRole : first.SourceIndex.CompareTo(second.SourceIndex);
+        }
+
+        /// <summary>
+        /// Разводит подписи уровней одной роли, чтобы при сравнении прогонов они
+        /// не ложились одна на другую: у близких по значению линий подписи иначе
+        /// полностью перекрываются.
+        /// </summary>
+        private static void ApplyLabelPlacement(StripLine strip, ChartSeriesRole role, int ordinal)
+        {
+            if (role == ChartSeriesRole.T8Minimum)
+            {
+                // Линии минимума жмутся к нижней границе области, и места под ними
+                // нет — поэтому подписи разводятся по горизонтали, а не по вертикали.
+                strip.TextAlignment = (ordinal % 2) == 0 ? StringAlignment.Near : StringAlignment.Far;
+                strip.TextLineAlignment = ((ordinal / 2) % 2) == 0 ? StringAlignment.Far : StringAlignment.Near;
+                return;
+            }
+
+            strip.TextAlignment = ((ordinal / 2) % 2) == 0 ? StringAlignment.Near : StringAlignment.Far;
+            strip.TextLineAlignment = (ordinal % 2) == 0 ? StringAlignment.Far : StringAlignment.Near;
         }
 
         private static ChartDashStyle ResolveLevelDashStyle(ChartSeriesRole role)
