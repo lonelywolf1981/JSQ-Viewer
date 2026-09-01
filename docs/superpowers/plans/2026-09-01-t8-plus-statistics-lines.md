@@ -1081,15 +1081,10 @@ namespace JSQViewer.Application.Charting
             {
                 // Линии T8+ обязаны оставаться подписанными даже там, где легенда
                 // каналов скрыта из-за их количества, — иначе при сравнении
-                // источников их невозможно опознать.
-                for (int i = 0; i < series.Count; i++)
-                {
-                    if (series[i].Role == ChartSeriesRole.Channel)
-                    {
-                        series[i].IsVisibleInLegend = showLegend;
-                    }
-                }
-
+                // источников их невозможно опознать. Канальные и прогнозные серии
+                // уже несут своё значение IsVisibleInLegend с момента создания и
+                // здесь не трогаются: переприсваивание вернуло бы в легенду все
+                // каналы в связке «больше двадцати каналов + прогноз динамики».
                 showLegend = true;
             }
 ```
@@ -1435,7 +1430,7 @@ namespace JSQViewer.Presentation.WinForms.Charting
                         continue;
                     }
 
-                    chart.Series.Add(CreateSeries(chart, viewModel, model, i));
+                    chart.Series.Add(CreateSeries(viewModel, model));
                 }
 
                 for (int i = 0; i < viewModel.Series.Count; i++)
@@ -1446,21 +1441,30 @@ namespace JSQViewer.Presentation.WinForms.Charting
                         continue;
                     }
 
-                    Series series = CreateSeries(chart, viewModel, model, i);
+                    Series series = CreateSeries(viewModel, model);
                     series.Color = SourceColorPalette.ForSourceIndex(model.SourceIndex);
                     series.BorderDashStyle = ResolveT8PlusDashStyle(model.Role);
                     chart.Series.Add(series);
                 }
 ```
 
+Первый цикл вызывает `CreateSeries(viewModel, model)` без дополнительных аргументов.
+
 Добавить приватные методы в тот же класс:
 
 ```csharp
-        private static Series CreateSeries(Chart chart, ChartViewModel viewModel, ChartSeriesViewModel model, int index)
+        private static Series CreateSeries(ChartViewModel viewModel, ChartSeriesViewModel model)
         {
-            // Имя серии в MS Chart обязано быть уникальным, а Code у линий T8+
-            // совпадает с корнем источника и повторяется трижды.
-            var series = new Series(model.Code + "|" + index.ToString(CultureInfo.InvariantCulture));
+            // Имя серии в MS Chart обязано быть уникальным. У канальных и прогнозных
+            // серий именем остаётся Code — по нему к серии обращаются существующие
+            // тесты (ChartViewUseCaseTests: chart.Series["forecast"]). У линий T8+
+            // Code равен корню источника и повторяется до трёх раз, поэтому только
+            // им имя дополняется ролью.
+            string name = model.Role == ChartSeriesRole.Channel
+                ? model.Code
+                : model.Code + "|" + model.Role.ToString();
+
+            var series = new Series(name);
             series.ChartType = SeriesChartType.FastLine;
             series.XValueType = viewModel.OverlayMode ? ChartValueType.Double : ChartValueType.DateTime;
             series.BorderWidth = model.BorderWidth;
@@ -1488,7 +1492,7 @@ namespace JSQViewer.Presentation.WinForms.Charting
         }
 ```
 
-Добавить в начало файла `using System.Globalization;` и `using JSQViewer.Application.Charting;`.
+Добавить в начало файла `using JSQViewer.Application.Charting;`.
 
 - [ ] **Step 6: Прогнать тесты**
 
@@ -1880,16 +1884,28 @@ git commit -m "Флаги линий T8+ хранятся в раскладке 
 
             string tip = Loc.Get(available ? "TipT8PlusLines" : "TipT8PlusUnavailable");
             CheckBox[] checks = { state.T8PlusMinimumCheck, state.T8PlusAverageCheck, state.T8PlusMaximumCheck };
-            for (int i = 0; i < checks.Length; i++)
-            {
-                if (checks[i] == null) continue;
-                checks[i].Enabled = available;
-                if (!available)
-                {
-                    checks[i].Checked = false;
-                }
 
-                _toolTip.SetToolTip(checks[i], tip);
+            // Тот же флаг, что и в RestoreT8PlusSelection: снятие галки здесь —
+            // программное, а не действие пользователя, и не должно тянуть за собой
+            // сохранение раскладки и перерисовку графика при построении окна.
+            _syncingChannelWorkspaceOptions = true;
+            try
+            {
+                for (int i = 0; i < checks.Length; i++)
+                {
+                    if (checks[i] == null) continue;
+                    checks[i].Enabled = available;
+                    if (!available)
+                    {
+                        checks[i].Checked = false;
+                    }
+
+                    _toolTip.SetToolTip(checks[i], tip);
+                }
+            }
+            finally
+            {
+                _syncingChannelWorkspaceOptions = false;
             }
         }
 
