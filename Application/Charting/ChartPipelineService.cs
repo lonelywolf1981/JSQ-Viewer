@@ -504,20 +504,24 @@ namespace JSQViewer.Application.Charting
                     : null;
 
                 double value;
+                int atIndex;
 
-                if (item.ShowMinimum && TryLowest(built.Minimum, startIndex, edgeIndex, out value))
+                if (item.ShowMinimum && TryLowest(built.Minimum, startIndex, edgeIndex, out value, out atIndex))
                 {
-                    AddLevel(levels, value, item.SourceRoot, sourceIndex, sourceName, ChartSeriesRole.T8Minimum);
+                    AddLevel(levels, value, item.SourceRoot, sourceIndex, sourceName, ChartSeriesRole.T8Minimum,
+                        DescribeChannel(built.MinimumChannel, atIndex));
                 }
 
                 if (item.ShowAverage && TryMean(built.Average, startIndex, edgeIndex, out value))
                 {
-                    AddLevel(levels, value, item.SourceRoot, sourceIndex, sourceName, ChartSeriesRole.T8Average);
+                    AddLevel(levels, value, item.SourceRoot, sourceIndex, sourceName, ChartSeriesRole.T8Average,
+                        DescribeChannelCount(built.ChannelCount));
                 }
 
-                if (item.ShowMaximum && TryHighest(built.Maximum, startIndex, edgeIndex, out value))
+                if (item.ShowMaximum && TryHighest(built.Maximum, startIndex, edgeIndex, out value, out atIndex))
                 {
-                    AddLevel(levels, value, item.SourceRoot, sourceIndex, sourceName, ChartSeriesRole.T8Maximum);
+                    AddLevel(levels, value, item.SourceRoot, sourceIndex, sourceName, ChartSeriesRole.T8Maximum,
+                        DescribeChannel(built.MaximumChannel, atIndex));
                 }
             }
 
@@ -530,10 +534,38 @@ namespace JSQViewer.Application.Charting
             string sourceRoot,
             int sourceIndex,
             string sourceName,
-            ChartSeriesRole role)
+            ChartSeriesRole role,
+            string origin)
         {
             levels.Add(new ChartLevelLine(
-                sourceRoot, sourceIndex, role, value, BuildLevelLabel(sourceName, role, value)));
+                sourceRoot, sourceIndex, role, value, BuildLevelLabel(sourceName, role, value, origin)));
+        }
+
+        /// <summary>
+        /// Имя термопары, давшей экстремум, без суффикса источника и номера дубля.
+        /// Без него из подписи не понять, какой именно канал опустился ниже всех,
+        /// а это почти никогда не тот, что выбран для показа на графике.
+        /// </summary>
+        private static string DescribeChannel(string[] channels, int index)
+        {
+            if (channels == null || index < 0 || index >= channels.Length)
+            {
+                return null;
+            }
+
+            string code = T8PlusChannelSelector.NormalizeChannelName(channels[index]);
+            return string.IsNullOrWhiteSpace(code) ? null : code;
+        }
+
+        private static string DescribeChannelCount(int channelCount)
+        {
+            if (channelCount <= 0)
+            {
+                return null;
+            }
+
+            string form = channelCount == 1 ? "каналу" : "каналам";
+            return string.Format(CultureInfo.InvariantCulture, "по {0} {1}", channelCount, form);
         }
 
         /// <summary>
@@ -550,10 +582,10 @@ namespace JSQViewer.Application.Charting
             return timestampsMs[last] == startMs ? last : last + 1;
         }
 
-        private static bool TryLowest(double?[] values, int from, int to, out double result)
+        private static bool TryLowest(double?[] values, int from, int to, out double result, out int atIndex)
         {
             result = 0d;
-            bool found = false;
+            atIndex = -1;
             if (values == null)
             {
                 return false;
@@ -566,20 +598,20 @@ namespace JSQViewer.Application.Charting
                     continue;
                 }
 
-                if (!found || values[i].Value < result)
+                if (atIndex < 0 || values[i].Value < result)
                 {
                     result = values[i].Value;
-                    found = true;
+                    atIndex = i;
                 }
             }
 
-            return found;
+            return atIndex >= 0;
         }
 
-        private static bool TryHighest(double?[] values, int from, int to, out double result)
+        private static bool TryHighest(double?[] values, int from, int to, out double result, out int atIndex)
         {
             result = 0d;
-            bool found = false;
+            atIndex = -1;
             if (values == null)
             {
                 return false;
@@ -592,14 +624,14 @@ namespace JSQViewer.Application.Charting
                     continue;
                 }
 
-                if (!found || values[i].Value > result)
+                if (atIndex < 0 || values[i].Value > result)
                 {
                     result = values[i].Value;
-                    found = true;
+                    atIndex = i;
                 }
             }
 
-            return found;
+            return atIndex >= 0;
         }
 
         /// <summary>
@@ -636,7 +668,7 @@ namespace JSQViewer.Application.Charting
             return true;
         }
 
-        private static string BuildLevelLabel(string sourceName, ChartSeriesRole role, double value)
+        private static string BuildLevelLabel(string sourceName, ChartSeriesRole role, double value, string origin)
         {
             string roleText;
             if (role == ChartSeriesRole.T8Minimum)
@@ -653,9 +685,13 @@ namespace JSQViewer.Application.Charting
             }
 
             string valueText = value.ToString("0.0", CultureInfo.InvariantCulture);
+            string tail = string.IsNullOrWhiteSpace(origin)
+                ? valueText
+                : string.Format(CultureInfo.InvariantCulture, "{0} ({1})", valueText, origin);
+
             return string.IsNullOrWhiteSpace(sourceName)
-                ? string.Format(CultureInfo.InvariantCulture, "{0} {1}", roleText, valueText)
-                : string.Format(CultureInfo.InvariantCulture, "[{0}] {1} {2}", sourceName, roleText, valueText);
+                ? string.Format(CultureInfo.InvariantCulture, "{0} {1}", roleText, tail)
+                : string.Format(CultureInfo.InvariantCulture, "[{0}] {1} {2}", sourceName, roleText, tail);
         }
 
         private static long ResolveVisibleEdgeMs(

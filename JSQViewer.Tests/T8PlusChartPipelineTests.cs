@@ -168,6 +168,50 @@ namespace JSQViewer.Tests
         }
 
         [TestMethod]
+        public void Execute_LabelNamesTheChannelThatReachedTheExtreme()
+        {
+            var t8 = new[] { new T8PlusSeriesRequest("A", true, true, true) };
+
+            ChartPipelineResult result = CreateService().Execute(Request(BuildData(), t8));
+
+            // T8 = [10,8,6,4], T9 = [20,18,16,14]: ниже всех опускается T8, выше всех — T9.
+            // Канал, попавший в подпись, — не тот, что выбран для показа на графике.
+            Assert.AreEqual(
+                "T8+ мин 4.0 (T8)",
+                result.LevelLines.Single(l => l.Role == ChartSeriesRole.T8Minimum).Label);
+            Assert.AreEqual(
+                "T8+ макс 20.0 (T9)",
+                result.LevelLines.Single(l => l.Role == ChartSeriesRole.T8Maximum).Label);
+        }
+
+        [TestMethod]
+        public void Execute_AverageLabelReportsChannelCountInsteadOfAChannel()
+        {
+            var t8 = new[] { new T8PlusSeriesRequest("A", false, true, false) };
+
+            ChartPipelineResult result = CreateService().Execute(Request(BuildData(), t8));
+
+            // У среднего канала-победителя нет: в группе две термопары.
+            Assert.AreEqual("T8+ сред 12.0 (по 2 каналам)", result.LevelLines.Single().Label);
+        }
+
+        [TestMethod]
+        public void Execute_LabelChannelFollowsTheNarrowedRange()
+        {
+            TestData data = BuildData();
+            // На первом отсчёте ниже всех T9, дальше — T8.
+            data.Columns["T9"] = new double?[] { 1.0, 18.0, 16.0, 14.0 };
+            var t8 = new[] { new T8PlusSeriesRequest("A", true, false, false) };
+
+            ChartPipelineResult whole = CreateService().Execute(Request(data, t8));
+            ChartPipelineResult tail = CreateService().Execute(Request(data, t8, false, 500d, 3500d));
+
+            Assert.AreEqual("T8+ мин 1.0 (T9)", whole.LevelLines.Single().Label);
+            // Отсчёт с T9=1.0 остался левее участка, минимум теперь за T8.
+            Assert.AreEqual("T8+ мин 4.0 (T8)", tail.LevelLines.Single().Label);
+        }
+
+        [TestMethod]
         public void Execute_WithSingleSource_LabelOmitsSourceName()
         {
             var t8 = new[] { new T8PlusSeriesRequest("A", false, true, false) };
