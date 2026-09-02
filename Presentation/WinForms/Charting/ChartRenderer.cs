@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.Windows.Forms.DataVisualization.Charting;
 using JSQViewer.Application.Charting;
 using JSQViewer.Presentation.WinForms.ViewModels;
@@ -36,7 +35,26 @@ namespace JSQViewer.Presentation.WinForms.Charting
                 for (int i = 0; i < viewModel.Series.Count; i++)
                 {
                     ChartSeriesViewModel model = viewModel.Series[i];
+                    if (model.Role != ChartSeriesRole.Channel)
+                    {
+                        continue;
+                    }
+
                     chart.Series.Add(CreateSeries(viewModel, model));
+                }
+
+                for (int i = 0; i < viewModel.Series.Count; i++)
+                {
+                    ChartSeriesViewModel model = viewModel.Series[i];
+                    if (model.Role == ChartSeriesRole.Channel)
+                    {
+                        continue;
+                    }
+
+                    Series series = CreateSeries(viewModel, model);
+                    series.Color = SourceColorPalette.ForSourceIndex(model.SourceIndex);
+                    series.BorderDashStyle = ResolveT8PlusDashStyle(model.Role);
+                    chart.Series.Add(series);
                 }
 
                 chart.ResetAutoValues();
@@ -47,8 +65,6 @@ namespace JSQViewer.Presentation.WinForms.Charting
                     ApplyXAxis(area, viewModel);
                     ApplyOverlayXAxisLabels(area, viewModel != null && viewModel.OverlayMode);
                     ApplyAxis(area.AxisY, viewModel.YAxis);
-                    ApplyLevelLines(area, viewModel);
-                    EnsureLevelsFitAxis(area, viewModel);
                 }
             }
             finally
@@ -62,7 +78,16 @@ namespace JSQViewer.Presentation.WinForms.Charting
 
         private static Series CreateSeries(ChartViewModel viewModel, ChartSeriesViewModel model)
         {
-            var series = new Series(model.Code);
+            // Имя серии в MS Chart обязано быть уникальным. У канальных и прогнозных
+            // серий именем остаётся Code — по нему к серии обращаются существующие
+            // тесты (ChartViewUseCaseTests: chart.Series["forecast"]). У линий T8+
+            // Code равен корню источника и повторяется до трёх раз, поэтому только
+            // им имя дополняется ролью.
+            string name = model.Role == ChartSeriesRole.Channel
+                ? model.Code
+                : model.Code + "|" + model.Role.ToString();
+
+            var series = new Series(name);
             series.ChartType = SeriesChartType.FastLine;
             series.XValueType = viewModel.OverlayMode ? ChartValueType.Double : ChartValueType.DateTime;
             series.BorderWidth = model.BorderWidth;
@@ -73,158 +98,7 @@ namespace JSQViewer.Presentation.WinForms.Charting
             return series;
         }
 
-        private static void ApplyLevelLines(ChartArea area, ChartViewModel viewModel)
-        {
-            // Полосы накапливались бы при каждой перерисовке, поэтому чистим всегда,
-            // даже когда уровней нет.
-            area.AxisY.StripLines.Clear();
-
-            IReadOnlyList<ChartLevelLineViewModel> levels = viewModel.LevelLines;
-            if (levels == null)
-            {
-                return;
-            }
-
-            // Порядок задаёт место подписи, поэтому он должен быть устойчивым:
-            // сначала по роли, затем по источнику.
-            var ordered = new List<ChartLevelLineViewModel>(levels);
-            ordered.Sort(CompareLevelLines);
-
-            var placed = new Dictionary<ChartSeriesRole, int>();
-
-            for (int i = 0; i < ordered.Count; i++)
-            {
-                ChartLevelLineViewModel level = ordered[i];
-
-                int ordinal;
-                placed.TryGetValue(level.Role, out ordinal);
-                placed[level.Role] = ordinal + 1;
-
-                var strip = new StripLine();
-                strip.IntervalOffset = level.Value;
-                strip.Interval = 0d;
-                strip.StripWidth = 0d;
-                strip.BorderColor = SourceColorPalette.ForSourceIndex(level.SourceIndex);
-                strip.BorderWidth = 2;
-                strip.BorderDashStyle = ResolveLevelDashStyle(level.Role);
-                strip.Text = level.Label ?? string.Empty;
-                ApplyLabelPlacement(strip, ordinal);
-                area.AxisY.StripLines.Add(strip);
-            }
-        }
-
-        /// <summary>
-        /// Раздвигает ось Y так, чтобы уровни попали в видимую область.
-        /// MS Chart считает автоматический диапазон только по сериям, а полосы в
-        /// него не входят: уровень ниже самой холодной показанной кривой иначе
-        /// обрезается краем области и выглядит как «линия не работает».
-        /// Двигается только та граница, которой не хватает, — вторая остаётся
-        /// автоматической, чтобы подписи оси сохранили круглые значения.
-        /// </summary>
-        private static void EnsureLevelsFitAxis(ChartArea area, ChartViewModel viewModel)
-        {
-            if (viewModel.YAxis != null && viewModel.YAxis.IsManualEnabled)
-            {
-                return;
-            }
-
-            IReadOnlyList<ChartLevelLineViewModel> levels = viewModel.LevelLines;
-            if (levels == null || levels.Count == 0)
-            {
-                return;
-            }
-
-            double seriesMinimum;
-            double seriesMaximum;
-            if (!TryGetSeriesRange(viewModel, out seriesMinimum, out seriesMaximum))
-            {
-                return;
-            }
-
-            double levelMinimum = levels[0].Value;
-            double levelMaximum = levels[0].Value;
-            for (int i = 1; i < levels.Count; i++)
-            {
-                if (levels[i].Value < levelMinimum) levelMinimum = levels[i].Value;
-                if (levels[i].Value > levelMaximum) levelMaximum = levels[i].Value;
-            }
-
-            double low = Math.Min(seriesMinimum, levelMinimum);
-            double high = Math.Max(seriesMaximum, levelMaximum);
-            double margin = (high - low) * 0.03;
-            if (margin <= 0d)
-            {
-                margin = 1d;
-            }
-
-            if (levelMinimum < seriesMinimum)
-            {
-                area.AxisY.Minimum = levelMinimum - margin;
-            }
-
-            if (levelMaximum > seriesMaximum)
-            {
-                area.AxisY.Maximum = levelMaximum + margin;
-            }
-        }
-
-        private static bool TryGetSeriesRange(ChartViewModel viewModel, out double minimum, out double maximum)
-        {
-            minimum = 0d;
-            maximum = 0d;
-            bool found = false;
-
-            IReadOnlyList<ChartSeriesViewModel> series = viewModel.Series;
-            if (series == null)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < series.Count; i++)
-            {
-                double[] values = series[i].YValues;
-                if (values == null)
-                {
-                    continue;
-                }
-
-                for (int v = 0; v < values.Length; v++)
-                {
-                    double value = values[v];
-                    if (double.IsNaN(value) || double.IsInfinity(value))
-                    {
-                        continue;
-                    }
-
-                    if (!found || value < minimum) minimum = value;
-                    if (!found || value > maximum) maximum = value;
-                    found = true;
-                }
-            }
-
-            return found;
-        }
-
-        private static int CompareLevelLines(ChartLevelLineViewModel first, ChartLevelLineViewModel second)
-        {
-            int byRole = ((int)first.Role).CompareTo((int)second.Role);
-            return byRole != 0 ? byRole : first.SourceIndex.CompareTo(second.SourceIndex);
-        }
-
-        /// <summary>
-        /// Разводит подписи уровней одной роли, чтобы при сравнении прогонов они
-        /// не ложились одна на другую: у близких по значению линий подписи иначе
-        /// полностью перекрываются. Правило одно на все роли — первая подпись
-        /// слева, вторая справа; вертикаль задействуется только начиная с третьего
-        /// источника, потому что под линиями минимума места нет.
-        /// </summary>
-        private static void ApplyLabelPlacement(StripLine strip, int ordinal)
-        {
-            strip.TextAlignment = (ordinal % 2) == 0 ? StringAlignment.Near : StringAlignment.Far;
-            strip.TextLineAlignment = ((ordinal / 2) % 2) == 0 ? StringAlignment.Far : StringAlignment.Near;
-        }
-
-        private static ChartDashStyle ResolveLevelDashStyle(ChartSeriesRole role)
+        private static ChartDashStyle ResolveT8PlusDashStyle(ChartSeriesRole role)
         {
             if (role == ChartSeriesRole.T8Minimum)
             {
@@ -233,7 +107,7 @@ namespace JSQViewer.Presentation.WinForms.Charting
 
             if (role == ChartSeriesRole.T8Maximum)
             {
-                // Не Dash: штриховой стиль занят линией прогноза динамики.
+                // Не Dash: штриховой стиль уже занят линией прогноза динамики.
                 return ChartDashStyle.DashDot;
             }
 

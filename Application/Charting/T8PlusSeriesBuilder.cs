@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using JSQViewer.Core;
 
 namespace JSQViewer.Application.Charting
@@ -24,14 +24,12 @@ namespace JSQViewer.Application.Charting
             }
 
             var values = new List<double?[]>(columns.Count);
-            var codes = new List<string>(columns.Count);
             for (int c = 0; c < columns.Count; c++)
             {
                 double?[] column;
                 if (data.Columns != null && data.Columns.TryGetValue(columns[c], out column) && column != null)
                 {
                     values.Add(column);
-                    codes.Add(columns[c]);
                 }
             }
 
@@ -44,8 +42,6 @@ namespace JSQViewer.Application.Charting
             var minimum = new double?[length];
             var average = new double?[length];
             var maximum = new double?[length];
-            var minimumChannel = new string[length];
-            var maximumChannel = new string[length];
 
             for (int i = 0; i < length; i++)
             {
@@ -53,8 +49,6 @@ namespace JSQViewer.Application.Charting
                 double min = 0d;
                 double max = 0d;
                 int count = 0;
-                int minIndex = -1;
-                int maxIndex = -1;
 
                 for (int c = 0; c < values.Count; c++)
                 {
@@ -73,13 +67,11 @@ namespace JSQViewer.Application.Charting
                     if (count == 0 || value < min)
                     {
                         min = value;
-                        minIndex = c;
                     }
 
                     if (count == 0 || value > max)
                     {
                         max = value;
-                        maxIndex = c;
                     }
 
                     sum += value;
@@ -94,12 +86,9 @@ namespace JSQViewer.Application.Charting
                 minimum[i] = min;
                 average[i] = sum / count;
                 maximum[i] = max;
-                minimumChannel[i] = codes[minIndex];
-                maximumChannel[i] = codes[maxIndex];
             }
 
-            return new T8PlusSeries(
-                true, minimum, average, maximum, minimumChannel, maximumChannel, values.Count);
+            return new T8PlusSeries(true, minimum, average, maximum);
         }
     }
 }

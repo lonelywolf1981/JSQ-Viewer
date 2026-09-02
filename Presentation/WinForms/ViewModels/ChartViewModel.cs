@@ -7,7 +7,6 @@ namespace JSQViewer.Presentation.WinForms.ViewModels
         public ChartViewModel()
         {
             Series = new ChartSeriesViewModel[0];
-            LevelLines = new ChartLevelLineViewModel[0];
             Range = new ChartRangeViewModel();
             XAxis = new ChartAxisSettingsViewModel();
             YAxis = new ChartAxisSettingsViewModel();
@@ -34,8 +33,6 @@ namespace JSQViewer.Presentation.WinForms.ViewModels
         public ChartRangeViewModel Range { get; set; }
 
         public IReadOnlyList<ChartSeriesViewModel> Series { get; set; }
-
-        public IReadOnlyList<ChartLevelLineViewModel> LevelLines { get; set; }
 
         public ChartAxisSettingsViewModel XAxis { get; set; }
 

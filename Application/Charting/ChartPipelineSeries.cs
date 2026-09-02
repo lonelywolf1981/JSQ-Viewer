@@ -20,6 +20,10 @@ namespace JSQViewer.Application.Charting
 
         public bool IsForecast { get; set; }
 
+        public ChartSeriesRole Role { get; set; }
+
+        public int SourceIndex { get; set; }
+
         public IReadOnlyList<DynamicsForecastWarning> ForecastWarnings { get; set; }
     }
 }

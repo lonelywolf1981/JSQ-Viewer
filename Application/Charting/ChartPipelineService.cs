@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -166,7 +166,23 @@ namespace JSQViewer.Application.Charting
                 }
             }
 
-            IReadOnlyList<ChartLevelLine> levelLines = BuildT8PlusLevels(request, data, overlayMode);
+            long t8PlusMaxDurationMs;
+            int t8PlusCount = AppendT8PlusSeries(request, data, timestamps, step, series, out t8PlusMaxDurationMs);
+            if (overlayMode && t8PlusMaxDurationMs > maxOverlayDurationMs)
+            {
+                maxOverlayDurationMs = t8PlusMaxDurationMs;
+            }
+
+            if (t8PlusCount > 0)
+            {
+                // Линии T8+ обязаны оставаться подписанными даже там, где легенда
+                // каналов скрыта из-за их количества, — иначе при сравнении
+                // источников их невозможно опознать. Канальные и прогнозные серии
+                // уже несут своё значение IsVisibleInLegend с момента создания и
+                // здесь не трогаются: переприсваивание вернуло бы в легенду все
+                // каналы в связке «больше двадцати каналов + прогноз динамики».
+                showLegend = true;
+            }
 
             double dataMin = double.NaN;
             double dataMax = double.NaN;
@@ -195,8 +211,7 @@ namespace JSQViewer.Application.Charting
                 MaxOverlayDurationMs = maxOverlayDurationMs,
                 XAxis = effectiveXAxis,
                 YAxis = effectiveYAxis,
-                Series = series,
-                LevelLines = levelLines
+                Series = series
             };
         }
 
@@ -447,23 +462,24 @@ namespace JSQViewer.Application.Charting
             return count;
         }
 
-        private IReadOnlyList<ChartLevelLine> BuildT8PlusLevels(
+        private int AppendT8PlusSeries(
             ChartPipelineRequest request,
             TestData data,
-            bool overlayMode)
+            long[] timestamps,
+            int step,
+            List<ChartPipelineSeries> series,
+            out long maxDurationMs)
         {
-            var levels = new List<ChartLevelLine>();
+            maxDurationMs = 0L;
             IReadOnlyList<T8PlusSeriesRequest> requests = request.T8PlusSeries;
-            if (requests == null || requests.Count == 0
-                || data.TimestampsMs == null || data.TimestampsMs.Length == 0)
+            if (requests == null || requests.Count == 0 || timestamps.Length == 0)
             {
-                return levels;
+                return 0;
             }
 
             EnsureT8PlusCacheVersion(request.DataVersion);
 
-            bool multipleSources = data.SourceColumns != null && data.SourceColumns.Count > 1;
-
+            int added = 0;
             for (int i = 0; i < requests.Count; i++)
             {
                 T8PlusSeriesRequest item = requests[i];
@@ -484,269 +500,41 @@ namespace JSQViewer.Application.Charting
                     continue;
                 }
 
-                long edgeMs = ResolveVisibleEdgeMs(request, data, item.SourceRoot, overlayMode);
-                int edgeIndex = VisibleRangeEdgeResolver.ResolveIndex(data.TimestampsMs, edgeMs);
-                if (edgeIndex < 0)
-                {
-                    continue;
-                }
-
-                long startMs = ResolveVisibleStartMs(request, data, item.SourceRoot, overlayMode);
-                int startIndex = ResolveStartIndex(data.TimestampsMs, startMs);
-                if (startIndex > edgeIndex)
-                {
-                    continue;
-                }
-
                 int sourceIndex = ResolveSourceIndex(data, item.SourceRoot);
-                string sourceName = multipleSources
-                    ? _sourceDisplayNameResolver.Resolve(data, item.SourceRoot)
-                    : null;
+                string sourceName = _sourceDisplayNameResolver.Resolve(data, item.SourceRoot);
 
-                double value;
-                int atIndex;
-
-                if (item.ShowMinimum && TryLowest(built.Minimum, startIndex, edgeIndex, out value, out atIndex))
+                if (item.ShowMinimum)
                 {
-                    AddLevel(levels, value, item.SourceRoot, sourceIndex, sourceName, ChartSeriesRole.T8Minimum,
-                        DescribeChannel(built.MinimumChannel, atIndex));
+                    long lineMaxMs;
+                    series.Add(BuildT8PlusSeries(
+                        data, item.SourceRoot, sourceIndex, sourceName,
+                        ChartSeriesRole.T8Minimum, built.Minimum, timestamps, step, request.OverlayMode, out lineMaxMs));
+                    added++;
+                    if (lineMaxMs > maxDurationMs) maxDurationMs = lineMaxMs;
                 }
 
-                if (item.ShowAverage && TryMean(built.Average, startIndex, edgeIndex, out value))
+                if (item.ShowAverage)
                 {
-                    AddLevel(levels, value, item.SourceRoot, sourceIndex, sourceName, ChartSeriesRole.T8Average,
-                        DescribeChannelCount(built.ChannelCount));
+                    long lineMaxMs;
+                    series.Add(BuildT8PlusSeries(
+                        data, item.SourceRoot, sourceIndex, sourceName,
+                        ChartSeriesRole.T8Average, built.Average, timestamps, step, request.OverlayMode, out lineMaxMs));
+                    added++;
+                    if (lineMaxMs > maxDurationMs) maxDurationMs = lineMaxMs;
                 }
 
-                if (item.ShowMaximum && TryHighest(built.Maximum, startIndex, edgeIndex, out value, out atIndex))
+                if (item.ShowMaximum)
                 {
-                    AddLevel(levels, value, item.SourceRoot, sourceIndex, sourceName, ChartSeriesRole.T8Maximum,
-                        DescribeChannel(built.MaximumChannel, atIndex));
-                }
-            }
-
-            return levels;
-        }
-
-        private static void AddLevel(
-            List<ChartLevelLine> levels,
-            double value,
-            string sourceRoot,
-            int sourceIndex,
-            string sourceName,
-            ChartSeriesRole role,
-            string origin)
-        {
-            levels.Add(new ChartLevelLine(
-                sourceRoot, sourceIndex, role, value, BuildLevelLabel(sourceName, role, value, origin)));
-        }
-
-        /// <summary>
-        /// Имя термопары, давшей экстремум, без суффикса источника и номера дубля.
-        /// Без него из подписи не понять, какой именно канал опустился ниже всех,
-        /// а это почти никогда не тот, что выбран для показа на графике.
-        /// </summary>
-        private static string DescribeChannel(string[] channels, int index)
-        {
-            if (channels == null || index < 0 || index >= channels.Length)
-            {
-                return null;
-            }
-
-            string code = T8PlusChannelSelector.NormalizeChannelName(channels[index]);
-            return string.IsNullOrWhiteSpace(code) ? null : code;
-        }
-
-        private static string DescribeChannelCount(int channelCount)
-        {
-            if (channelCount <= 0)
-            {
-                return null;
-            }
-
-            string form = channelCount == 1 ? "каналу" : "каналам";
-            return string.Format(CultureInfo.InvariantCulture, "по {0} {1}", channelCount, form);
-        }
-
-        /// <summary>
-        /// Индекс первого отсчёта, попадающего в видимый участок слева.
-        /// </summary>
-        private static int ResolveStartIndex(long[] timestampsMs, long startMs)
-        {
-            int last = VisibleRangeEdgeResolver.ResolveIndex(timestampsMs, startMs);
-            if (last < 0)
-            {
-                return 0;
-            }
-
-            return timestampsMs[last] == startMs ? last : last + 1;
-        }
-
-        private static bool TryLowest(double?[] values, int from, int to, out double result, out int atIndex)
-        {
-            result = 0d;
-            atIndex = -1;
-            if (values == null)
-            {
-                return false;
-            }
-
-            for (int i = from; i <= to && i < values.Length; i++)
-            {
-                if (!values[i].HasValue)
-                {
-                    continue;
-                }
-
-                if (atIndex < 0 || values[i].Value < result)
-                {
-                    result = values[i].Value;
-                    atIndex = i;
+                    long lineMaxMs;
+                    series.Add(BuildT8PlusSeries(
+                        data, item.SourceRoot, sourceIndex, sourceName,
+                        ChartSeriesRole.T8Maximum, built.Maximum, timestamps, step, request.OverlayMode, out lineMaxMs));
+                    added++;
+                    if (lineMaxMs > maxDurationMs) maxDurationMs = lineMaxMs;
                 }
             }
 
-            return atIndex >= 0;
-        }
-
-        private static bool TryHighest(double?[] values, int from, int to, out double result, out int atIndex)
-        {
-            result = 0d;
-            atIndex = -1;
-            if (values == null)
-            {
-                return false;
-            }
-
-            for (int i = from; i <= to && i < values.Length; i++)
-            {
-                if (!values[i].HasValue)
-                {
-                    continue;
-                }
-
-                if (atIndex < 0 || values[i].Value > result)
-                {
-                    result = values[i].Value;
-                    atIndex = i;
-                }
-            }
-
-            return atIndex >= 0;
-        }
-
-        /// <summary>
-        /// Среднее по отсчётам участка: каждый момент времени весит одинаково,
-        /// независимо от того, сколько термопар дали значение в этот момент.
-        /// </summary>
-        private static bool TryMean(double?[] values, int from, int to, out double result)
-        {
-            result = 0d;
-            if (values == null)
-            {
-                return false;
-            }
-
-            double sum = 0d;
-            int count = 0;
-            for (int i = from; i <= to && i < values.Length; i++)
-            {
-                if (!values[i].HasValue)
-                {
-                    continue;
-                }
-
-                sum += values[i].Value;
-                count++;
-            }
-
-            if (count == 0)
-            {
-                return false;
-            }
-
-            result = sum / count;
-            return true;
-        }
-
-        private static string BuildLevelLabel(string sourceName, ChartSeriesRole role, double value, string origin)
-        {
-            string roleText;
-            if (role == ChartSeriesRole.T8Minimum)
-            {
-                roleText = "T8+ мин";
-            }
-            else if (role == ChartSeriesRole.T8Maximum)
-            {
-                roleText = "T8+ макс";
-            }
-            else
-            {
-                roleText = "T8+ сред";
-            }
-
-            string valueText = value.ToString("0.0", CultureInfo.InvariantCulture);
-            string tail = string.IsNullOrWhiteSpace(origin)
-                ? valueText
-                : string.Format(CultureInfo.InvariantCulture, "{0} ({1})", valueText, origin);
-
-            return string.IsNullOrWhiteSpace(sourceName)
-                ? string.Format(CultureInfo.InvariantCulture, "{0} {1}", roleText, tail)
-                : string.Format(CultureInfo.InvariantCulture, "[{0}] {1} {2}", sourceName, roleText, tail);
-        }
-
-        private static long ResolveVisibleEdgeMs(
-            ChartPipelineRequest request,
-            TestData data,
-            string sourceRoot,
-            bool overlayMode)
-        {
-            long lastMs = data.TimestampsMs[data.TimestampsMs.Length - 1];
-
-            double edge = request.SelectedRangeEnd;
-            if (double.IsNaN(edge) && request.XAxis != null && request.XAxis.IsManualEnabled && request.XAxis.Maximum.HasValue)
-            {
-                edge = request.XAxis.Maximum.Value;
-            }
-
-            if (double.IsNaN(edge))
-            {
-                return lastMs;
-            }
-
-            if (!overlayMode)
-            {
-                return (long)edge;
-            }
-
-            // В наложении ось задана в часах от начала своего прогона.
-            long baseMs = ResolveSourceBaseMs(data, sourceRoot, data.TimestampsMs[0]);
-            return baseMs + (long)(edge * 3600000.0);
-        }
-
-        private static long ResolveVisibleStartMs(
-            ChartPipelineRequest request,
-            TestData data,
-            string sourceRoot,
-            bool overlayMode)
-        {
-            double start = request.SelectedRangeStart;
-            if (double.IsNaN(start) && request.XAxis != null && request.XAxis.IsManualEnabled && request.XAxis.Minimum.HasValue)
-            {
-                start = request.XAxis.Minimum.Value;
-            }
-
-            if (double.IsNaN(start))
-            {
-                return long.MinValue;
-            }
-
-            if (!overlayMode)
-            {
-                return (long)start;
-            }
-
-            long baseMs = ResolveSourceBaseMs(data, sourceRoot, data.TimestampsMs[0]);
-            return baseMs + (long)(start * 3600000.0);
+            return added;
         }
 
         private void EnsureT8PlusCacheVersion(int dataVersion)
@@ -758,6 +546,84 @@ namespace JSQViewer.Application.Charting
 
             _t8PlusCache.Clear();
             _t8PlusCacheDataVersion = dataVersion;
+        }
+
+        private static ChartPipelineSeries BuildT8PlusSeries(
+            TestData data,
+            string sourceRoot,
+            int sourceIndex,
+            string sourceName,
+            ChartSeriesRole role,
+            double?[] values,
+            long[] timestamps,
+            int step,
+            bool overlayMode,
+            out long maxRelativeMs)
+        {
+            // Срез каналов строится от первого отсчёта с шагом step, поэтому
+            // индекс i-й точки среза в полном массиве равен i * step.
+            var xList = new List<double>(timestamps.Length);
+            var yList = new List<double>(timestamps.Length);
+            long baseMs = overlayMode ? ResolveSourceBaseMs(data, sourceRoot, timestamps[0]) : timestamps[0];
+            maxRelativeMs = 0L;
+
+            for (int i = 0; i < timestamps.Length; i++)
+            {
+                long index = (long)i * step;
+                if (index >= values.Length)
+                {
+                    break;
+                }
+
+                double? value = values[(int)index];
+                if (!value.HasValue)
+                {
+                    continue;
+                }
+
+                long relativeMs = Math.Max(0L, timestamps[i] - baseMs);
+                if (overlayMode && relativeMs > maxRelativeMs)
+                {
+                    maxRelativeMs = relativeMs;
+                }
+
+                xList.Add(overlayMode ? relativeMs / 3600000.0 : timestamps[i]);
+                yList.Add(value.Value);
+            }
+
+            return new ChartPipelineSeries
+            {
+                Code = sourceRoot,
+                LegendText = BuildT8PlusLegendText(sourceName, role),
+                SourceRoot = sourceRoot,
+                SourceIndex = sourceIndex,
+                Role = role,
+                XValues = xList.ToArray(),
+                YValues = yList.ToArray(),
+                BorderWidth = role == ChartSeriesRole.T8Average ? 3 : 2,
+                IsVisibleInLegend = true
+            };
+        }
+
+        private static string BuildT8PlusLegendText(string sourceName, ChartSeriesRole role)
+        {
+            string suffix;
+            if (role == ChartSeriesRole.T8Minimum)
+            {
+                suffix = "T8+ мин";
+            }
+            else if (role == ChartSeriesRole.T8Maximum)
+            {
+                suffix = "T8+ макс";
+            }
+            else
+            {
+                suffix = "T8+ сред";
+            }
+
+            return string.IsNullOrWhiteSpace(sourceName)
+                ? suffix
+                : string.Format(CultureInfo.InvariantCulture, "[{0}] {1}", sourceName, suffix);
         }
 
         private static long ResolveSourceBaseMs(TestData data, string sourceRoot, long fallbackMs)
